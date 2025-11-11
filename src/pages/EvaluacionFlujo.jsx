@@ -73,10 +73,23 @@ const [confirmOpen, setConfirmOpen] = useState(false);
   const isAptitud = (itemSeleccionado?._tipo === "aptitud") || (itemSeleccionado?.tipo === "aptitud");
   const scaleToPercent = (v) => (v ? v * 20 : null);
   const editable = localHito?.estado === "MANAGER_DRAFT" || !localHito?.estado;
-
+ // --- deduplicador robusto por _id o (nombreunidad) ---
+ function dedupeMetas(arr = []) {
+   const seen = new Set();
+   const out = [];
+   for (const m of arr) {
+     const key = m?._id ? `id:${m._id}` : `nu:${m?.nombre}__${m?.unidad}`;
+     if (!seen.has(key)) {
+       seen.add(key);
+       out.push(m);
+     }
+   }
+   return out;
+ }
   /* ---------------- helpers ---------------- */
-  function deepCloneMetas(metas = []) {
-    return metas.map(m => ({
+function deepCloneMetas(metas = []) {
+   // clonado + normalización + dedupe
+   const cloned = metas.map(m => ({
       _id: m._id,
       nombre: m.nombre,
       esperado: m.esperado,
@@ -86,6 +99,7 @@ const [confirmOpen, setConfirmOpen] = useState(false);
       cumple: !!m.cumple && m.resultado != null ? !!m.cumple : false,
       peso: m.peso ?? m.pesoBase ?? null,
     }));
+    return dedupeMetas(cloned);
   }
 
   function buildBlankLocalHito(basePlantilla, periodoStr) {
@@ -94,7 +108,7 @@ const [confirmOpen, setConfirmOpen] = useState(false);
       periodo: periodoStr,
       fecha: null,
       estado: "MANAGER_DRAFT",
-      metas: deepCloneMetas(baseMetas).map(m => ({ ...m, resultado: null, cumple: false })),
+      metas: dedupeMetas(deepCloneMetas(baseMetas).map(m => ({ ...m, resultado: null, cumple: false }))),
       actual: null,
       comentario: "",
       escala: null,
@@ -103,9 +117,11 @@ const [confirmOpen, setConfirmOpen] = useState(false);
 
   function hydrateFromEmpEval(empEval) {
     if (!empEval) return;
-    const metas = Array.isArray(empEval.metasResultados) && empEval.metasResultados.length
-      ? deepCloneMetas(empEval.metasResultados)
-      : deepCloneMetas(itemSeleccionado?.metas ?? []);
+     const metas = dedupeMetas(
+   (Array.isArray(empEval.metasResultados) && empEval.metasResultados.length
+     ? deepCloneMetas(empEval.metasResultados)
+     : deepCloneMetas(itemSeleccionado?.metas ?? []))
+ );
 
     setLocalHito({
       periodo,
@@ -277,8 +293,9 @@ const [confirmOpen, setConfirmOpen] = useState(false);
         actual: actualToSend,
         comentario: localHito.comentario ?? "",
         comentarioManager: comentarioManager ?? "",
-        ...(isApt ? { escala: Number(localHito?.escala ?? 0), metasResultados: [] }
-                 : { metasResultados: Array.isArray(localHito.metas) ? localHito.metas : [] }),
+ ...(isApt
+   ? { escala: Number(localHito?.escala ?? 0), metasResultados: [] }
+   : { metasResultados: Array.isArray(localHito.metas) ? dedupeMetas(localHito.metas) : [] }),
         estado: "MANAGER_DRAFT",
       };
 
@@ -535,7 +552,7 @@ const [confirmOpen, setConfirmOpen] = useState(false);
               </div>
             ) : (
               <div className="grid gap-3">
-                {(localHito?.metas || []).map((m, idx) => (
+                {dedupeMetas(localHito?.metas || []).map((m, idx) => (
                   <div key={`${m._id ?? m.nombre}-${idx}`} className="border rounded-md p-3 bg-background shadow-sm">
                     <p className="text-sm font-semibold">{m.nombre}</p>
                     <p className="text-xs text-gray-500">Esperado: {m.operador || ">="} {m.esperado} {m.unidad}</p>
@@ -549,7 +566,8 @@ const [confirmOpen, setConfirmOpen] = useState(false);
                           onChange={(e) => {
                             const val = e.target.checked;
                             setLocalHito((prev) => {
-                              const metas = [...(prev.metas || [])];
+                          
+  const metas = dedupeMetas([...(prev.metas || [])]);
                               metas[idx] = { ...metas[idx], resultado: val, cumple: val };
                               return { ...prev, metas };
                             });
@@ -568,7 +586,7 @@ const [confirmOpen, setConfirmOpen] = useState(false);
                           onChange={(e) => {
                             const valor = e.target.value === "" ? null : Number(e.target.value);
                             setLocalHito((prev) => {
-                              const metas = [...(prev.metas || [])];
+                            const metas = dedupeMetas([...(prev.metas || [])]);
                               metas[idx] = {
                                 ...metas[idx],
                                 resultado: valor,
