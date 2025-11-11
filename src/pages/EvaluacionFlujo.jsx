@@ -212,6 +212,12 @@ function deepCloneMetas(metas = []) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemSeleccionado, localHito?.periodo, empleadosDelItem]);
 
+  // ✅ Si llegaron empleados (por state o fetch) y no hay seleccionado, seleccioná el primero
+useEffect(() => {
+ if (!selectedEmpleadoId && Array.isArray(empleadosDelItem) && empleadosDelItem.length > 0) {
+   setSelectedEmpleadoId(empleadosDelItem[0]._id);
+  }
+}, [empleadosDelItem, selectedEmpleadoId]);
   // Cuando cambia el empleado seleccionado, rehidratar SIEMPRE desde la lista (o reset)
   useEffect(() => {
     if (!selectedEmpleadoId) return;
