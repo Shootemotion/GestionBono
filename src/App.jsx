@@ -6,7 +6,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import { getToken } from '@/lib/api';
 import { Toaster } from "@/components/ui/sonner"; 
 import EvaluacionFlujo from '@/pages/EvaluacionFlujo';
-
+import LegajoEmpleado from '@/pages/LegajoEmpleado.jsx';
 // Importar Paginas
 import GestionEstructura from '@/pages/GestionNomina';
 
@@ -58,7 +58,14 @@ element={<RequireAuth allow={['superadmin', 'directivo', 'rrhh', 'jefe_area']} a
   }
 />
 
-          
+           <Route
+   path="/nomina/legajo/:id"
+   element={
+     <RequireAuth allow={['superadmin', 'directivo', 'rrhh']} allowReferente={true}>
+       <LegajoEmpleado />
+     </RequireAuth>
+   }
+ />
 
          <Route
       path="/seguimiento"

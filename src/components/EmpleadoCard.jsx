@@ -79,6 +79,13 @@ function EmpleadoCard({ empleado, onEditar, onEliminar }) {
 
           <div className="absolute bottom-2 right-3 flex items-center gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
             <Button size="sm" variant="outline" className="h-8 px-3" onClick={onEditar}>Editar</Button>
+              <a
+           href={`/nomina/legajo/${empleado._id}`}
+           className="text-xs text-center rounded-md px-3 py-2 bg-indigo-100 text-indigo-800 hover:bg-indigo-200"
+           title="Abrir legajo (CV, sueldo, estado laboral)"
+         >
+           Legajo
+         </a>
             <Button size="sm" variant="destructive" className="h-8 px-3" onClick={onEliminar}>Eliminar</Button>
           </div>
         </div>

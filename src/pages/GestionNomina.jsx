@@ -44,11 +44,15 @@ function GestionEstructura() {
           api("/empleados"),
         ]);
 
+         // ✅ Normalizador: siempre dejá un array
+ const allEmps = Array.isArray(dataEmpleados?.items)
+  ? dataEmpleados.items
+   : (Array.isArray(dataEmpleados) ? dataEmpleados : []);
         // Si es admin/rrhh/directivo -> ve todo
         if (user && (user.isSuper || user.isRRHH || user.isDirectivo)) {
           setAreas(dataAreas || []);
           setSectores(dataSectores || []);
-          setEmpleados(dataEmpleados || []);
+          setEmpleados(allEmps || []);
           return;
         }
 
@@ -76,7 +80,7 @@ function GestionEstructura() {
         const visibleAreaIds = new Set(visibleAreas.map((a) => String(a._id)));
         const visibleSectorIds = new Set(visibleSectores.map((s) => String(s._id)));
 
-        const visibleEmpleados = (dataEmpleados || []).filter((e) => {
+        const visibleEmpleados = (allEmps || []).filter((e) => {
           const empArea = String(e.area?._id || e.area || "");
           const empSector = String(e.sector?._id || e.sector || "");
           if (visibleAreaIds.has(empArea)) return true;
@@ -96,7 +100,7 @@ function GestionEstructura() {
 
   // Filtro + búsqueda + orden
   const empleadosFiltrados = useMemo(() => {
-    let lista = empleados;
+    let lista = Array.isArray(empleados) ? empleados : [];
 
     if (terminoBusqueda?.trim()) {
       const q = terminoBusqueda.toLowerCase();
