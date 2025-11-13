@@ -9,6 +9,45 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { useRef } from "react";
+
+// helper de paginación robusto
+async function fetchAll(path, { pageSize = 200, params = {} } = {}) {
+  const out = [];
+  let page = 1;
+
+  const [base, existing] = path.split("?");
+  const baseQS = new URLSearchParams(existing || "");
+  Object.entries(params).forEach(([k, v]) => baseQS.set(k, String(v)));
+
+  for (;;) {
+    const qs = new URLSearchParams(baseQS);
+    qs.set("page", String(page));
+    qs.set("pageSize", String(pageSize));
+
+    const url = `${base}?${qs.toString()}`;
+    const data = await api(url);
+
+    const chunk =
+      Array.isArray(data) ? data :
+      Array.isArray(data?.items) ? data.items :
+      Array.isArray(data?.docs) ? data.docs : [];
+
+    out.push(...chunk);
+
+    const total = Number(data?.total ?? data?.count ?? 0);
+    const ps    = Number(data?.pageSize ?? data?.limit ?? pageSize);
+    const cur   = Number(data?.page ?? page);
+
+    if (total && cur * ps < total) { page += 1; continue; }
+    if (!total && chunk.length === ps) { page += 1; continue; }
+
+    break;
+  }
+
+  return out;
+}
+
+
 export default function GestionPlantillasPage() {
   const { user } = useAuth();
 
@@ -38,16 +77,26 @@ export default function GestionPlantillasPage() {
    [empleados, empleadoId]
  );
 
+
+ // Normalizador genérico: lo que venga del back → array
+ const normAny = (res) =>
+   Array.isArray(res) ? res :
+   Array.isArray(res?.data) ? res.data :
+   Array.isArray(res?.items) ? res.items :
+   Array.isArray(res?.results) ? res.results :
+   Array.isArray(res?.rows) ? res.rows : [];
+
+const MAX_LIST = 2000; // ajustá a gusto
  const empleadosFiltrados = useMemo(() => {
    const q = empQuery.trim().toLowerCase();
-   if (!q) return empleados.slice(0, 15);
+   if (!q) return empleados.slice(0, MAX_LIST);
    return empleados
      .filter(e => {
        const n = `${e?.apellido ?? ""} ${e?.nombre ?? ""}`.toLowerCase();
        const a = (e?.apodo ?? "").toLowerCase();
        return n.includes(q) || a.includes(q);
      })
-     .slice(0, 20);
+     .slice(0, MAX_LIST);
  }, [empQuery, empleados]);
 
  // cerrar dropdown al click afuera
@@ -77,47 +126,50 @@ export default function GestionPlantillasPage() {
   // ✅ Carga catálogos (ahora garantizamos shape del array empleados)
 useEffect(() => {
   (async () => {
+    // 1) Áreas y sectores
     try {
-      const [a, s, e] = await Promise.all([
-        api("/areas"),
-        api("/sectores"),
-        api("/empleados"),
-      ]);
+      const [a, s] = await Promise.all([api("/areas"), api("/sectores")]);
 
       const areasN =
         Array.isArray(a) ? a :
         (a?.data ?? a?.items ?? a?.results ?? a?.rows ?? []);
+
       const sectoresN =
         Array.isArray(s) ? s :
         (s?.data ?? s?.items ?? s?.results ?? s?.rows ?? []);
-      const empleadosN =
-        Array.isArray(e) ? e :
-        Array.isArray(e?.data) ? e.data :
-        Array.isArray(e?.items) ? e.items :
-        Array.isArray(e?.results) ? e.results :
-        Array.isArray(e?.rows) ? e.rows :
-        Array.isArray(e?.empleados) ? e.empleados :
-        [];
 
-      console.log("🟦 /areas ->", { raw: a, parsedLen: areasN.length });
-      console.log("🟩 /sectores ->", { raw: s, parsedLen: sectoresN.length });
+      setAreas(areasN);
+      setSectores(sectoresN);
+
+      window.__AREAS__ = areasN;
+      window.__SECTORES__ = sectoresN;
+    } catch (err) {
+      console.error("❌ Error cargando áreas/sectores:", err);
+      toast.error("No se pudieron cargar áreas/sectores");
+    }
+
+    // 2) Empleados (independiente)
+    try {
+      const e = await fetchAll("/empleados", {
+        pageSize: 500,
+        params: { visibility: "all" },
+      });
+
+      const empleadosN = Array.isArray(e) ? e : [];
+
+      setEmpleados(
+        empleadosN.map((x) => ({ ...x, _id: String(x._id ?? x.id) }))
+      );
+
       console.log("🟨 /empleados ->", {
-        raw: e,
         parsedLen: empleadosN.length,
         sample: empleadosN[0],
       });
 
-      setAreas(areasN);
-      setSectores(sectoresN);
-      setEmpleados(empleadosN);
-
-      // acceso rápido desde consola:
-      window.__AREAS__ = areasN;
-      window.__SECTORES__ = sectoresN;
       window.__EMPLEADOS__ = empleadosN;
     } catch (err) {
-      console.error("❌ Error cargando catálogos:", err);
-      toast.error("No se pudieron cargar áreas/sectores/empleados");
+      console.error("❌ Error cargando empleados:", err);
+      toast.error("No se pudieron cargar empleados");
     }
   })();
 }, []);
@@ -291,7 +343,7 @@ const plantillas = useMemo(() => {
   return hook.plantillas;                                       // Área (solo) o sin filtros => lo que ya traía el hook
  }, [plantillasByEmp, plantillasSector, allPlantillas, hook.plantillas]);
 
- 
+
   // Derivados
   const objetivos = useMemo(() => plantillas.filter((p) => p.tipo === "objetivo"), [plantillas]);
   const aptitudes = useMemo(() => plantillas.filter((p) => p.tipo === "aptitud"), [plantillas]);

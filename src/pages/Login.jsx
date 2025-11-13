@@ -1,6 +1,6 @@
 // src/pages/Login.jsx
 import { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import CompleteInvite from "@/components/CompleteInvite.jsx";
 import { useAuth } from "@/context/AuthContext";
 
@@ -16,9 +16,8 @@ export default function Login() {
 
   const { login } = useAuth();
 
-  const navigate = useNavigate();
-  const location = useLocation();
-  const from = location.state?.from?.pathname || "/";
+   const navigate = useNavigate();
+  const from = "/"; // siempre redirigimos al home
 
   const onSubmit = async (e) => {
     e.preventDefault();
@@ -30,12 +29,13 @@ export default function Login() {
       await login(email, password);
 
       // si todo OK, navegar
-      navigate(from, { replace: true });
+      // siempre al home
+    navigate("/", { replace: true });
 
       // fallback por si StrictMode retrasa el navigate
       setTimeout(() => {
         if (window.location.pathname === "/login") {
-          window.location.assign(from);
+          window.location.assign("/");
         }
       }, 50);
     } catch (err) {
@@ -136,12 +136,13 @@ export default function Login() {
         </div>
       </div>
 
-      <CompleteInvite
+  <CompleteInvite
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
         initialEmail={inviteEmail}
-        afterLoginRedirect={from}
+        afterLoginRedirect="/"
       />
+      
     </>
   );
 }

@@ -29,7 +29,7 @@ export default function FormularioObjetivos({
   const [frecuencia, setFrecuencia] = useState("anual");
   const [fechaLimite, setFechaLimite] = useState("");
   const [peso, setPeso] = useState(0);
-
+const MAX_LIST = 2000; // ajustá a gusto
   // Metas
   const [metas, setMetas] = useState([]);
 
@@ -42,21 +42,25 @@ export default function FormularioObjetivos({
   const [empOpen, setEmpOpen] = useState(false);
   const empBoxRef = useRef(null);
 
-  const selectedEmpleado = useMemo(
-    () => empleados.find((e) => String(e._id) === String(scopeId)) || null,
-    [scopeId, empleados]
-  );
+const selectedEmpleado = useMemo(
+   () => {
+     const lista = Array.isArray(empleados) ? empleados : [];
+     const sid = scopeId != null ? String(scopeId) : "";
+     return lista.find(e => String(e?._id ?? e?.id) === sid) || null;
+   },
+   [scopeId, empleados]
+ );
 
   const empleadosFiltrados = useMemo(() => {
     const q = empQuery.trim().toLowerCase();
-    if (!q) return empleados.slice(0, 15);
+    if (!q) return empleados.slice(0, MAX_LIST);
     return empleados
       .filter((e) => {
         const n = `${e?.apellido ?? ""} ${e?.nombre ?? ""}`.toLowerCase();
         const a = (e?.apodo ?? "").toLowerCase();
         return n.includes(q) || a.includes(q);
       })
-      .slice(0, 20);
+      .slice(0, MAX_LIST);
   }, [empQuery, empleados]);
 
   // Cargar initialData
@@ -229,6 +233,13 @@ export default function FormularioObjetivos({
       <p className="mt-1 text-xs text-red-600">{String(fieldErrors[name])}</p>
     ) : null;
 
+     // Opciones “Proceso” (igual que en Aptitudes)
+  const PROCESOS = [
+    { value: "", label: "Seleccioná un proceso…" },
+    { value: "Económico", label: "Económico" },
+    { value: "Gestión", label: "Gestión" },
+    { value: "Organizacional", label: "Organizacional" },
+  ];
   return (
     <form onSubmit={(e) => handleSubmit(e)} className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -251,17 +262,21 @@ export default function FormularioObjetivos({
             <FieldError name="nombre" />
           </div>
 
-          <div>
-            <label className="text-xs">Proceso</label>
-            <input
-              className={inputCls}
-              value={proceso}
-              onChange={(e) => setProceso(e.target.value)}
-              placeholder="Ej.: Ventas / Calidad"
-              required
-            />
-            <FieldError name="proceso" />
-          </div>
+
+   <div>
+    <label className="text-xs">Proceso</label>
+    <select
+      className={inputCls}
+     value={proceso}
+      onChange={(e) => setProceso(e.target.value)}
+      required
+    >
+      {PROCESOS.map((p) => (
+        <option key={p.value || "blank"} value={p.value}>{p.label}</option>
+      ))}
+    </select>
+    <FieldError name="proceso" />
+  </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -448,10 +463,7 @@ export default function FormularioObjetivos({
                             key={e._id}
                             type="button"
                             className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
-                            onClick={() => {
-                              setScopeId(e._id);
-                              setEmpOpen(false);
-                            }}
+                           onClick={() => { setScopeId(String(e._id ?? e.id)); setEmpOpen(false); }}
                           >
                             {e.apellido}, {e.nombre}
                             {e.apodo ? (

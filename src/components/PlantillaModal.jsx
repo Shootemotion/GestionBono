@@ -1,5 +1,5 @@
 // src/components/PlantillaModal.jsx
-import { useState } from "react";
+import { useMemo } from "react";
 import FormularioObjetivos from "./FormularioObjetivos";
 import FormularioAptitudes from "./FormularioAptitudes";
 
@@ -8,19 +8,24 @@ export default function PlantillaModal({
   onClose,
   modalType,
   editing,
-  onAfterSave,   
+  onAfterSave,
   areas,
   sectores,
   empleados = [],
-  scopeType,
+  scopeType,   // alcance activo del padre (opcional)
+  scopeId,     // alcance id activo del padre (opcional)
+  year,        // año activo del padre (opcional)
 }) {
-  
   if (!isOpen) return null;
 
- const handleSaved = (saved, { keepOpen = false } = {}) => {
-   onAfterSave?.(saved);              // ✅ sólo actualiza estado en el padre
-   if (!keepOpen) onClose();
- };
+  const initialYear = useMemo(() => editing?.year ?? year, [editing, year]);
+  const initialScopeId = useMemo(() => editing?.scopeId ?? scopeId, [editing, scopeId]);
+  const formKey = useMemo(() => editing?._id ?? `nuevo-${modalType}`, [editing, modalType]);
+
+  const handleSaved = (saved, { keepOpen = false } = {}) => {
+    onAfterSave?.(saved);        // el padre actualiza su estado local
+    if (!keepOpen) onClose();
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -29,6 +34,7 @@ export default function PlantillaModal({
         <button
           onClick={onClose}
           className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
+          aria-label="Cerrar"
         >
           ✕
         </button>
@@ -39,27 +45,39 @@ export default function PlantillaModal({
 
         {modalType === "objetivo" && (
           <FormularioObjetivos
-          onSaved={(saved) => handleSaved(saved, { keepOpen: false })}
-           onSaveAndContinue={(saved) => handleSaved(saved, { keepOpen: true })}
-            onCancelar={onClose}
-            initialData={editing}
+            key={formKey}
+            // estado inicial
+            initialData={editing ?? null}
+            initialYear={initialYear}
+            initialScopeType={editing?.scopeType ?? scopeType}
+            initialScopeId={initialScopeId}
+            // catálogos
             areas={areas}
             sectores={sectores}
-            empleados={empleados}   // ✅ empleados llegan al form
-            initialScopeType={scopeType}
+            empleados={empleados}
+            // callbacks
+            onSaved={(saved) => handleSaved(saved, { keepOpen: false })}
+            onSaveAndContinue={(saved) => handleSaved(saved, { keepOpen: true })}
+            onCancelar={onClose}
           />
         )}
 
         {modalType === "aptitud" && (
           <FormularioAptitudes
-           onSaved={(saved) => handleSaved(saved, { keepOpen: false })}
-          onSaveAndContinue={(saved) => handleSaved(saved, { keepOpen: true })}
-            onCancelar={onClose}
-            datosIniciales={editing}
+            key={formKey}
+            // algunos proyectos usan "datosIniciales" en lugar de "initialData"
+            datosIniciales={editing ?? null}
+            initialYear={initialYear}
+            initialScopeType={editing?.scopeType ?? scopeType}
+            initialScopeId={initialScopeId}
+            // catálogos
             areas={areas}
             sectores={sectores}
-              empleados={empleados}   
-            initialScopeType={scopeType}
+            empleados={empleados}
+            // callbacks
+            onSaved={(saved) => handleSaved(saved, { keepOpen: false })}
+            onSaveAndContinue={(saved) => handleSaved(saved, { keepOpen: true })}
+            onCancelar={onClose}
           />
         )}
       </div>
