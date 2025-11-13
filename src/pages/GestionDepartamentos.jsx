@@ -8,6 +8,58 @@ import FormularioEstructura from "@/components/FormularioEstructura.jsx";
 import AreaEditModal from "@/components/AreaEditModal.jsx";
 import { Button } from "@/components/ui/button";
 
+ // Helper genérico para paginar cualquier endpoint tipo /empleados
+ // Helper genérico para paginar cualquier endpoint tipo /empleados
+async function fetchAll(path, { pageSize = 200, params = {} } = {}) {
+  const out = [];
+  let page = 1;
+
+  const [base, existing] = path.split("?");
+  const baseQS = new URLSearchParams(existing || "");
+  Object.entries(params).forEach(([k, v]) => baseQS.set(k, String(v)));
+
+  for (;;) {
+    const qs = new URLSearchParams(baseQS);
+    qs.set("page", String(page));
+    qs.set("pageSize", String(pageSize));
+    const url = `${base}?${qs.toString()}`;
+
+    const data = await api(url);
+    const chunk =
+      Array.isArray(data)        ? data :
+      Array.isArray(data?.docs)  ? data.docs :
+      Array.isArray(data?.items) ? data.items :
+      Array.isArray(data?.data)  ? data.data :
+      Array.isArray(data?.rows)  ? data.rows :
+      [];
+
+    out.push(...chunk);
+
+    const total = Number(data?.total ?? data?.count ?? 0);
+    const ps    = Number(data?.pageSize ?? data?.limit ?? pageSize);
+    const cur   = Number(data?.page ?? page);
+
+    // 👉 ACÁ estaba el bug: hay que ir a la SIGUIENTE página
+    if (total && cur * ps < total) { 
+      page += 1; 
+      continue; 
+    }
+    if (!total && chunk.length === ps) { 
+      page += 1; 
+      continue; 
+    }
+
+    break;
+  }
+
+  return out;
+}
+// Componente principal
+
+
+
+
+
 export default function GestionDepartamentos() {
   const { user } = useAuth();
 
@@ -22,22 +74,47 @@ export default function GestionDepartamentos() {
   const [hoveredAreaId, setHoveredAreaId] = useState(null);
   const [areaFilterId, setAreaFilterId] = useState(null); // al hacer click filtra
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const [a, s, e] = await Promise.all([
-          api("/areas"),
-          api("/sectores"),
-          api("/empleados"),
-        ]);
-        setAreas(a || []);
-        setSectores(s || []);
-        setEmpleados(e || []);
-      } catch {
-        toast.error("No se pudieron cargar áreas/sectores/empleados.");
-      }
-    })();
-  }, []);
+useEffect(() => {
+  (async () => {
+    try {
+      const [a, s] = await Promise.all([
+        api("/areas"),
+        api("/sectores"),
+      ]);
+
+      // empleados: traemos TODAS las páginas y con visibilidad total
+      const e = await fetchAll("/empleados", {
+        pageSize: 500,
+        params: { visibility: "all" },
+      });
+
+      const norm = (res) =>
+        Array.isArray(res) ? res :
+        Array.isArray(res?.data) ? res.data :
+        Array.isArray(res?.items) ? res.items :
+        Array.isArray(res?.results) ? res.results :
+        Array.isArray(res?.rows) ? res.rows :
+        Array.isArray(res?.docs) ? res.docs :
+        [];
+
+      const areasN     = norm(a);
+      const sectoresN  = norm(s);
+      const empleadosN = Array.isArray(e) ? e : [];
+
+      setAreas(areasN);
+      setSectores(sectoresN);
+      // normalizo _id a string para que ReferentesModal funcione 1:1
+      setEmpleados(empleadosN.map(x => ({ ...x, _id: String(x._id ?? x.id) })));
+
+      console.log("🟦 areas",    { len: areasN.length, sample: areasN[0] });
+      console.log("🟩 sectores", { len: sectoresN.length, sample: sectoresN[0] });
+      console.log("🟨 empleados", { len: empleadosN.length, sample: empleadosN[0] });
+    } catch (err) {
+      console.error("❌ Error cargando áreas/sectores/empleados:", err);
+      toast.error("No se pudieron cargar áreas/sectores/empleados.");
+    }
+  })();
+}, []);
 
   const open = (modo, data = null) => setModal({ open: true, modo, data });
   const close = () => setModal({ open: false, modo: null, data: null });
@@ -127,28 +204,27 @@ export default function GestionDepartamentos() {
 
   // Reorden dinámico de sectores (hover) y filtro (click)
   const sectoresView = useMemo(() => {
-    const list = [...sectores];
+  const base = Array.isArray(sectores) ? sectores : [];
+  const list = [...base];
 
-    if (areaFilterId) {
-      // Filtro duro por área
-      return list.filter(
-        (s) => String(s?.areaId?._id ?? s?.areaId ?? "") === String(areaFilterId)
-      );
+  if (areaFilterId) {
+    return list.filter(
+      (s) => String(s?.areaId?._id ?? s?.areaId ?? "") === String(areaFilterId)
+    );
+  }
+
+  if (hoveredAreaId) {
+    const first = [];
+    const rest = [];
+    for (const s of list) {
+      const aId = String(s?.areaId?._id ?? s?.areaId ?? "");
+      (aId === String(hoveredAreaId) ? first : rest).push(s);
     }
+    return [...first, ...rest];
+  }
 
-    if (hoveredAreaId) {
-      // Reorden: primero los que pertenecen al área que estoy sobrevolando
-      const first = [];
-      const rest = [];
-      for (const s of list) {
-        const aId = String(s?.areaId?._id ?? s?.areaId ?? "");
-        (aId === String(hoveredAreaId) ? first : rest).push(s);
-      }
-      return [...first, ...rest];
-    }
-
-    return list;
-  }, [sectores, areaFilterId, hoveredAreaId]);
+  return list;
+}, [sectores, areaFilterId, hoveredAreaId]);
 
   const clearAreaFilter = () => setAreaFilterId(null);
 

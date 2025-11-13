@@ -6,6 +6,7 @@ import {
   getEvaluacionesEmpleado,
   updateHitoMultiple,
   updateHito,
+
   // NUEVOS
   listEvaluaciones,              // GET /evaluaciones?empleado=&year=&plantillaId=&periodo=
   getEvaluacionById,             // GET /evaluaciones/detalle/:id
@@ -16,7 +17,9 @@ import {
   submitToHR,                    // POST /evaluaciones/:id/submit-to-hr
   closeEvaluacion,               // POST /evaluaciones/:id/close
   reopenEvaluacion,              // POST /evaluaciones/:id/reopen
-  createEvaluacion,
+  createEvaluacion,              // POST /evaluaciones
+  listPendingHR,                 // GET  /evaluaciones/hr/pending
+  closeBulk,                     // POST /evaluaciones/hr/close-bulk
 } from "../controllers/evaluacion.controller.js";
 
 const router = Router();
@@ -37,6 +40,21 @@ router.get(
   authenticateJWT,
   requireCap("nomina:ver"),
   listEvaluaciones
+);
+
+// *** RRHH: ver pendientes y cerrar en lote ***
+router.get(
+  "/hr/pending",
+  authenticateJWT,
+  requireCap("rrhh:evaluaciones:ver"),   // asegúrate de mapearlo al rol rrhh
+  listPendingHR
+);
+
+router.post(
+  "/hr/close-bulk",
+  authenticateJWT,
+  requireCap("rrhh:evaluaciones:cierre"),
+  closeBulk
 );
 
 // Editar contenido SOLO si está en MANAGER_DRAFT
@@ -64,12 +82,14 @@ router.post(
   requireCap("nomina:evaluar"),
   submitToHR
 );
+
 router.post(
   "/:id/close",
   authenticateJWT,
   requireCap("rrhh:evaluaciones:cierre"),
   closeEvaluacion
 );
+
 router.post(
   "/:id/reopen",
   authenticateJWT,

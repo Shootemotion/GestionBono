@@ -8,6 +8,68 @@ import FormularioEmpleado from "@/components/FormularioEmpleado.jsx";
 import EmpleadoCard from "@/components/EmpleadoCard.jsx";
 import { Button } from "@/components/ui/button";
 
+
+// -------- helper: trae TODAS las páginas de un endpoint ----------
+async function fetchAll(path, { pageSize = 200 } = {}) {
+  const out = [];
+  let page = 1;
+  let nextToken = null;
+
+  while (true) {
+    const qs = new URLSearchParams();
+    if (pageSize) qs.set("pageSize", String(pageSize));
+    // soportá contratos que usan "limit"
+    if (!qs.has("pageSize")) qs.set("limit", String(pageSize));
+    qs.set("page", String(page));
+    if (nextToken) qs.set("nextPageToken", nextToken);
+
+    const url = qs.toString() ? `${path}?${qs}` : path;
+    const data = await api(url);
+
+    const chunk =
+      Array.isArray(data) ? data
+      : Array.isArray(data?.items) ? data.items
+      : Array.isArray(data?.docs) ? data.docs
+      : [];
+
+    if (chunk.length) out.push(...chunk);
+
+    // señales de “hay más”
+    const total = Number(data?.total ?? data?.count ?? 0);
+    const ps = Number(data?.pageSize ?? data?.limit ?? pageSize);
+    const currentPage = Number(data?.page ?? page);
+    const hasNextToken = !!data?.nextPageToken;
+
+    if (hasNextToken) {
+      nextToken = data.nextPageToken;
+      // no toques "page" si usás token
+      continue;
+    }
+
+    // si el backend publica total y page, usalo
+    if (total && currentPage * ps < total) {
+      page += 1;                 // <- ACÁ ESTABA TU BUG
+      continue;
+    }
+
+    // fallback: si no hay total y vino vacío, cortá
+    if (!total && chunk.length === 0) break;
+
+    // si no hay “total” pero vinieron items == ps, probá otra página
+    if (!total && chunk.length === ps) {
+      page += 1;
+      continue;
+    }
+
+    break;
+  }
+  return out;
+}
+// -------------------------------------------------------------------
+
+
+
+
 function replaceById(arr, item) {
   const i = arr.findIndex((e) => String(e._id) === String(item._id));
   if (i === -1) return [item, ...arr];
@@ -37,31 +99,40 @@ function GestionEstructura() {
   // Carga inicial (re-run cuando cambia user)
   useEffect(() => {
     (async () => {
-      try {
+    try {
+      // ⚠️ Esperá a tener user definido para evitar filtrar con user null
+      if (user === undefined) return;
+
+    // Trae TODO (no solo primera página)
         const [dataAreas, dataSectores, dataEmpleados] = await Promise.all([
-          api("/areas"),
-          api("/sectores"),
-          api("/empleados"),
+          fetchAll("/areas"),
+          fetchAll("/sectores"),
+          fetchAll("/empleados"),
         ]);
 
-         // ✅ Normalizador: siempre dejá un array
- const allEmps = Array.isArray(dataEmpleados?.items)
-  ? dataEmpleados.items
-   : (Array.isArray(dataEmpleados) ? dataEmpleados : []);
-        // Si es admin/rrhh/directivo -> ve todo
-        if (user && (user.isSuper || user.isRRHH || user.isDirectivo)) {
-          setAreas(dataAreas || []);
-          setSectores(dataSectores || []);
-          setEmpleados(allEmps || []);
-          return;
-        }
+      // ✅ Normalizadores consistentes
+      const allAreas = dataAreas;
+       const allSectores = dataSectores;
+        const allEmps = dataEmpleados;
+
+      // ✅ Privilegiados: rol o flags
+      const isPrivileged =
+        ['superadmin','rrhh','directivo'].includes(String(user?.rol || '').toLowerCase()) ||
+        user?.isSuper === true || user?.isRRHH === true || user?.isDirectivo === true;
+
+      if (isPrivileged) {
+        setAreas(allAreas);
+        setSectores(allSectores);
+        setEmpleados(allEmps);
+        return;
+     }
 
         // Caso restringido
         const referenteAreas = new Set((user?.referenteAreas || []).map(String));
         const referenteSectors = new Set((user?.referenteSectors || []).map(String));
         const userAreaId = user?.areaId ? String(user.areaId) : null;
 
-        const visibleSectores = (dataSectores || []).filter((s) => {
+       const visibleSectores = (allSectores || []).filter((s) => {
           const sId = String(s._id);
           const sAreaId = String(s.areaId?._id || s.areaId);
           if (user?.isJefeArea && userAreaId && userAreaId === sAreaId) return true;
@@ -70,7 +141,7 @@ function GestionEstructura() {
           return false;
         });
 
-        const visibleAreas = (dataAreas || []).filter((a) => {
+         const visibleAreas = (allAreas || []).filter((a) => {
           const aId = String(a._id);
           if (referenteAreas.has(aId)) return true;
           if (user?.isJefeArea && userAreaId && userAreaId === aId) return true;

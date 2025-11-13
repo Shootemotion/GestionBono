@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 /**
  * Util: normaliza mensajes de error (fetch/axios/custom)
  */
+const MAX_LIST = 2000; // ajustá a gusto
 function normalizeError(err) {
   const status = err?.status || err?.response?.status || err?.code || null;
   const data = err?.data || err?.response?.data || null;
@@ -167,22 +168,26 @@ export default function FormularioAptitudes({
     { value: "Gestión", label: "Gestión" },
     { value: "Organizacional", label: "Organizacional" },
   ];
-  const selectedEmpleado = useMemo(
-    () => empleados.find((e) => String(e._id) === String(scopeId)) || null,
-    [scopeId, empleados]
-  );
+const selectedEmpleado = useMemo(
+   () => {
+     const lista = Array.isArray(empleados) ? empleados : [];
+     const sid = scopeId != null ? String(scopeId) : "";
+     return lista.find(e => String(e?._id ?? e?.id) === sid) || null;
+   },
+   [scopeId, empleados]
+ );
 
   const empleadosFiltrados = useMemo(() => {
     const q = empQuery.trim().toLowerCase();
     const base = Array.isArray(empleados) ? empleados : [];
-    if (!q) return base.slice(0, 15);
+    if (!q) return base.slice(0, MAX_LIST);
     return base
       .filter((e) => {
         const n = `${e?.apellido ?? ""} ${e?.nombre ?? ""}`.toLowerCase();
         const a = (e?.apodo ?? "").toLowerCase();
         return n.includes(q) || a.includes(q);
       })
-      .slice(0, 20);
+      .slice(0, MAX_LIST);
   }, [empQuery, empleados]);
 
   /**
@@ -625,10 +630,7 @@ export default function FormularioAptitudes({
                             key={e._id}
                             type="button"
                             className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
-                            onClick={() => {
-                              setScopeId(e._id);
-                              setEmpOpen(false);
-                            }}
+                          onClick={() => { setScopeId(String(e._id ?? e.id)); setEmpOpen(false); }}
                           >
                             {e.apellido}, {e.nombre}
                             {e.apodo ? (

@@ -9,7 +9,7 @@ import EvaluacionFlujo from '@/pages/EvaluacionFlujo';
 import LegajoEmpleado from '@/pages/LegajoEmpleado.jsx';
 // Importar Paginas
 import GestionEstructura from '@/pages/GestionNomina';
-
+import RRHHEvaluaciones from '@/pages/RRHHEvaluaciones';
 import SeguimientoEjecutivo from '@/pages/SeguimientoEjecutivo';
 import Login from '@/pages/Login';
 import Forbidden from '@/pages/Forbidden';
@@ -66,7 +66,15 @@ element={<RequireAuth allow={['superadmin', 'directivo', 'rrhh', 'jefe_area']} a
      </RequireAuth>
    }
  />
-
+ 
+  <Route
+     path="/rrhh-evaluaciones"
+     element={
+       <RequireAuth allow={['superadmin','directivo','rrhh']}>
+         <RRHHEvaluaciones />
+       </RequireAuth>
+     }
+   />
          <Route
       path="/seguimiento"
 element={<RequireAuth allow={['directivo','rrhh','jefe_area','jefe_sector','superadmin']} allowReferente={true}>
