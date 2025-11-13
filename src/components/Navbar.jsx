@@ -158,8 +158,8 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                 {renderNavItem('/seguimiento-ejecutivo', 'Seguimiento Ejecutivo', true)}
 
                 {/* Objetivos (solo RRHH o Directivos) */}
-                {(hasRoleRRHH || hasRoleDirectivo) && renderNavItem('/plantillas', 'Objetivos', true)}
-
+               {(hasRoleRRHH || hasRoleDirectivo) && renderNavItem('/plantillas', 'Objetivos', true)}
+                {(hasRoleRRHH || hasRoleDirectivo) && renderNavItem('/rrhh-evaluaciones', 'Cierre RRHH', true)}
                 {/* Asignaciones (solo RRHH o Directivos) */}
                 {(hasRoleRRHH || hasRoleDirectivo) && renderNavItem('/asignaciones', 'Asignaciones', true)}
 

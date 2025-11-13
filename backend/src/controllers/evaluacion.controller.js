@@ -436,6 +436,65 @@ export async function reopenEvaluacion(req, res) {
   }
 }
 
+
+
+
+export async function listPendingHR(req, res) {
+  try {
+    const { periodo, plantillaId } = req.query;
+    const q = { estado: "PENDING_HR" };
+    if (periodo) q.periodo = String(periodo);
+    if (plantillaId) q.plantillaId = new mongoose.Types.ObjectId(String(plantillaId));
+
+    const items = await Evaluacion.find(q)
+      .populate({ path: "empleado", select: "nombre apellido area sector", populate: [
+        { path: "area", select: "nombre" },
+        { path: "sector", select: "nombre" },
+      ]})
+      .populate({ path: "manager", select: "nombre apellido email" })
+      .populate({ path: "plantillaId", select: "nombre" })
+      .lean();
+
+   // Devolver con alias consistentes
+    const mapped = items.map(ev => ({
+      ...ev,
+      plantilla: ev.plantillaId ? { _id: ev.plantillaId._id, nombre: ev.plantillaId.nombre } : null,
+    }));
+    res.json(mapped);
+  } catch (e) {
+    console.error("listPendingHR error", e);
+    res.status(500).json({ message: e.message || "Error listando pendientes" });
+  }
+}
+
+export async function closeBulk(req, res) {
+  try {
+    const { ids, filtro } = req.body || {};
+    let q = { estado: "PENDING_HR" };
+    if (Array.isArray(ids) && ids.length) {
+      q._id = { $in: ids.map(id => new mongoose.Types.ObjectId(String(id))) };
+    } else if (filtro) {
+      if (filtro.periodo) q.periodo = String(filtro.periodo);
+      if (filtro.plantillaId) q.plantillaId = new mongoose.Types.ObjectId(String(filtro.plantillaId));
+    } else {
+      return res.status(400).json({ message: "Enviar 'ids' o 'filtro'." });
+    }
+
+    const docs = await Evaluacion.find(q);
+    for (const ev of docs) {
+      ev.estado = "CLOSED";
+      ev.closedAt = new Date();
+      ev.hrReviewer = req.user?._id || ev.hrReviewer;
+      pushTimeline(ev, { by: req.user?._id, action: "HR_CLOSE_BULK" });
+      await ev.save();
+    }
+    res.json({ success: true, count: docs.length });
+  } catch (e) {
+    console.error("closeBulk error", e);
+    res.status(500).json({ message: e.message || "Error cerrando en lote" });
+  }
+}
+
 // Crear evaluación desde cero (si no existe aún)
 export async function createEvaluacion(req, res) {
   try {
