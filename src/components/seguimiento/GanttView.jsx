@@ -423,12 +423,41 @@ function ObjectivePicker({ open, onClose, datos, onPick }) {
 
 /* ===================== Componente ===================== */
 export default function GanttView({
-  grouped,               // modo nuevo (preferido)
+
+grouped = [], 
   filtered, tipoFiltro,  // legacy
   anio, zoom = "mes",
   openHitoModal,         // (item, empleados, hito)
   dueOnly = false,
 }) {
+
+  // 👇 modo de agrupación actual (lo trae groupItems)
+  const groupMode = grouped[0]?.kind || "item";
+
+  // 👇 cómo mostramos el/los empleados cuando agrupamos por Objetivo/Aptitud
+  const empleadosLabel = (g) => {
+    const arr = Array.from(g.empleados?.values?.() || []);
+    if (!arr.length) return "—";
+
+    if (arr.length === 1) {
+      const e = arr[0];
+      const nombre =
+        `${e.apellido || ""} ${e.nombre || ""}`.trim() ||
+        e.email ||
+        "—";
+      return nombre;
+    }
+
+    const first = arr[0];
+    const baseNombre =
+      `${first.apellido || ""} ${first.nombre || ""}`.trim() ||
+      first.email ||
+      "—";
+
+    const extra = arr.length - 1;
+    // Ej: "Pérez, Juan +3"
+    return `${baseNombre} +${extra}`;
+  };
   const usingGrouped = Array.isArray(grouped);
 
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -512,6 +541,7 @@ export default function GanttView({
         _rowKey: g.key,
         title: g.title,
         kind: g.kind || null, // "area" | "sector" | "empleado" | null
+        empleados: g.empleados, // Map de empleados para la columna Empleado(s)
         uniformTipo:
           new Set((g.items || []).map((it) => it._tipo)).size === 1
             ? (g.items?.[0]?._tipo ?? null)
@@ -546,32 +576,67 @@ export default function GanttView({
         objetivos: [{ nombre: it.nombre, tipo: it._tipo, item: it, empleados: [] }],
       })),
     }));
-    rowsToRender.sort((a, b) => a.title.localeCompare(b.title));
-  }
 
+  }
+// ===== ORDEN: agrupar visualmente por empleado cuando estamos en "Objetivo/Aptitud" =====
+  if (usingGrouped) {
+    if (groupMode === "item") {
+      const empName = (row) => (empleadosLabel(row) || "").toLowerCase();
+      rowsToRender.sort((a, b) => {
+        const ea = empName(a);
+        const eb = empName(b);
+        if (ea !== eb) return ea.localeCompare(eb, "es");
+        return (a.title || "").localeCompare(b.title || "", "es");
+      });
+    } else {
+      // para los otros modos (empleado/área/sector) ordenamos por título
+      rowsToRender.sort((a, b) =>
+        (a.title || "").localeCompare(b.title || "", "es")
+      );
+    }
+  } else {
+    // legacy sin "grouped"
+    rowsToRender.sort((a, b) =>
+      (a.title || "").localeCompare(b.title || "", "es")
+    );
+  }
   // ====== títulos e iconos uniformes ======
   const cleanTitle = (t) => (t || "").replace(/^[🎯💡🏢🧩👤]\s*/, "");
-
+const firstColTitle =
+    groupMode === "empleado"
+      ? "Empleado"
+      : groupMode === "area"
+      ? "Área"
+      : groupMode === "sector"
+      ? "Sector"
+      : "Objetivo / Aptitud / Grupo";
   return (
     <div className="overflow-x-auto">
       <Legend />
 
       <table className="w-full text-sm border-collapse">
-        <thead>
-          <tr className="border-y border-slate-200">
-            <th className="sticky left-0 z-20 bg-slate-50/70 backdrop-blur text-left px-3 py-2 w-1/3 min-w-[360px] font-semibold">
-              Objetivo / Aptitud / Grupo
-            </th>
-            {cols.map((c) => (
-              <th
-                key={c.key}
-                className="min-w-[7.5rem] w-32 px-2 py-2 text-center align-middle border-l border-slate-200 sticky top-0 z-10 bg-slate-50/70 backdrop-blur text-xs font-medium"
-              >
-                {c.label}
-              </th>
-            ))}
-          </tr>
-        </thead>
+       <thead>
+  <tr>
+    {groupMode === "item" && (
+      <th className="w-56 px-3 py-2 text-left text-xs font-semibold text-slate-500 border-b bg-slate-50">
+        Empleado(s)
+      </th>
+    )}
+
+     <th className="w-80 px-3 py-2 text-left text-xs font-semibold text-slate-500 border-b bg-slate-50">
+     {firstColTitle}
+    </th>
+
+    {cols.map((c) => (
+      <th
+        key={c.key}
+        className="px-3 py-2 text-center text-xs font-semibold text-slate-500 border-b bg-slate-50"
+      >
+        {c.label}
+      </th>
+    ))}
+  </tr>
+</thead>
 
         <tbody className="divide-y divide-slate-100">
           {rowsToRender.map((row) => {
@@ -587,6 +652,11 @@ export default function GanttView({
 
             return (
               <tr key={row._rowKey} className="odd:bg-white even:bg-slate-50/40 hover:bg-slate-50 transition-colors">
+                  {groupMode === "item" && (
+         <td className="px-3 py-2 text-sm border-b align-top whitespace-nowrap">
+           {empleadosLabel(row)}
+         </td>
+       )}
                 <td className="sticky left-0 z-10 bg-inherit px-3 py-2">
                   <div className="inline-flex items-center gap-1 font-medium text-slate-800" title={titleText}>
                     <span className={iconCls}>{icon}</span>
@@ -672,9 +742,12 @@ export default function GanttView({
             );
           })}
 
-          {rowsToRender.length === 0 && (
-            <tr>
-              <td className="text-center text-sm text-slate-500 py-12" colSpan={1 + cols.length}>
+    {rowsToRender.length === 0 && (
+           <tr>
+              <td
+                className="text-center text-sm text-slate-500 py-12"
+                colSpan={1 + cols.length + (groupMode === "item" ? 1 : 0)}
+              >
                 Sin resultados con los filtros actuales.
               </td>
             </tr>

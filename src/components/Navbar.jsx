@@ -149,7 +149,7 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
             ) : (
               <>
                 {/* Nómina */}
-                {renderNavItem('/gestion-estructura', 'Nomina', canViewEstructuraFinal)}
+                {renderNavItem('/gestion-estructura', 'Nomina', canViewEstructura)}
 
                 {/* Departamentos */}
                 {renderNavItem('/gestion-departamentos', 'Departamentos', canViewEstructuraFinal)}

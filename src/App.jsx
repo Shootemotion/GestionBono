@@ -52,7 +52,7 @@ function App() {
 
           <Route
         path="/gestion-estructura"
-element={<RequireAuth allow={['superadmin', 'directivo', 'rrhh', 'jefe_area']} allowReferente={true}>
+element={<RequireAuth allow={['superadmin', 'directivo', 'rrhh', 'jefe_area','visor']} allowReferente={true}>
       <GestionEstructura />
     </RequireAuth>
   }
@@ -66,7 +66,7 @@ element={<RequireAuth allow={['superadmin', 'directivo', 'rrhh', 'jefe_area']} a
      </RequireAuth>
    }
  />
- 
+
   <Route
      path="/rrhh-evaluaciones"
      element={
@@ -77,7 +77,7 @@ element={<RequireAuth allow={['superadmin', 'directivo', 'rrhh', 'jefe_area']} a
    />
          <Route
       path="/seguimiento"
-element={<RequireAuth allow={['directivo','rrhh','jefe_area','jefe_sector','superadmin']} allowReferente={true}>
+element={<RequireAuth allow={['directivo','rrhh','jefe_area','jefe_sector','superadmin','visor']} allowReferente={true}>
       <DashboardDesempeno />
     </RequireAuth>
   }

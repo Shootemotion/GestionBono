@@ -126,7 +126,7 @@ export default function SeguimientoReferente() {
 const [dueOnly, setDueOnly] = useState(false);   // <-- mueve estos acá
  const [sortDir, setSortDir] = useState("asc");
   // NUEVO: modo de agrupación
-  const [groupBy, setGroupBy] = useState("item"); // "item" | "empleado" | "area" | "sector"
+  const [groupBy, setGroupBy] = useState("empleado"); // "item" | "empleado" | "area" | "sector"
 
   useEffect(() => {
     if (!puedeVer) return;
