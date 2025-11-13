@@ -198,10 +198,19 @@ function GestionEstructura() {
 
       toast.success("¡Empleado guardado con éxito!");
       handleCloseModal();
-    } catch (error) {
-      console.error(error);
-      toast.error("Error al guardar el empleado.");
-    }
+  } catch (err) {
+  console.error('guardar empleado', err);
+  const status = err?.status || err?.response?.status;
+  const data = err?.data || err?.response?.data;
+  if (status === 409) {
+    // conflictos típicos: DNI / email duplicado
+    toast.error(data?.message || "Conflicto: DNI o Email ya registrado.");
+  } else if (status === 400) {
+    toast.error(data?.message || "Validación: revisá los campos requeridos.");
+  } else {
+    toast.error(data?.message || err?.message || "Error al guardar el empleado.");
+  }
+}
   };
 
   const handleEliminar = async (id, tipo) => {

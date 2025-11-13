@@ -5,6 +5,14 @@ import { toast } from "react-toastify";
 import Modal from "@/components/Modal.jsx";
 import { Button } from "@/components/ui/button";
 
+
+const toArray = (x) => {
+  if (Array.isArray(x)) return x;
+  if (x?.items && Array.isArray(x.items)) return x.items;
+  if (x?.data && Array.isArray(x.data)) return x.data;
+  if (x?.results && Array.isArray(x.results)) return x.results;
+  return [];
+};
 export default function UsuariosAdmin() {
   const [empleados, setEmpleados] = useState([]);
   const [users, setUsers] = useState([]);
@@ -29,9 +37,13 @@ export default function UsuariosAdmin() {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [emps, usrs] = await Promise.all([api("/empleados"), api("/usuarios")]);
-      setEmpleados(emps || []);
-      setUsers(usrs || []);
+// forzamos orden y tamaño generoso por si el backend pagina
+    const [emps, usrs] = await Promise.all([
+      api("/empleados?sort=-createdAt&limit=1000"),
+      api("/usuarios?limit=1000"),
+    ]);
+    setEmpleados(toArray(emps));
+    setUsers(toArray(usrs));
     } catch (err) {
       console.error(err);
       toast.error("No se pudieron cargar empleados/usuarios");
@@ -45,7 +57,7 @@ export default function UsuariosAdmin() {
   // Índice rápido de usuario por empleado
   const usersByEmpleado = useMemo(() => {
     const map = {};
-  (users || []).forEach(u => {
+ (Array.isArray(users) ? users : toArray(users)).forEach(u => {
     if (u.empleado) {
       const empId = typeof u.empleado === "object" ? u.empleado._id : u.empleado;
       map[String(empId)] = u;
@@ -65,7 +77,10 @@ export default function UsuariosAdmin() {
   // Filtrado por búsqueda y estado
   const empleadosFiltrados = useMemo(() => {
     const qi = q.trim().toLowerCase();
-    return empleados.filter(emp => {
+   const base = Array.isArray(empleados) ? empleados : toArray(empleados);
+ return base
+ .filter(Boolean)
+ .filter(emp => {
       // filtro por estado
       if (statusFilter !== "todos") {
         const st = empleadoEstado(emp);
@@ -263,7 +278,7 @@ const handleCreateAccount = async () => {
               </tr>
             </thead>
             <tbody>
-              {empleadosFiltrados.map(emp => {
+             {(empleadosFiltrados || []).map(emp => {
                 const u = usersByEmpleado[emp._id];
                 const estado = empleadoEstado(emp);
                 return (
