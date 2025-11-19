@@ -18,13 +18,116 @@ import {
   AlertDialogCancel,
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
+import { dashEmpleado } from "@/lib/dashboard";
 
 const ESTADOS = [
-  { code: "NO_ENVIADOS", label: "No enviados", color: "bg-slate-100 text-slate-700", ring: "ring-slate-300" },
-  { code: "PENDING_EMPLOYEE", label: "Enviados", color: "bg-amber-100 text-amber-800", ring: "ring-amber-300" },
-  { code: "PENDING_HR", label: "En RRHH", color: "bg-blue-100 text-blue-800", ring: "ring-blue-300" },
-  { code: "CLOSED", label: "Cerrados", color: "bg-emerald-100 text-emerald-800", ring: "ring-emerald-300" },
+  {
+    code: "NO_ENVIADOS",
+    label: "No enviados",
+    color: "bg-slate-100 text-slate-700",
+    ring: "ring-slate-300",
+  },
+  {
+    code: "PENDING_EMPLOYEE",
+    label: "Enviados",
+    color: "bg-amber-100 text-amber-800",
+    ring: "ring-amber-300",
+  },
+  {
+    code: "PENDING_HR",
+    label: "En RRHH",
+    color: "bg-blue-100 text-blue-800",
+    ring: "ring-blue-300",
+  },
+  {
+    code: "CLOSED",
+    label: "Cerrados",
+    color: "bg-emerald-100 text-emerald-800",
+    ring: "ring-emerald-300",
+  },
 ];
+
+const ProgressBar = ({ value = 0 }) => (
+  <div className="w-full h-2.5 rounded-full bg-slate-200/80 overflow-hidden">
+    <div
+      className="h-full bg-gradient-to-r from-indigo-500 to-indigo-400 transition-[width] duration-300"
+      style={{
+        width: `${Math.max(0, Math.min(100, Math.round(value)))}%`,
+      }}
+    />
+  </div>
+);
+
+function buildResumenEmpleado(data) {
+  if (!data) return null;
+
+  let objetivos = [];
+  let aptitudes = [];
+
+  if (Array.isArray(data.objetivos)) {
+    objetivos = data.objetivos;
+  } else if (Array.isArray(data.objetivos?.items)) {
+    objetivos = data.objetivos.items;
+  }
+
+  if (Array.isArray(data.aptitudes)) {
+    aptitudes = data.aptitudes;
+  } else if (Array.isArray(data.aptitudes?.items)) {
+    aptitudes = data.aptitudes.items;
+  }
+
+  const pesos = objetivos.map((o) => Number(o.peso ?? o.pesoBase ?? 0));
+  const prog = objetivos.map((o) => Number(o.progreso ?? 0));
+  const totalPeso = pesos.reduce((a, b) => a + b, 0) || 0;
+
+  const scoreObj =
+    totalPeso > 0
+      ? pesos.reduce((acc, p, i) => acc + p * (prog[i] || 0), 0) / totalPeso
+      : prog.length
+      ? prog.reduce((a, b) => a + b, 0) / prog.length
+      : 0;
+
+  const punt = aptitudes.map((a) => Number(a.puntuacion ?? a.score ?? 0));
+  const scoreApt = punt.length
+    ? punt.reduce((a, b) => a + b, 0) / punt.length
+    : 0;
+
+  const global = (scoreObj + scoreApt) / 2;
+
+  return {
+    objetivos: { cantidad: objetivos.length, peso: totalPeso, score: scoreObj },
+    aptitudes: { cantidad: aptitudes.length, score: scoreApt },
+    global,
+  };
+}
+
+// --- deduplicador robusto por _id o (nombre+unidad) ---
+function dedupeMetas(arr = []) {
+  const seen = new Set();
+  const out = [];
+  for (const m of arr) {
+    const key = m?._id ? `id:${m._id}` : `nu:${m?.nombre}__${m?.unidad}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(m);
+    }
+  }
+  return out;
+}
+
+function deepCloneMetas(metas = []) {
+  const cloned = metas.map((m) => ({
+    _id: m._id,
+    nombre: m.nombre,
+    esperado: m.esperado,
+    unidad: m.unidad,
+    operador: m.operador || ">=",
+    resultado: m.resultado ?? null,
+    cumple: !!m.cumple && m.resultado != null ? !!m.cumple : false,
+    peso: m.peso ?? m.pesoBase ?? null,
+  }));
+  return dedupeMetas(cloned);
+}
 
 export default function EvaluacionFlujo() {
   const { plantillaId, periodo, empleadoId } = useParams();
@@ -35,7 +138,7 @@ export default function EvaluacionFlujo() {
   // ===== Roles y acceso =====
   const esReferente = Boolean(
     (Array.isArray(user?.referenteAreas) && user.referenteAreas.length > 0) ||
-    (Array.isArray(user?.referenteSectors) && user.referenteSectors.length > 0)
+      (Array.isArray(user?.referenteSectors) && user.referenteSectors.length > 0)
   );
   const esDirector = user?.rol === "directivo" || user?.isRRHH === true;
   const esSuperAdmin = user?.rol === "superadmin";
@@ -44,10 +147,15 @@ export default function EvaluacionFlujo() {
 
   // ===== Estado =====
   const [anio] = useState(
-    state?.anio ?? Number(String(periodo || new Date().getFullYear()).slice(0, 4))
+    state?.anio ??
+      Number(String(periodo || new Date().getFullYear()).slice(0, 4))
   );
-  const [itemSeleccionado, setItemSeleccionado] = useState(state?.itemSeleccionado ?? null);
-  const [empleadosDelItem, setEmpleadosDelItem] = useState(state?.empleadosDelItem ?? []);
+  const [itemSeleccionado, setItemSeleccionado] = useState(
+    state?.itemSeleccionado ?? null
+  );
+  const [empleadosDelItem, setEmpleadosDelItem] = useState(
+    state?.empleadosDelItem ?? []
+  );
   const [localHito, setLocalHito] = useState(
     state?.hito
       ? {
@@ -61,54 +169,42 @@ export default function EvaluacionFlujo() {
         }
       : null
   );
-const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [selectedEmpleadoId, setSelectedEmpleadoId] = useState(
-    empleadoId ? empleadoId : (state?.empleadosDelItem?.[0]?._id ? state.empleadosDelItem[0]._id : null)
+    empleadoId
+      ? empleadoId
+      : state?.empleadosDelItem?.[0]?._id
+      ? state.empleadosDelItem[0]._id
+      : null
   );
   const [comentarioManager, setComentarioManager] = useState("");
   const [empleadosEstados, setEmpleadosEstados] = useState([]);
   const [saving, setSaving] = useState(false);
   const [tabEstado, setTabEstado] = useState("NO_ENVIADOS");
+  const [dashEmpleadoData, setDashEmpleadoData] = useState(null);
 
-  const isAptitud = (itemSeleccionado?._tipo === "aptitud") || (itemSeleccionado?.tipo === "aptitud");
+  const isAptitud =
+    itemSeleccionado?._tipo === "aptitud" ||
+    itemSeleccionado?.tipo === "aptitud";
   const scaleToPercent = (v) => (v ? v * 20 : null);
-  const editable = localHito?.estado === "MANAGER_DRAFT" || !localHito?.estado;
- // --- deduplicador robusto por _id o (nombreunidad) ---
- function dedupeMetas(arr = []) {
-   const seen = new Set();
-   const out = [];
-   for (const m of arr) {
-     const key = m?._id ? `id:${m._id}` : `nu:${m?.nombre}__${m?.unidad}`;
-     if (!seen.has(key)) {
-       seen.add(key);
-       out.push(m);
-     }
-   }
-   return out;
- }
-  /* ---------------- helpers ---------------- */
-function deepCloneMetas(metas = []) {
-   // clonado + normalización + dedupe
-   const cloned = metas.map(m => ({
-      _id: m._id,
-      nombre: m.nombre,
-      esperado: m.esperado,
-      unidad: m.unidad,
-      operador: m.operador || ">=",
-      resultado: m.resultado ?? null,
-      cumple: !!m.cumple && m.resultado != null ? !!m.cumple : false,
-      peso: m.peso ?? m.pesoBase ?? null,
-    }));
-    return dedupeMetas(cloned);
-  }
+  const editable =
+    localHito?.estado === "MANAGER_DRAFT" || !localHito?.estado;
 
   function buildBlankLocalHito(basePlantilla, periodoStr) {
-    const baseMetas = Array.isArray(basePlantilla?.metas) ? basePlantilla.metas : [];
+    const baseMetas = Array.isArray(basePlantilla?.metas)
+      ? basePlantilla.metas
+      : [];
     return {
       periodo: periodoStr,
       fecha: null,
       estado: "MANAGER_DRAFT",
-      metas: dedupeMetas(deepCloneMetas(baseMetas).map(m => ({ ...m, resultado: null, cumple: false }))),
+      metas: dedupeMetas(
+        deepCloneMetas(baseMetas).map((m) => ({
+          ...m,
+          resultado: null,
+          cumple: false,
+        }))
+      ),
       actual: null,
       comentario: "",
       escala: null,
@@ -117,18 +213,22 @@ function deepCloneMetas(metas = []) {
 
   function hydrateFromEmpEval(empEval) {
     if (!empEval) return;
-     const metas = dedupeMetas(
-   (Array.isArray(empEval.metasResultados) && empEval.metasResultados.length
-     ? deepCloneMetas(empEval.metasResultados)
-     : deepCloneMetas(itemSeleccionado?.metas ?? []))
- );
+
+    const metas = dedupeMetas(
+      Array.isArray(empEval.metasResultados) &&
+        empEval.metasResultados.length > 0
+        ? deepCloneMetas(empEval.metasResultados)
+        : deepCloneMetas(itemSeleccionado?.metas ?? [])
+    );
 
     setLocalHito({
       periodo,
       fecha: empEval.fecha ?? null,
       estado: empEval.estado ?? "MANAGER_DRAFT",
       metas,
-      actual: empEval.actual ?? (metas.length ? calcularResultadoGlobal(metas) : null),
+      actual:
+        empEval.actual ??
+        (metas.length ? calcularResultadoGlobal(metas) : null),
       comentario: empEval.comentario ?? "",
       escala: empEval.escala ?? null,
     });
@@ -174,11 +274,20 @@ function deepCloneMetas(metas = []) {
 
   // Merge estados existentes
   const fetchEstados = async () => {
-    if (!itemSeleccionado || !localHito?.periodo || (empleadosDelItem || []).length === 0) return;
+    if (
+      !itemSeleccionado ||
+      !localHito?.periodo ||
+      (empleadosDelItem || []).length === 0
+    )
+      return;
     try {
-      const evals = await api(`/evaluaciones?plantillaId=${itemSeleccionado._id}&periodo=${localHito.periodo}`);
+      const evals = await api(
+        `/evaluaciones?plantillaId=${itemSeleccionado._id}&periodo=${localHito.periodo}`
+      );
       const merged = (empleadosDelItem || []).map((emp) => {
-        const ev = evals.find((e) => String(e.empleado) === String(emp._id));
+        const ev = evals.find(
+          (e) => String(e.empleado) === String(emp._id)
+        );
         return {
           ...emp,
           estado: ev?.estado || "NO_ENVIADOS",
@@ -192,10 +301,10 @@ function deepCloneMetas(metas = []) {
       });
       setEmpleadosEstados(merged);
 
-      // Si el seleccionado cambió de estado, mantenemos selección,
-      // pero rehidratamos desde backend o a blanco si no hay registro.
       if (selectedEmpleadoId) {
-        const empEval = merged.find((e) => String(e._id) === String(selectedEmpleadoId));
+        const empEval = merged.find(
+          (e) => String(e._id) === String(selectedEmpleadoId)
+        );
         if (empEval?.evaluacionId) {
           hydrateFromEmpEval(empEval);
         } else {
@@ -212,16 +321,23 @@ function deepCloneMetas(metas = []) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemSeleccionado, localHito?.periodo, empleadosDelItem]);
 
-  // ✅ Si llegaron empleados (por state o fetch) y no hay seleccionado, seleccioná el primero
-useEffect(() => {
- if (!selectedEmpleadoId && Array.isArray(empleadosDelItem) && empleadosDelItem.length > 0) {
-   setSelectedEmpleadoId(empleadosDelItem[0]._id);
-  }
-}, [empleadosDelItem, selectedEmpleadoId]);
-  // Cuando cambia el empleado seleccionado, rehidratar SIEMPRE desde la lista (o reset)
+  // Si llegaron empleados y no hay seleccionado, seleccionar el primero
+  useEffect(() => {
+    if (
+      !selectedEmpleadoId &&
+      Array.isArray(empleadosDelItem) &&
+      empleadosDelItem.length > 0
+    ) {
+      setSelectedEmpleadoId(empleadosDelItem[0]._id);
+    }
+  }, [empleadosDelItem, selectedEmpleadoId]);
+
+  // Cuando cambia el empleado seleccionado, rehidratar
   useEffect(() => {
     if (!selectedEmpleadoId) return;
-    const empEval = empleadosEstados.find((e) => String(e._id) === String(selectedEmpleadoId));
+    const empEval = empleadosEstados.find(
+      (e) => String(e._id) === String(selectedEmpleadoId)
+    );
     if (empEval?.evaluacionId) {
       hydrateFromEmpEval(empEval);
     } else if (itemSeleccionado) {
@@ -230,16 +346,51 @@ useEffect(() => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEmpleadoId, empleadosEstados]);
 
-  // Si cambiamos de tab de estado y el seleccionado no pertenece, seleccionar el primero de ese estado y reset/hidratar
+  // Dashboard del empleado (modo MiDesempeño, pero visto por el jefe)
   useEffect(() => {
-    const inTab = empleadosEstados.filter(e => e.estado === tabEstado);
-    const currentIsInTab = inTab.some(e => String(e._id) === String(selectedEmpleadoId));
+    (async () => {
+      if (!selectedEmpleadoId) {
+        setDashEmpleadoData(null);
+        return;
+      }
+      try {
+        const res = await dashEmpleado(selectedEmpleadoId, anio);
+        if (!res) {
+          setDashEmpleadoData(null);
+          return;
+        }
+        const normalized = { ...res };
+        if (
+          normalized.objetivos?.items &&
+          !Array.isArray(normalized.objetivos)
+        ) {
+          normalized.objetivos = normalized.objetivos.items;
+        }
+        if (
+          normalized.aptitudes?.items &&
+          !Array.isArray(normalized.aptitudes)
+        ) {
+          normalized.aptitudes = normalized.aptitudes.items;
+        }
+        setDashEmpleadoData(normalized);
+      } catch (e) {
+        console.error("dashEmpleado error:", e);
+        setDashEmpleadoData(null);
+      }
+    })();
+  }, [selectedEmpleadoId, anio]);
+
+  // Cambios de tab de estado
+  useEffect(() => {
+    const inTab = empleadosEstados.filter((e) => e.estado === tabEstado);
+    const currentIsInTab = inTab.some(
+      (e) => String(e._id) === String(selectedEmpleadoId)
+    );
     if (!currentIsInTab) {
       const first = inTab[0];
       if (first) {
         setSelectedEmpleadoId(first._id);
       } else {
-        // No hay nadie en ese estado: des-selecciono y blank
         setSelectedEmpleadoId(null);
         if (itemSeleccionado) resetToBlank();
       }
@@ -252,20 +403,30 @@ useEffect(() => {
       <div className="container-app p-6">
         <div className="max-w-3xl mx-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200 p-6 text-center">
           <h2 className="text-lg font-semibold mb-1">Acceso restringido</h2>
-          <p className="text-sm text-slate-600">No tenés permisos para ver esta evaluación.</p>
+          <p className="text-sm text-slate-600">
+            No tenés permisos para ver esta evaluación.
+          </p>
         </div>
       </div>
     );
   }
 
   const countsPorEstado = useMemo(() => {
-    const c = { NO_ENVIADOS: 0, PENDING_EMPLOYEE: 0, PENDING_HR: 0, CLOSED: 0 };
-    for (const e of empleadosEstados) c[e.estado] = (c[e.estado] || 0) + 1;
+    const c = {
+      NO_ENVIADOS: 0,
+      PENDING_EMPLOYEE: 0,
+      PENDING_HR: 0,
+      CLOSED: 0,
+    };
+    for (const e of empleadosEstados) {
+      c[e.estado] = (c[e.estado] || 0) + 1;
+    }
     return c;
   }, [empleadosEstados]);
 
   const persistAndFlow = async (action) => {
     if (!itemSeleccionado || !localHito) return;
+
     if (!selectedEmpleadoId) {
       toast.error("Seleccioná un empleado.");
       return;
@@ -285,42 +446,57 @@ useEffect(() => {
       const raw = calcularResultadoGlobal(localHito.metas ?? []);
       actualToSend = Number.isFinite(raw) ? Number(raw.toFixed(1)) : 0;
     }
+
     setLocalHito((prev) => ({ ...prev, actual: actualToSend }));
 
     try {
       setSaving(true);
 
-      // Guardado/PUT en borrador
       const body = {
         empleado: selectedEmpleadoId,
         plantillaId: itemSeleccionado._id,
-        year: Number(String(localHito?.periodo || "").slice(0, 4)),
+        year: Number(
+          String(localHito?.periodo || "").slice(0, 4)
+        ),
         periodo: localHito.periodo,
         actual: actualToSend,
         comentario: localHito.comentario ?? "",
         comentarioManager: comentarioManager ?? "",
- ...(isApt
-   ? { escala: Number(localHito?.escala ?? 0), metasResultados: [] }
-   : { metasResultados: Array.isArray(localHito.metas) ? dedupeMetas(localHito.metas) : [] }),
+        ...(isApt
+          ? { escala: Number(localHito?.escala ?? 0), metasResultados: [] }
+          : {
+              metasResultados: Array.isArray(localHito.metas)
+                ? dedupeMetas(localHito.metas)
+                : [],
+            }),
         estado: "MANAGER_DRAFT",
       };
 
       await api("/evaluaciones", { method: "POST", body });
-      await api(`/evaluaciones/${selectedEmpleadoId}/${itemSeleccionado._id}/${localHito.periodo}`, { method: "PUT", body });
+      await api(
+        `/evaluaciones/${selectedEmpleadoId}/${itemSeleccionado._id}/${localHito.periodo}`,
+        { method: "PUT", body }
+      );
 
       if (action === "toEmployee") {
-        // Buscar la evaluación y mover estado
-        const evals = await api(`/evaluaciones?plantillaId=${itemSeleccionado._id}&periodo=${localHito.periodo}`);
-        const target = evals.find((e) => String(e.empleado) === String(selectedEmpleadoId));
+        const evals = await api(
+          `/evaluaciones?plantillaId=${itemSeleccionado._id}&periodo=${localHito.periodo}`
+        );
+        const target = evals.find(
+          (e) => String(e.empleado) === String(selectedEmpleadoId)
+        );
         if (target) {
           if (target.estado !== "MANAGER_DRAFT") {
-            await api(`/evaluaciones/${target._id}/reopen`, { method: "POST" });
+            await api(`/evaluaciones/${target._id}/reopen`, {
+              method: "POST",
+            });
           }
-          await api(`/evaluaciones/${target._id}/submit-to-employee`, { method: "POST" });
+          await api(
+            `/evaluaciones/${target._id}/submit-to-employee`,
+            { method: "POST" }
+          );
         }
         toast.success("Enviado al empleado");
-
-        // Refresh y mover pestaña
         await fetchEstados();
         setTabEstado("PENDING_EMPLOYEE");
       } else if (action === "draft") {
@@ -336,7 +512,6 @@ useEffect(() => {
     }
   };
 
-  // ====== UI Helpers ======
   const Chip = ({ children }) => (
     <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-slate-200 bg-slate-50">
       {children}
@@ -365,7 +540,9 @@ useEffect(() => {
               <div className="flex items-center gap-2 mt-0.5">
                 <Chip>{isAptitud ? "Aptitud" : "Objetivo"}</Chip>
                 {itemSeleccionado?.fechaLimite && (
-                  <Chip>Vence: {itemSeleccionado.fechaLimite.slice(0, 10)}</Chip>
+                  <Chip>
+                    Vence: {itemSeleccionado.fechaLimite.slice(0, 10)}
+                  </Chip>
                 )}
               </div>
             </div>
@@ -373,39 +550,52 @@ useEffect(() => {
 
           <div className="flex items-center gap-2">
             <div className="text-2xl font-bold text-primary mr-2">
-              {localHito?.actual != null ? `${Number(localHito.actual).toFixed(1)}%` : "—"}
+              {localHito?.actual != null
+                ? `${Number(localHito.actual).toFixed(1)}%`
+                : "—"}
             </div>
-            <Button variant="outline" onClick={() => persistAndFlow("draft")} disabled={saving}>
+            <Button
+              variant="outline"
+              onClick={() => persistAndFlow("draft")}
+              disabled={saving}
+            >
               Guardar borrador
             </Button>
 
-           <Button disabled={saving} onClick={() => setConfirmOpen(true)}>
-   Enviar al empleado
- </Button>
-<AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-   <AlertDialogContent
-     className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 sm:max-w-md sm:rounded-2xl"
-   >
-     <AlertDialogHeader>
-       <AlertDialogTitle>¿Confirmás el envío?</AlertDialogTitle>
-       <AlertDialogDescription>
-         Una vez enviado, el empleado podrá ver la evaluación y continuar con su parte del flujo.
-         No podrás modificar las metas ni los valores. ¿Querés continuar?
-       </AlertDialogDescription>
-     </AlertDialogHeader>
-     <AlertDialogFooter>
-       <AlertDialogCancel>Cancelar</AlertDialogCancel>
-       <AlertDialogAction
-         onClick={() => {
-           setConfirmOpen(false);
-           persistAndFlow("toEmployee");
-         }}
-       >
-         Sí, enviar
-       </AlertDialogAction>
-     </AlertDialogFooter>
-   </AlertDialogContent>
- </AlertDialog>
+            <Button
+              disabled={saving}
+              onClick={() => setConfirmOpen(true)}
+            >
+              Enviar al empleado
+            </Button>
+            <AlertDialog
+              open={confirmOpen}
+              onOpenChange={setConfirmOpen}
+            >
+              <AlertDialogContent className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 sm:max-w-md sm:rounded-2xl">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    ¿Confirmás el envío?
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Una vez enviado, el empleado podrá ver la evaluación y
+                    continuar con su parte del flujo. No podrás modificar
+                    las metas ni los valores. ¿Querés continuar?
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => {
+                      setConfirmOpen(false);
+                      persistAndFlow("toEmployee");
+                    }}
+                  >
+                    Sí, enviar
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
       </div>
@@ -418,12 +608,19 @@ useEffect(() => {
           {itemSeleccionado && (
             <div className="rounded-xl border bg-white p-4 shadow-sm">
               <h3 className="font-medium">Detalle</h3>
-              <p className="text-sm text-slate-600 mt-1">{itemSeleccionado?.descripcion ?? "Sin descripción"}</p>
+              <p className="text-sm text-slate-600 mt-1">
+                {itemSeleccionado?.descripcion ?? "Sin descripción"}
+              </p>
               <div className="grid grid-cols-2 gap-3 mt-3 text-sm">
-                {(itemSeleccionado?.pesoBase != null || itemSeleccionado?.peso != null) && (
+                {(itemSeleccionado?.pesoBase != null ||
+                  itemSeleccionado?.peso != null) && (
                   <div className="rounded-md border p-3 bg-slate-50">
                     <span className="text-xs text-slate-500">Peso</span>
-                    <div className="font-semibold">{itemSeleccionado?.pesoBase ?? itemSeleccionado?.peso}%</div>
+                    <div className="font-semibold">
+                      {itemSeleccionado?.pesoBase ??
+                        itemSeleccionado?.peso}
+                      %
+                    </div>
                   </div>
                 )}
                 <div className="rounded-md border p-3 bg-slate-50">
@@ -447,9 +644,16 @@ useEffect(() => {
                       : "bg-slate-50 hover:bg-slate-100 ring-slate-200"
                   }`}
                 >
-                  <span className={`inline-flex items-center gap-2 ${s.color.replace("bg-", "text-")}`}>
+                  <span
+                    className={`inline-flex items-center gap-2 ${s.color.replace(
+                      "bg-",
+                      "text-"
+                    )}`}
+                  >
                     {s.label}
-                    <span className={`ml-1 inline-flex items-center justify-center rounded-full px-1.5 text-[11px] ${s.color}`}>
+                    <span
+                      className={`ml-1 inline-flex items-center justify-center rounded-full px-1.5 text-[11px] ${s.color}`}
+                    >
                       {countsPorEstado[s.code] || 0}
                     </span>
                   </span>
@@ -461,7 +665,8 @@ useEffect(() => {
               {empleadosEstados
                 .filter((e) => e.estado === tabEstado)
                 .map((emp) => {
-                  const selected = String(emp._id) === String(selectedEmpleadoId);
+                  const selected =
+                    String(emp._id) === String(selectedEmpleadoId);
                   return (
                     <div
                       key={emp._id}
@@ -477,19 +682,28 @@ useEffect(() => {
                           {emp.apellido}, {emp.nombre}
                         </div>
                         {emp.actual != null && (
-                          <div className="text-xs font-semibold text-primary">{emp.actual.toFixed(1)}%</div>
+                          <div className="text-xs font-semibold text-primary">
+                            {emp.actual.toFixed(1)}%
+                          </div>
                         )}
                       </div>
                       <div className="mt-1 flex items-center gap-2">
                         <span className="text-[11px] text-slate-500 italic">
-                          {ESTADOS.find(s => s.code === emp.estado)?.label}
+                          {
+                            ESTADOS.find(
+                              (s) => s.code === emp.estado
+                            )?.label
+                          }
                         </span>
                       </div>
                     </div>
                   );
                 })}
-              {empleadosEstados.filter((e) => e.estado === tabEstado).length === 0 && (
-                <p className="text-xs text-muted-foreground py-6 text-center">No hay empleados en este estado.</p>
+              {empleadosEstados.filter((e) => e.estado === tabEstado)
+                .length === 0 && (
+                <p className="text-xs text-muted-foreground py-6 text-center">
+                  No hay empleados en este estado.
+                </p>
               )}
             </div>
           </div>
@@ -497,22 +711,31 @@ useEffect(() => {
 
         {/* CENTRO (lg:col-span-5) */}
         <div className="lg:col-span-5 space-y-4">
-          {/* Comentarios (arriba) */}
+          {/* Comentarios */}
           <div className="rounded-xl border bg-white p-4 shadow-sm">
             <h3 className="font-medium mb-3">📝 Comentarios</h3>
             <div className="space-y-4">
               <div>
-                <label className="text-sm font-medium">Comentario del período (para historial)</label>
+                <label className="text-sm font-medium">
+                  Comentario del período (para historial)
+                </label>
                 <textarea
                   className="w-full rounded-md border px-3 py-2 text-sm mt-1"
                   value={localHito?.comentario ?? ""}
                   disabled={!editable}
-                  onChange={(e) => setLocalHito((p) => ({ ...p, comentario: e.target.value }))}
+                  onChange={(e) =>
+                    setLocalHito((p) => ({
+                      ...p,
+                      comentario: e.target.value,
+                    }))
+                  }
                   rows={3}
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">Comentario del manager (para empleado)</label>
+                <label className="text-sm font-medium">
+                  Comentario del manager (para empleado)
+                </label>
                 <textarea
                   className="w-full rounded-md border px-3 py-2 text-sm mt-1"
                   placeholder="Este comentario se verá al enviar al empleado / RRHH"
@@ -525,13 +748,15 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* Metas (abajo) */}
+          {/* Metas */}
           <div className="rounded-xl border bg-white p-4 shadow-sm">
             <h3 className="font-medium mb-3">🎯 Metas</h3>
             {isAptitud ? (
               <div className="grid gap-3">
                 <div className="border rounded-md p-3 bg-background shadow-sm">
-                  <label className="text-xs text-muted-foreground">Escala de evaluación</label>
+                  <label className="text-xs text-muted-foreground">
+                    Escala de evaluación
+                  </label>
                   <select
                     className="mt-1 w-full rounded-md border px-2 py-2 text-sm"
                     disabled={!editable}
@@ -540,85 +765,138 @@ useEffect(() => {
                       setLocalHito((prev) => ({
                         ...prev,
                         escala: Number(e.target.value || 0),
-                        actual: scaleToPercent(Number(e.target.value || 0)),
+                        actual: scaleToPercent(
+                          Number(e.target.value || 0)
+                        ),
                       }))
                     }
                   >
                     <option value="">Seleccionar…</option>
-                    <option value={1}>1 - Insatisfactorio / No cumple</option>
-                    <option value={2}>2 - Necesita mejorar / A veces cumple</option>
-                    <option value={3}>3 - Cumple con las expectativas</option>
-                    <option value={4}>4 - Supera las expectativas</option>
+                    <option value={1}>
+                      1 - Insatisfactorio / No cumple
+                    </option>
+                    <option value={2}>
+                      2 - Necesita mejorar / A veces cumple
+                    </option>
+                    <option value={3}>
+                      3 - Cumple con las expectativas
+                    </option>
+                    <option value={4}>
+                      4 - Supera las expectativas
+                    </option>
                     <option value={5}>5 - Sobresaliente</option>
                   </select>
                   <p className="text-xs text-muted-foreground mt-2">
-                    Resultado global: <b>{localHito?.escala ? `${scaleToPercent(localHito.escala)}%` : "—"}</b>
+                    Resultado global:{" "}
+                    <b>
+                      {localHito?.escala
+                        ? `${scaleToPercent(
+                            localHito.escala
+                          )}%`
+                        : "—"}
+                    </b>
                   </p>
                 </div>
               </div>
             ) : (
               <div className="grid gap-3">
-                {dedupeMetas(localHito?.metas || []).map((m, idx) => (
-                  <div key={`${m._id ?? m.nombre}-${idx}`} className="border rounded-md p-3 bg-background shadow-sm">
-                    <p className="text-sm font-semibold">{m.nombre}</p>
-                    <p className="text-xs text-gray-500">Esperado: {m.operador || ">="} {m.esperado} {m.unidad}</p>
+                {dedupeMetas(localHito?.metas || []).map(
+                  (m, idx) => (
+                    <div
+                      key={`${m._id ?? m.nombre}-${idx}`}
+                      className="border rounded-md p-3 bg-background shadow-sm"
+                    >
+                      <p className="text-sm font-semibold">
+                        {m.nombre}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Esperado: {m.operador || ">="} {m.esperado}{" "}
+                        {m.unidad}
+                      </p>
 
-                    {m.unidad === "Cumple/No Cumple" ? (
-                      <label className="flex items-center gap-2 mt-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={!!m.resultado}
-                          disabled={!editable}
-                          onChange={(e) => {
-                            const val = e.target.checked;
-                            setLocalHito((prev) => {
-                          
-  const metas = dedupeMetas([...(prev.metas || [])]);
-                              metas[idx] = { ...metas[idx], resultado: val, cumple: val };
-                              return { ...prev, metas };
-                            });
-                          }}
-                        />
-                        Cumplido
-                      </label>
-                    ) : (
-                      <>
-                        <input
-                          type="number"
-                          className="w-full rounded-md border px-2 py-1 text-sm mt-2 focus:ring-2 focus:ring-primary/40 outline-none"
-                          placeholder="Resultado alcanzado"
-                          value={m.resultado ?? ""}
-                          disabled={!editable}
-                          onChange={(e) => {
-                            const valor = e.target.value === "" ? null : Number(e.target.value);
-                            setLocalHito((prev) => {
-                            const metas = dedupeMetas([...(prev.metas || [])]);
-                              metas[idx] = {
-                                ...metas[idx],
-                                resultado: valor,
-                                cumple: evaluarCumple(valor, metas[idx].esperado, metas[idx].operador, metas[idx].unidad),
-                              };
-                              return { ...prev, metas };
-                            });
-                          }}
-                        />
-                        {m.resultado !== null && m.resultado !== undefined && (
-                          <p
-                            className={`text-xs mt-1 font-medium ${
-                              evaluarCumple(m.resultado, m.esperado, m.operador, m.unidad)
-                                ? "text-green-600"
-                                : "text-red-600"
-                            }`}
-                          >
-                            {evaluarCumple(m.resultado, m.esperado, m.operador, m.unidad)
-                              ? "✔ Cumplido"
-                              : "✘ No cumplido"}
-                          </p>
-                        )}
-                      </>
-                    )}
-                  </div>
-                ))}
+                      {m.unidad === "Cumple/No Cumple" ? (
+                        <label className="flex items-center gap-2 mt-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={!!m.resultado}
+                            disabled={!editable}
+                            onChange={(e) => {
+                              const val = e.target.checked;
+                              setLocalHito((prev) => {
+                                const metas = dedupeMetas([
+                                  ...(prev.metas || []),
+                                ]);
+                                metas[idx] = {
+                                  ...metas[idx],
+                                  resultado: val,
+                                  cumple: val,
+                                };
+                                return { ...prev, metas };
+                              });
+                            }}
+                          />
+                          Cumplido
+                        </label>
+                      ) : (
+                        <>
+                          <input
+                            type="number"
+                            className="w-full rounded-md border px-2 py-1 text-sm mt-2 focus:ring-2 focus:ring-primary/40 outline-none"
+                            placeholder="Resultado alcanzado"
+                            value={m.resultado ?? ""}
+                            disabled={!editable}
+                            onChange={(e) => {
+                              const valor =
+                                e.target.value === ""
+                                  ? null
+                                  : Number(e.target.value);
+                              setLocalHito((prev) => {
+                                const metas = dedupeMetas([
+                                  ...(prev.metas || []),
+                                ]);
+                                metas[idx] = {
+                                  ...metas[idx],
+                                  resultado: valor,
+                                  cumple: evaluarCumple(
+                                    valor,
+                                    metas[idx].esperado,
+                                    metas[idx].operador,
+                                    metas[idx].unidad
+                                  ),
+                                };
+                                return { ...prev, metas };
+                              });
+                            }}
+                          />
+                          {m.resultado !== null &&
+                            m.resultado !== undefined && (
+                              <p
+                                className={`text-xs mt-1 font-medium ${
+                                  evaluarCumple(
+                                    m.resultado,
+                                    m.esperado,
+                                    m.operador,
+                                    m.unidad
+                                  )
+                                    ? "text-green-600"
+                                    : "text-red-600"
+                                }`}
+                              >
+                                {evaluarCumple(
+                                  m.resultado,
+                                  m.esperado,
+                                  m.operador,
+                                  m.unidad
+                                )
+                                  ? "✔ Cumplido"
+                                  : "✘ No cumplido"}
+                              </p>
+                            )}
+                        </>
+                      )}
+                    </div>
+                  )
+                )}
               </div>
             )}
           </div>
@@ -626,12 +904,74 @@ useEffect(() => {
 
         {/* DERECHA (lg:col-span-3) */}
         <div className="lg:col-span-3 space-y-4">
+          {/* Resumen global del empleado (mini MiDesempeño) */}
+          {selectedEmpleadoId &&
+            dashEmpleadoData &&
+            (() => {
+              const resumen = buildResumenEmpleado(dashEmpleadoData);
+              if (!resumen) return null;
+              return (
+                <div className="rounded-xl border bg-white p-4 shadow-sm">
+                  <div className="text-xs text-slate-500 mb-1">
+                    Resultado anual del empleado
+                  </div>
+                  <div className="text-lg font-semibold mb-2">
+                    Global: {Math.round(resumen.global)}%
+                  </div>
+                  <ProgressBar value={resumen.global} />
+                  <div className="mt-4 space-y-3 text-sm">
+                    <div>
+                      <div className="flex justify-between mb-1 text-xs text-slate-500">
+                        <span>🎯 Objetivos</span>
+                        <span>
+                          {Math.round(
+                            resumen.objetivos.score
+                          )}
+                          %{" "}
+                          {resumen.objetivos.peso
+                            ? `(peso total ${resumen.objetivos.peso}%)`
+                            : ""}
+                        </span>
+                      </div>
+                      <ProgressBar value={resumen.objetivos.score} />
+                    </div>
+                    <div>
+                      <div className="flex justify-between mb-1 text-xs text-slate-500">
+                        <span>💡 Aptitudes</span>
+                        <span>
+                          {Math.round(
+                            resumen.aptitudes.score
+                          )}
+                          %
+                        </span>
+                      </div>
+                      <ProgressBar value={resumen.aptitudes.score} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+          {/* Trazabilidad del ítem actual */}
           {itemSeleccionado && (
             <TraceabilityCard
               objetivo={itemSeleccionado}
               trazabilidad={[
-                { estado: localHito?.estado?.toLowerCase() || "borrador", fecha: localHito?.fecha, usuario: "Jefe X" },
-                ...(localHito?.comentario ? [{ estado: "feedback", fecha: new Date(), comentario: localHito.comentario }] : []),
+                {
+                  estado:
+                    localHito?.estado?.toLowerCase() || "borrador",
+                  fecha: localHito?.fecha,
+                  usuario: "Jefe X",
+                },
+                ...(localHito?.comentario
+                  ? [
+                      {
+                        estado: "feedback",
+                        fecha: new Date(),
+                        comentario: localHito.comentario,
+                      },
+                    ]
+                  : []),
               ]}
               resultadoGlobal={localHito?.actual}
             />

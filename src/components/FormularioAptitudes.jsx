@@ -109,9 +109,9 @@ function FormSkeleton() {
 
 export default function FormularioAptitudes({
   // Datos
-  initialData = null,           // si ya te lo trae el parent
-  datosIniciales = null,        // legacy
-  templateId = null,            // opcional: si lo pasás, el form se autocarga
+  initialData = null, // si ya te lo trae el parent
+  datosIniciales = null, // legacy
+  templateId = null, // opcional: si lo pasás, el form se autocarga
   initialYear,
   initialScopeType,
   initialScopeId,
@@ -139,8 +139,11 @@ export default function FormularioAptitudes({
   const [scopeType, setScopeType] = useState(initialScopeType || "area");
   const [scopeId, setScopeId] = useState(initialScopeId || "");
   const [frecuencia, setFrecuencia] = useState("anual");
-  const [fechaLimite, setFechaLimite] = useState("");
-  const [peso, setPeso] = useState("")
+  const [peso, setPeso] = useState("");
+
+  // Fiscal override (igual que en objetivos)
+  const [usarFechaCierreCustom, setUsarFechaCierreCustom] = useState(false);
+  const [fechaCierre, setFechaCierre] = useState("");
 
   // envío/errores
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -168,14 +171,12 @@ export default function FormularioAptitudes({
     { value: "Gestión", label: "Gestión" },
     { value: "Organizacional", label: "Organizacional" },
   ];
-const selectedEmpleado = useMemo(
-   () => {
-     const lista = Array.isArray(empleados) ? empleados : [];
-     const sid = scopeId != null ? String(scopeId) : "";
-     return lista.find(e => String(e?._id ?? e?.id) === sid) || null;
-   },
-   [scopeId, empleados]
- );
+
+  const selectedEmpleado = useMemo(() => {
+    const lista = Array.isArray(empleados) ? empleados : [];
+    const sid = scopeId != null ? String(scopeId) : "";
+    return lista.find((e) => String(e?._id ?? e?.id) === sid) || null;
+  }, [scopeId, empleados]);
 
   const empleadosFiltrados = useMemo(() => {
     const q = empQuery.trim().toLowerCase();
@@ -233,13 +234,19 @@ const selectedEmpleado = useMemo(
     );
 
     setFrecuencia(d?.frecuencia || "anual");
-    setFechaLimite(d?.fechaLimite ? String(d.fechaLimite).slice(0, 10) : "");
     setPeso(String(d?.pesoBase ?? d?.peso ?? "0"));
+
+    // 👇 Nuevo: hidratar override de cierre fiscal
+    setUsarFechaCierreCustom(!!d?.fechaCierreCustom);
+    setFechaCierre(
+      d?.fechaCierre ? String(d.fechaCierre).slice(0, 10) : ""
+    );
   }
 
   // Cargar si tenemos initialData
   useEffect(() => {
     if (data) hydrateFromData(data);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
   // Autocarga por templateId
@@ -273,7 +280,6 @@ const selectedEmpleado = useMemo(
     }
     // campos base
     if (!nombre.trim()) errs.nombre = "El nombre es obligatorio.";
-    if (!fechaLimite) errs.fechaLimite = "Seleccioná una fecha límite.";
     if (!frecuencia) errs.frecuencia = "Seleccioná una frecuencia.";
 
     // valores razonables
@@ -312,9 +318,13 @@ const selectedEmpleado = useMemo(
       proceso,
       frecuencia,
       pesoBase: Number(peso === "" ? 0 : peso),
-      fechaLimite: fechaLimite ? new Date(fechaLimite) : null,
       activo: true,
     };
+
+    if (usarFechaCierreCustom && fechaCierre) {
+      body.fechaCierre = new Date(fechaCierre);
+      body.fechaCierreCustom = true;
+    }
 
     setIsSubmitting(true);
     try {
@@ -404,7 +414,7 @@ const selectedEmpleado = useMemo(
             <FieldError name="nombre" />
           </div>
 
-    <div>
+          <div>
             <label className="text-xs">Proceso (opcional)</label>
             <select
               className={inputCls}
@@ -426,7 +436,7 @@ const selectedEmpleado = useMemo(
               <label className="text-xs">Peso (%)</label>
               <input
                 type="number"
-            className={`${inputCls} ${peso === "0" ? "text-muted-foreground" : ""}`}
+                className={`${inputCls} ${peso === "0" ? "text-muted-foreground" : ""}`}
                 value={peso}
                 min={0}
                 max={100}
@@ -435,7 +445,6 @@ const selectedEmpleado = useMemo(
                 onFocus={(e) => e.target.select()}
                 onBlur={() => setPeso((v) => (v === "" ? "0" : v))}
                 onChange={(e) => {
-                  // Permitimos solo números (y punto), y limitamos a 3 dígitos
                   const raw = e.target.value.replace(/[^0-9.]/g, "");
                   setPeso(raw.slice(0, 3));
                 }}
@@ -460,16 +469,25 @@ const selectedEmpleado = useMemo(
             </div>
           </div>
 
+          {/* Override de cierre fiscal */}
           <div>
-            <label className="text-xs">Fecha límite</label>
-            <input
-              type="date"
-              className={inputCls}
-              value={fechaLimite}
-              onChange={(e) => setFechaLimite(e.target.value)}
-              aria-invalid={!!fieldErrors.fechaLimite}
-            />
-            <FieldError name="fechaLimite" />
+            <label className="text-xs flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={usarFechaCierreCustom}
+                onChange={(e) => setUsarFechaCierreCustom(e.target.checked)}
+              />
+              Fecha de cierre diferente al 31/08 del año fiscal
+            </label>
+
+            {usarFechaCierreCustom && (
+              <input
+                type="date"
+                className={inputCls}
+                value={fechaCierre}
+                onChange={(e) => setFechaCierre(e.target.value)}
+              />
+            )}
           </div>
         </div>
 
@@ -630,7 +648,10 @@ const selectedEmpleado = useMemo(
                             key={e._id}
                             type="button"
                             className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
-                          onClick={() => { setScopeId(String(e._id ?? e.id)); setEmpOpen(false); }}
+                            onClick={() => {
+                              setScopeId(String(e._id ?? e.id));
+                              setEmpOpen(false);
+                            }}
                           >
                             {e.apellido}, {e.nombre}
                             {e.apodo ? (
@@ -685,57 +706,56 @@ const selectedEmpleado = useMemo(
         <FieldError name="descripcion" />
       </div>
 
-{/* Nota informativa — versión estética compacta y con color */}
-<div className="rounded-xl border ring-1 ring-border/60 bg-white px-4 py-4">
-  <div className="flex items-center gap-2 mb-3">
-    <div className="h-6 w-6 rounded-full flex items-center justify-center border">
-      <span className="text-xs font-semibold">i</span>
-    </div>
-    <p className="text-base">
-      Las <strong>aptitudes</strong> se evalúan en <em>Seguimiento</em> con una{" "}
-      <strong>escala 1–5</strong>:
-    </p>
-  </div>
+      {/* Nota informativa — escala 1–5 linda */}
+      <div className="rounded-xl border ring-1 ring-border/60 bg-white px-4 py-4">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="h-6 w-6 rounded-full flex items-center justify-center border">
+            <span className="text-xs font-semibold">i</span>
+          </div>
+          <p className="text-base">
+            Las <strong>aptitudes</strong> se evalúan en <em>Seguimiento</em> con una{" "}
+            <strong>escala 1–5</strong>:
+          </p>
+        </div>
 
-  {/* Texto grande; cajitas chicas con colores ROJO → AMARILLO → VERDE */}
-  <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
-    <div className="flex items-center gap-2 justify-center sm:justify-start">
-      <span className="inline-block h-3 w-3 rounded-sm bg-red-500 ring-1 ring-red-300" />
-      <div className="leading-tight">
-        <div className="text-sm font-bold">1</div>
-        <div className="text-[12px] text-slate-600">Insatisfactorio</div>
+        <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+          <div className="flex items-center gap-2 justify-center sm:justify-start">
+            <span className="inline-block h-3 w-3 rounded-sm bg-red-500 ring-1 ring-red-300" />
+            <div className="leading-tight">
+              <div className="text-sm font-bold">1</div>
+              <div className="text-[12px] text-slate-600">Insatisfactorio</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 justify-center sm:justify-start">
+            <span className="inline-block h-3 w-3 rounded-sm bg-red-400 ring-1 ring-red-300" />
+            <div className="leading-tight">
+              <div className="text-sm font-bold">2</div>
+              <div className="text-[12px] text-slate-600">Necesita mejorar</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 justify-center sm:justify-start">
+            <span className="inline-block h-3 w-3 rounded-sm bg-yellow-400 ring-1 ring-yellow-300" />
+            <div className="leading-tight">
+              <div className="text-sm font-bold">3</div>
+              <div className="text-[12px] text-slate-600">Cumple</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 justify-center sm:justify-start">
+            <span className="inline-block h-3 w-3 rounded-sm bg-green-400 ring-1 ring-green-300" />
+            <div className="leading-tight">
+              <div className="text-sm font-bold">4</div>
+              <div className="text-[12px] text-slate-600">Supera</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 justify-center sm:justify-start">
+            <span className="inline-block h-3 w-3 rounded-sm bg-green-500 ring-1 ring-green-300" />
+            <div className="leading-tight">
+              <div className="text-sm font-bold">5</div>
+              <div className="text-[12px] text-slate-600">Sobresaliente</div>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-    <div className="flex items-center gap-2 justify-center sm:justify-start">
-      <span className="inline-block h-3 w-3 rounded-sm bg-red-400 ring-1 ring-red-300" />
-      <div className="leading-tight">
-        <div className="text-sm font-bold">2</div>
-        <div className="text-[12px] text-slate-600">Necesita mejorar</div>
-      </div>
-    </div>
-    <div className="flex items-center gap-2 justify-center sm:justify-start">
-      <span className="inline-block h-3 w-3 rounded-sm bg-yellow-400 ring-1 ring-yellow-300" />
-      <div className="leading-tight">
-        <div className="text-sm font-bold">3</div>
-        <div className="text-[12px] text-slate-600">Cumple</div>
-      </div>
-    </div>
-    <div className="flex items-center gap-2 justify-center sm:justify-start">
-      <span className="inline-block h-3 w-3 rounded-sm bg-green-400 ring-1 ring-green-300" />
-      <div className="leading-tight">
-        <div className="text-sm font-bold">4</div>
-        <div className="text-[12px] text-slate-600">Supera</div>
-      </div>
-    </div>
-    <div className="flex items-center gap-2 justify-center sm:justify-start">
-      <span className="inline-block h-3 w-3 rounded-sm bg-green-500 ring-1 ring-green-300" />
-      <div className="leading-tight">
-        <div className="text-sm font-bold">5</div>
-        <div className="text-[12px] text-slate-600">Sobresaliente</div>
-      </div>
-    </div>
-  </div>
-</div>
 
       {/* Botones */}
       <div className="flex justify-end gap-2 border-t pt-3">

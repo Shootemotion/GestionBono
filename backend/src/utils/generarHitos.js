@@ -1,38 +1,62 @@
 // backend/src/utils/generarHitos.js
 
+// Mismo criterio que en Plantilla.model.js
+function getFiscalStart(year) {
+  // 1 de septiembre
+  return new Date(year, 8, 1);
+}
+
+function getFiscalEnd(year) {
+  // 31 de agosto del año siguiente
+  return new Date(year + 1, 7, 31, 23, 59, 59, 999);
+}
+
 /**
- * Genera los hitos de seguimiento en base a la frecuencia y fecha límite.
+ * Genera los hitos de seguimiento en base a la frecuencia y fechas fiscales.
  *
- * @param {Object} plantilla - Documento de plantilla
- * @param {String} plantilla.frecuencia - "mensual" | "trimestral" | "semestral" | "anual"
- * @param {Date|String} plantilla.fechaLimite - Fecha de inicio / primera entrega
+ * @param {Object} plantilla
+ * @param {Number} plantilla.year
+ * @param {String} plantilla.frecuencia  "mensual" | "trimestral" | "semestral" | "anual"
+ * @param {Date|String} [plantilla.fechaInicioFiscal]
+ * @param {Date|String} [plantilla.fechaCierre]
  * @returns {Array<{ fecha: String, periodo: String }>}
  */
 export function generarHitos(plantilla) {
-  if (!plantilla?.fechaLimite || !plantilla?.frecuencia) return [];
+  if (!plantilla?.frecuencia || !plantilla?.year) return [];
 
-  const start = new Date(plantilla.fechaLimite);
+  const year = Number(plantilla.year);
+
+  const start =
+    plantilla.fechaInicioFiscal
+      ? new Date(plantilla.fechaInicioFiscal)
+      : getFiscalStart(year);
+
+  const end =
+    plantilla.fechaCierre
+      ? new Date(plantilla.fechaCierre)
+      : getFiscalEnd(year);
+
   const hitos = [];
+  let d = new Date(start);
 
-  const pushHito = (fecha, idx) => {
-    const yearReal = fecha.getFullYear();
+  const push = (fecha, { tipo, idx }) => {
+    const yReal = fecha.getFullYear();
     let periodo;
 
-    switch (plantilla.frecuencia) {
-      case "mensual":
-        periodo = `${yearReal}M${String(fecha.getMonth() + 1).padStart(2, "0")}`;
+    switch (tipo) {
+      case "M":
+        periodo = `${yReal}M${String(fecha.getMonth() + 1).padStart(2, "0")}`;
         break;
-      case "trimestral":
-        periodo = `${yearReal}Q${idx}`;
+      case "Q":
+        periodo = `${year}Q${idx}`;
         break;
-      case "semestral":
-        periodo = `${yearReal}S${idx}`;
+      case "S":
+        periodo = `${year}S${idx}`;
         break;
-      case "anual":
-        periodo = `${yearReal}A${idx}`; // 🔹 así no se confunde con "year"
-        break;
+      case "A":
       default:
-        periodo = `${yearReal}`;
+        periodo = `${year}A${idx}`;
+        break;
     }
 
     hitos.push({
@@ -41,26 +65,36 @@ export function generarHitos(plantilla) {
     });
   };
 
-  if (plantilla.frecuencia === "anual") {
-    pushHito(start, 1);
-  } else if (plantilla.frecuencia === "semestral") {
-    for (let i = 0; i < 2; i++) {
-      const d = new Date(start);
-      d.setMonth(start.getMonth() + i * 6);
-      pushHito(d, i + 1);
+  switch (plantilla.frecuencia) {
+    case "mensual":
+      while (d <= end) {
+        push(d, { tipo: "M" });
+        d.setMonth(d.getMonth() + 1);
+      }
+      break;
+
+    case "trimestral": {
+      let i = 1;
+      while (d <= end) {
+        push(d, { tipo: "Q", idx: i++ });
+        d.setMonth(d.getMonth() + 3);
+      }
+      break;
     }
-  } else if (plantilla.frecuencia === "trimestral") {
-    for (let i = 0; i < 4; i++) {
-      const d = new Date(start);
-      d.setMonth(start.getMonth() + i * 3);
-      pushHito(d, i + 1);
+
+    case "semestral": {
+      let i = 1;
+      while (d <= end) {
+        push(d, { tipo: "S", idx: i++ });
+        d.setMonth(d.getMonth() + 6);
+      }
+      break;
     }
-  } else if (plantilla.frecuencia === "mensual") {
-    for (let i = 0; i < 12; i++) {
-      const d = new Date(start);
-      d.setMonth(start.getMonth() + i);
-      pushHito(d, i + 1);
-    }
+
+    case "anual":
+    default:
+      push(d, { tipo: "A", idx: 1 });
+      break;
   }
 
   return hitos;

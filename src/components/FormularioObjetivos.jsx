@@ -27,7 +27,7 @@ export default function FormularioObjetivos({
   const [scopeType, setScopeType] = useState(initialScopeType || "area"); // "area" | "sector" | "empleado"
   const [scopeId, setScopeId] = useState(initialScopeId || "");
   const [frecuencia, setFrecuencia] = useState("anual");
-  const [fechaLimite, setFechaLimite] = useState("");
+
   const [peso, setPeso] = useState(0);
 const MAX_LIST = 2000; // ajustá a gusto
   // Metas
@@ -42,6 +42,8 @@ const MAX_LIST = 2000; // ajustá a gusto
   const [empOpen, setEmpOpen] = useState(false);
   const empBoxRef = useRef(null);
 
+
+  
 const selectedEmpleado = useMemo(
    () => {
      const lista = Array.isArray(empleados) ? empleados : [];
@@ -65,40 +67,46 @@ const selectedEmpleado = useMemo(
 
   // Cargar initialData
   useEffect(() => {
-    if (!initialData) return;
+  if (!initialData) return;
 
-    setNombre(initialData.nombre || "");
-    setDescripcion(initialData.descripcion || "");
-    setProceso(initialData.proceso || "");
-    setYear(initialData.year || currentYear);
+  setNombre(initialData.nombre || "");
+  setDescripcion(initialData.descripcion || "");
+  setProceso(initialData.proceso || "");
+  setYear(initialData.year || currentYear);
 
-    // El backend usa "area" | "sector" | "empleado"
-    const apiScope = initialData.scopeType || "area";
-    setScopeType(apiScope);
+  const apiScope = initialData.scopeType || "area";
+  setScopeType(apiScope);
 
-    // Resolver scopeId según el tipo
-    setScopeId(
-      apiScope === "area"
-        ? initialData.areaId || initialData.scopeId || ""
-        : apiScope === "sector"
-        ? initialData.sectorId || initialData.scopeId || ""
-        : initialData.empleadoId || initialData.scopeId || ""
-    );
+  setScopeId(
+    apiScope === "area"
+      ? initialData.areaId || initialData.scopeId || ""
+      : apiScope === "sector"
+      ? initialData.sectorId || initialData.scopeId || ""
+      : initialData.empleadoId || initialData.scopeId || ""
+  );
 
-    setFrecuencia(initialData.frecuencia || "anual");
-    setFechaLimite(initialData.fechaLimite ? String(initialData.fechaLimite).slice(0, 10) : "");
-    setPeso(initialData.pesoBase ?? initialData.peso ?? 0);
-   setMetas(
-  Array.isArray(initialData.metas)
-    ? initialData.metas.map((m) => ({
-        nombre: m.nombre || "",
-        target: m.target ?? "",
-        unidad: m.unidad || "Porcentual",
-        operador: m.operador || ">="   // 👈 valor por defecto
-      }))
-    : []
-);
-  }, [initialData]);
+  setFrecuencia(initialData.frecuencia || "anual");
+  setPeso(initialData.pesoBase ?? initialData.peso ?? 0);
+
+  setMetas(
+    Array.isArray(initialData.metas)
+      ? initialData.metas.map((m) => ({
+          nombre: m.nombre || "",
+          target: m.target ?? "",
+          unidad: m.unidad || "Porcentual",
+          operador: m.operador || ">=",
+        }))
+      : []
+  );
+
+  // Override de cierre fiscal
+  setUsarFechaCierreCustom(!!initialData.fechaCierreCustom);
+  setFechaCierre(
+    initialData.fechaCierre
+      ? String(initialData.fechaCierre).slice(0, 10)
+      : ""
+  );
+}, [initialData]);
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -131,6 +139,9 @@ const selectedEmpleado = useMemo(
     return { status, message: msg, raw: err, data };
   };
 
+
+  
+
   const validateClient = () => {
     const errs = {};
     if (!scopeId) {
@@ -141,7 +152,7 @@ const selectedEmpleado = useMemo(
     }
     if (!nombre.trim()) errs.nombre = "El nombre es obligatorio.";
     if (!proceso.trim()) errs.proceso = "El campo Proceso es obligatorio.";
-    if (!fechaLimite) errs.fechaLimite = "Seleccioná una fecha límite inicial.";
+  
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -173,18 +184,22 @@ const selectedEmpleado = useMemo(
 
     // el backend usa los mismos literales para scopeType
     const body = {
-      tipo: "objetivo",
-      year: Number(year),
-      scopeType, // "area" | "sector" | "empleado"
-      scopeId, // id del área/sector/empleado
-      nombre,
-      descripcion,
-      proceso,
-      frecuencia,
-      pesoBase: Number(peso || 0),
-      fechaLimite: fechaLimite ? new Date(fechaLimite) : null,
-      activo: true,
-    };
+  tipo: "objetivo",
+  year: Number(year),
+  scopeType,
+  scopeId,
+  nombre,
+  descripcion,
+  proceso,
+  frecuencia,
+  pesoBase: Number(peso || 0),
+  activo: true,
+};
+
+if (usarFechaCierreCustom && fechaCierre) {
+  body.fechaCierre = new Date(fechaCierre);
+  body.fechaCierreCustom = true;
+}
 
     if (metasClean.length > 0) body.metas = metasClean;
 
@@ -240,6 +255,9 @@ const selectedEmpleado = useMemo(
     { value: "Gestión", label: "Gestión" },
     { value: "Organizacional", label: "Organizacional" },
   ];
+
+  const [usarFechaCierreCustom, setUsarFechaCierreCustom] = useState(false);
+const [fechaCierre, setFechaCierre] = useState("");
   return (
     <form onSubmit={(e) => handleSubmit(e)} className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -306,17 +324,26 @@ const selectedEmpleado = useMemo(
               <FieldError name="frecuencia" />
             </div>
           </div>
+<div>
+  <label className="text-xs flex items-center gap-2">
+    <input
+      type="checkbox"
+      checked={usarFechaCierreCustom}
+      onChange={(e) => setUsarFechaCierreCustom(e.target.checked)}
+    />
+    Fecha de cierre diferente al 31/08 del año fiscal
+  </label>
 
-          <div>
-            <label className="text-xs">Fecha límite</label>
-            <input
-              type="date"
-              className={inputCls}
-              value={fechaLimite}
-              onChange={(e) => setFechaLimite(e.target.value)}
-            />
-            <FieldError name="fechaLimite" />
-          </div>
+  {usarFechaCierreCustom && (
+    <input
+      type="date"
+      className={inputCls}
+      value={fechaCierre}
+      onChange={(e) => setFechaCierre(e.target.value)}
+    />
+  )}
+</div>
+        
         </div>
 
         {/* DERECHA - Configuración */}
