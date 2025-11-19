@@ -12,25 +12,39 @@ export default function useCan(cap) {
     return user.permisos || [];
   }, [user]);
 
-  const ok = useMemo(() => {
-    if (!user) return false;
-    if (user.rol === 'superadmin') return true;
-    if (!cap) return true; // si no piden cap, permito (control a nivel de rutas)
-    if (Array.isArray(cap)) {
-      return cap.some(c => caps.includes(c) || c === '*');
-    }
-    return caps.includes(cap) || caps.includes('*');
-  }, [user, caps, cap]);
+ const ok = useMemo(() => {
+  if (!user) return false;
 
+  const rol = String(user.rol || "").toLowerCase();
+  const isSuperLike =
+    rol === "superadmin" ||
+    rol === "directivo" ||      // 👈 director por rol
+    user.isSuper === true ||
+    user.isDirectivo === true;  // 👈 director por flag
+
+  // 🎩 Super / Director: todo permitido
+  if (isSuperLike) return true;
+
+  // si no piden cap explícita, permito (control a nivel de rutas)
+  if (!cap) return true;
+
+  if (Array.isArray(cap)) {
+    return cap.some((c) => caps.includes(c) || c === "*");
+  }
+  return caps.includes(cap) || caps.includes("*");
+}, [user, caps, cap]);
   return { ok };
 }
 
-// helper export: check role(s)
+
 export function useHasRole(roles = []) {
   const { user } = useAuth();
   const ok = useMemo(() => {
     if (!user) return false;
-    if (user.rol === 'superadmin') return true;
+    const rol = String(user.rol || "").toLowerCase();
+    if (rol === "superadmin" || rol === "directivo" || user.isSuper === true || user.isDirectivo === true) {
+      return true; // 👈 director también pasa todos los checks de rol
+    }
     if (!roles || roles.length === 0) return false;
     return roles.includes(user.rol);
   }, [user, roles]);

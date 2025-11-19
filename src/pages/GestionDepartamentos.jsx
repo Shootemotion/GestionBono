@@ -8,8 +8,7 @@ import FormularioEstructura from "@/components/FormularioEstructura.jsx";
 import AreaEditModal from "@/components/AreaEditModal.jsx";
 import { Button } from "@/components/ui/button";
 
- // Helper genérico para paginar cualquier endpoint tipo /empleados
- // Helper genérico para paginar cualquier endpoint tipo /empleados
+// Helper genérico para paginar cualquier endpoint tipo /empleados
 async function fetchAll(path, { pageSize = 200, params = {} } = {}) {
   const out = [];
   let page = 1;
@@ -39,26 +38,19 @@ async function fetchAll(path, { pageSize = 200, params = {} } = {}) {
     const ps    = Number(data?.pageSize ?? data?.limit ?? pageSize);
     const cur   = Number(data?.page ?? page);
 
-    // 👉 ACÁ estaba el bug: hay que ir a la SIGUIENTE página
-    if (total && cur * ps < total) { 
-      page += 1; 
-      continue; 
+    if (total && cur * ps < total) {
+      page += 1;
+      continue;
     }
-    if (!total && chunk.length === ps) { 
-      page += 1; 
-      continue; 
+    if (!total && chunk.length === ps) {
+      page += 1;
+      continue;
     }
-
     break;
   }
 
   return out;
 }
-// Componente principal
-
-
-
-
 
 export default function GestionDepartamentos() {
   const { user } = useAuth();
@@ -74,47 +66,54 @@ export default function GestionDepartamentos() {
   const [hoveredAreaId, setHoveredAreaId] = useState(null);
   const [areaFilterId, setAreaFilterId] = useState(null); // al hacer click filtra
 
-useEffect(() => {
-  (async () => {
-    try {
-      const [a, s] = await Promise.all([
-        api("/areas"),
-        api("/sectores"),
-      ]);
+  // 🔐 Permisos
+  const rolLower = String(user?.rol || "").toLowerCase();
+  const isDirectivo =
+    user?.isDirectivo ||
+    rolLower === "director" ||
+    rolLower === "directivo";
 
-      // empleados: traemos TODAS las páginas y con visibilidad total
-      const e = await fetchAll("/empleados", {
-        pageSize: 500,
-        params: { visibility: "all" },
-      });
+  const canEditStructure = user?.isSuper || user?.isRRHH; // crear / eliminar áreas y sectores
+  const canEditReferentes = canEditStructure || isDirectivo; // agregar / quitar referentes
 
-      const norm = (res) =>
-        Array.isArray(res) ? res :
-        Array.isArray(res?.data) ? res.data :
-        Array.isArray(res?.items) ? res.items :
-        Array.isArray(res?.results) ? res.results :
-        Array.isArray(res?.rows) ? res.rows :
-        Array.isArray(res?.docs) ? res.docs :
-        [];
+  useEffect(() => {
+    (async () => {
+      try {
+        const [a, s] = await Promise.all([api("/areas"), api("/sectores")]);
 
-      const areasN     = norm(a);
-      const sectoresN  = norm(s);
-      const empleadosN = Array.isArray(e) ? e : [];
+        // empleados: traemos TODAS las páginas y con visibilidad total
+        const e = await fetchAll("/empleados", {
+          pageSize: 500,
+          params: { visibility: "all" },
+        });
 
-      setAreas(areasN);
-      setSectores(sectoresN);
-      // normalizo _id a string para que ReferentesModal funcione 1:1
-      setEmpleados(empleadosN.map(x => ({ ...x, _id: String(x._id ?? x.id) })));
+        const norm = (res) =>
+          Array.isArray(res) ? res :
+          Array.isArray(res?.data) ? res.data :
+          Array.isArray(res?.items) ? res.items :
+          Array.isArray(res?.results) ? res.results :
+          Array.isArray(res?.rows) ? res.rows :
+          Array.isArray(res?.docs) ? res.docs :
+          [];
 
-      console.log("🟦 areas",    { len: areasN.length, sample: areasN[0] });
-      console.log("🟩 sectores", { len: sectoresN.length, sample: sectoresN[0] });
-      console.log("🟨 empleados", { len: empleadosN.length, sample: empleadosN[0] });
-    } catch (err) {
-      console.error("❌ Error cargando áreas/sectores/empleados:", err);
-      toast.error("No se pudieron cargar áreas/sectores/empleados.");
-    }
-  })();
-}, []);
+        const areasN     = norm(a);
+        const sectoresN  = norm(s);
+        const empleadosN = Array.isArray(e) ? e : [];
+
+        setAreas(areasN);
+        setSectores(sectoresN);
+        // normalizo _id a string para que ReferentesModal / AreaEditModal funcionen 1:1
+        setEmpleados(empleadosN.map((x) => ({ ...x, _id: String(x._id ?? x.id) })));
+
+        console.log("🟦 areas",    { len: areasN.length, sample: areasN[0] });
+        console.log("🟩 sectores", { len: sectoresN.length, sample: sectoresN[0] });
+        console.log("🟨 empleados", { len: empleadosN.length, sample: empleadosN[0] });
+      } catch (err) {
+        console.error("❌ Error cargando áreas/sectores/empleados:", err);
+        toast.error("No se pudieron cargar áreas/sectores/empleados.");
+      }
+    })();
+  }, []);
 
   const open = (modo, data = null) => setModal({ open: true, modo, data });
   const close = () => setModal({ open: false, modo: null, data: null });
@@ -134,7 +133,10 @@ useEffect(() => {
           : "/sectores";
 
     try {
-      const saved = await api(path, { method: isEdit ? "PUT" : "POST", body: payload });
+      const saved = await api(path, {
+        method: isEdit ? "PUT" : "POST",
+        body: payload,
+      });
 
       if (tipo === "area") {
         setAreas((prev) =>
@@ -156,7 +158,9 @@ useEffect(() => {
   const delItem = async (tipo, id) => {
     if (!confirm("¿Eliminar definitivamente?")) return;
     try {
-      await api(`/${tipo === "area" ? "areas" : "sectores"}/${id}`, { method: "DELETE" });
+      await api(`/${tipo === "area" ? "areas" : "sectores"}/${id}`, {
+        method: "DELETE",
+      });
       if (tipo === "area") setAreas((p) => p.filter((a) => a._id !== id));
       else setSectores((p) => p.filter((s) => s._id !== id));
       toast.success("Eliminado.");
@@ -194,37 +198,45 @@ useEffect(() => {
     return cnt;
   }, [empleados]);
 
-  const countSectoresDeArea = (areaId) => (sectoresPorArea.get(String(areaId)) || []).length;
+  const countSectoresDeArea = (areaId) =>
+    (sectoresPorArea.get(String(areaId)) || []).length;
 
   const nombresReferentes = (refs) =>
     (refs || [])
-      .map((r) => [r?.apellido, r?.nombre].filter(Boolean).join(", ") || r?.email || "—")
+      .map(
+        (r) =>
+          [r?.apellido, r?.nombre].filter(Boolean).join(", ") ||
+          r?.email ||
+          "—"
+      )
       .filter(Boolean)
       .join(" · ");
 
   // Reorden dinámico de sectores (hover) y filtro (click)
   const sectoresView = useMemo(() => {
-  const base = Array.isArray(sectores) ? sectores : [];
-  const list = [...base];
+    const base = Array.isArray(sectores) ? sectores : [];
+    const list = [...base];
 
-  if (areaFilterId) {
-    return list.filter(
-      (s) => String(s?.areaId?._id ?? s?.areaId ?? "") === String(areaFilterId)
-    );
-  }
-
-  if (hoveredAreaId) {
-    const first = [];
-    const rest = [];
-    for (const s of list) {
-      const aId = String(s?.areaId?._id ?? s?.areaId ?? "");
-      (aId === String(hoveredAreaId) ? first : rest).push(s);
+    if (areaFilterId) {
+      return list.filter(
+        (s) =>
+          String(s?.areaId?._id ?? s?.areaId ?? "") ===
+          String(areaFilterId)
+      );
     }
-    return [...first, ...rest];
-  }
 
-  return list;
-}, [sectores, areaFilterId, hoveredAreaId]);
+    if (hoveredAreaId) {
+      const first = [];
+      const rest = [];
+      for (const s of list) {
+        const aId = String(s?.areaId?._id ?? s?.areaId ?? "");
+        (aId === String(hoveredAreaId) ? first : rest).push(s);
+      }
+      return [...first, ...rest];
+    }
+
+    return list;
+  }, [sectores, areaFilterId, hoveredAreaId]);
 
   const clearAreaFilter = () => setAreaFilterId(null);
 
@@ -234,22 +246,26 @@ useEffect(() => {
         {/* Encabezado */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">Gestión de Departamentos</h1>
+            <h1 className="text-xl font-semibold tracking-tight">
+              Gestión de Departamentos
+            </h1>
             <p className="text-sm text-muted-foreground">
               Alta/edición de áreas, sectores y referentes.
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button
-              className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-0"
-              onClick={() => open("crear_area")}
-            >
-              + Nueva Área
-            </Button>
-            <Button variant="outline" onClick={() => open("crear_sector")}>
-              + Nuevo Sector
-            </Button>
-          </div>
+          {canEditStructure && (
+            <div className="flex gap-2">
+              <Button
+                className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-0"
+                onClick={() => open("crear_area")}
+              >
+                + Nueva Área
+              </Button>
+              <Button variant="outline" onClick={() => open("crear_sector")}>
+                + Nuevo Sector
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Dos columnas ejecutivas */}
@@ -276,7 +292,9 @@ useEffect(() => {
                     key={aId}
                     className={`group rounded-lg ring-1 ring-border/60 bg-background/70 hover:bg-background transition-all hover:shadow-sm relative cursor-pointer`}
                     onMouseEnter={() => setHoveredAreaId(aId)}
-                    onMouseLeave={() => setHoveredAreaId((v) => (v === aId ? null : v))}
+                    onMouseLeave={() =>
+                      setHoveredAreaId((v) => (v === aId ? null : v))
+                    }
                     onClick={() => setAreaFilterId(aId)}
                     title="Click para filtrar sectores de esta área"
                   >
@@ -291,8 +309,9 @@ useEffect(() => {
                       {/* Datos */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <h3 className="font-medium truncate">{a.nombre}</h3>
-                          {/* badge #sectores */}
+                          <h3 className="font-medium truncate">
+                            {a.nombre}
+                          </h3>
                           <span className="text-[11px] rounded-full border px-2 py-0.5">
                             Sectores: {countSectoresDeArea(aId)}
                           </span>
@@ -313,28 +332,32 @@ useEffect(() => {
 
                       {/* Acciones (solo en hover) */}
                       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditArea(a);
-                          }}
-                          className="whitespace-nowrap"
-                        >
-                          Editar / Referentes
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="bg-rose-100 text-rose-700 hover:bg-rose-200 border-0"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            delItem("area", aId);
-                          }}
-                        >
-                          Eliminar
-                        </Button>
+                        {canEditReferentes && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditArea(a);
+                            }}
+                            className="whitespace-nowrap"
+                          >
+                            Editar / Referentes
+                          </Button>
+                        )}
+                        {canEditStructure && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="bg-rose-100 text-rose-700 hover:bg-rose-200 border-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              delItem("area", aId);
+                            }}
+                          >
+                            Eliminar
+                          </Button>
+                        )}
                       </div>
                     </div>
 
@@ -380,8 +403,8 @@ useEffect(() => {
                 const aId = String(s?.areaId?._id ?? s?.areaId ?? "");
                 const cantEmps = empleadosPorSector.get(sId) || 0;
 
-                // resaltado suave si pertenece al área bajo hover
-                const conectadoHover = hoveredAreaId && hoveredAreaId === aId;
+                const conectadoHover =
+                  hoveredAreaId && hoveredAreaId === aId;
 
                 const refs = nombresReferentes(s?.referentes);
 
@@ -405,7 +428,9 @@ useEffect(() => {
                       {/* Datos */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <h3 className="font-medium truncate">{s.nombre}</h3>
+                          <h3 className="font-medium truncate">
+                            {s.nombre}
+                          </h3>
                           <span className="text-[11px] rounded-full border px-2 py-0.5">
                             Área: {s?.areaId?.nombre ?? "—"}
                           </span>
@@ -426,22 +451,26 @@ useEffect(() => {
 
                       {/* Acciones (solo hover) */}
                       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => open("editar_sector", s)}
-                          className="whitespace-nowrap"
-                        >
-                          Editar
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="bg-rose-100 text-rose-700 hover:bg-rose-200 border-0"
-                          onClick={() => delItem("sector", sId)}
-                        >
-                          Eliminar
-                        </Button>
+                        {canEditStructure && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => open("editar_sector", s)}
+                            className="whitespace-nowrap"
+                          >
+                            Editar
+                          </Button>
+                        )}
+                        {canEditStructure && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="bg-rose-100 text-rose-700 hover:bg-rose-200 border-0"
+                            onClick={() => delItem("sector", sId)}
+                          >
+                            Eliminar
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </li>
@@ -450,7 +479,9 @@ useEffect(() => {
 
               {sectoresView.length === 0 && (
                 <li className="text-sm text-muted-foreground py-10 text-center">
-                  {areaFilterId ? "No hay sectores para esta área." : "No hay sectores cargados."}
+                  {areaFilterId
+                    ? "No hay sectores para esta área."
+                    : "No hay sectores cargados."}
                 </li>
               )}
             </ul>
@@ -469,39 +500,46 @@ useEffect(() => {
               onGuardar={save}
               onCancelar={close}
               areas={areas}
-              datosIniciales={modal.modo.startsWith("editar") ? modal.data : null}
+              datosIniciales={
+                modal.modo.startsWith("editar") ? modal.data : null
+              }
             />
           )}
         </Modal>
 
-        {/* Modal edición completa de área + referentes (ahora con empleados!) */}
- <Modal
-  isOpen={!!editArea}
-  onClose={() => setEditArea(null)}
-  title={`Editar Área: ${editArea?.nombre ?? ""}`}
-  size="xxl"
->
-  {editArea && (
-    <AreaEditModal
-      area={editArea}
-      empleados={empleados}
-      initialTab="referentes"
-      onClose={() => setEditArea(null)}
-      onAreaUpdated={(upd) =>
-        setAreas((p) => p.map((a) => (a._id === upd._id ? upd : a)))
-      }
-      onSectorUpdated={(upd) =>
-        setSectores((p) => p.map((s) => (s._id === upd._id ? upd : s)))
-      }
-      onAreaDeleted={(id) =>
-        setAreas((p) => p.filter((a) => a._id !== id))
-      }
-      onSectorDeleted={(id) =>
-        setSectores((p) => p.filter((s) => s._id !== id))
-      }
-    />
-  )}
-</Modal>
+        {/* Modal edición completa de área + referentes */}
+        <Modal
+          isOpen={!!editArea}
+          onClose={() => setEditArea(null)}
+          title={`Editar Área: ${editArea?.nombre ?? ""}`}
+          size="xxl"
+        >
+          {editArea && (
+            <AreaEditModal
+              area={editArea}
+              empleados={empleados}
+              initialTab="referentes"
+              canEditReferentes={canEditReferentes}
+              onClose={() => setEditArea(null)}
+              onAreaUpdated={(upd) =>
+                setAreas((p) =>
+                  p.map((a) => (a._id === upd._id ? upd : a))
+                )
+              }
+              onSectorUpdated={(upd) =>
+                setSectores((p) =>
+                  p.map((s) => (s._id === upd._id ? upd : s))
+                )
+              }
+              onAreaDeleted={(id) =>
+                setAreas((p) => p.filter((a) => a._id !== id))
+              }
+              onSectorDeleted={(id) =>
+                setSectores((p) => p.filter((s) => s._id !== id))
+              }
+            />
+          )}
+        </Modal>
       </div>
     </div>
   );

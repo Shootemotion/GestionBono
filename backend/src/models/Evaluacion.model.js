@@ -27,8 +27,8 @@ const evaluacionSchema = new mongoose.Schema(
     },
 
     // Trazabilidad de actores
-    manager:    { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // jefe que evalúa
-    hrReviewer: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // quien cierra
+    manager:    { type: mongoose.Schema.Types.ObjectId, ref: "Usuario" }, // jefe que evalúa
+    hrReviewer: { type: mongoose.Schema.Types.ObjectId, ref: "Usuario" }, // quien cierra
 
     // Comentarios con autoría separada
     comentarioManager:  { type: String, trim: true },
@@ -40,7 +40,7 @@ const evaluacionSchema = new mongoose.Schema(
     empleadoAck: {
       estado: { type: String, enum: ["ACK", "CONTEST", null], default: null },
       fecha:  { type: Date },
-      userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      userId: { type: mongoose.Schema.Types.ObjectId, ref: "Usuario" },
     },
 
     // Fechas clave
@@ -52,7 +52,7 @@ const evaluacionSchema = new mongoose.Schema(
     timeline: [
       {
         at: { type: Date, default: Date.now },
-        by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        by: { type: mongoose.Schema.Types.ObjectId, ref: "Usuario" },
         action: String, // "MANAGER_SUBMIT" | "EMPLOYEE_ACK" | "EMPLOYEE_CONTEST" | "HR_CLOSE" | "REOPEN" ...
         note: String,
         snapshot: mongoose.Schema.Types.Mixed,

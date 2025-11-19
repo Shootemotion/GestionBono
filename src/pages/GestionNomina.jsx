@@ -232,7 +232,7 @@ function GestionEstructura() {
 
       // 1) Crear/editar empleado (sin foto)
       const empleadoGuardado = await api(path, {
-        method: isEdit ? "PUT" : "POST",
+          method: isEdit ? "PATCH" : "POST",
         body: resto,
       });
 

@@ -10,12 +10,15 @@ import Sector from "../models/Sector.model.js";
  */
 const roleCaps = {
   superadmin: ["*"],
+  
   rrhh: [
     "estructura:ver","estructura:crear","estructura:editar","estructura:eliminar",
     "nomina:ver","nomina:crear","nomina:editar","nomina:eliminar","nomina:evaluar",
     "objetivos:ver","objetivos:crear","objetivos:editar","objetivos:eliminar",
     "aptitudes:ver","aptitudes:crear","aptitudes:editar","aptitudes:eliminar",
-    "asignaciones:ver","asignaciones:editar",
+    "asignaciones:ver","asignaciones:editar", "rrhh:evaluaciones:ver",
+    "rrhh:evaluaciones:cierre",
+    "rrhh:evaluaciones:reabrir",
     "usuarios:manage"
   ],
   jefe_area: [
@@ -31,8 +34,15 @@ const roleCaps = {
     "asignaciones:ver","asignaciones:editar",
   ],
   directivo: [
-    "estructura:ver","nomina:ver","nomina:evaluar","nomina:editar",
-    "objetivos:ver","aptitudes:ver","asignaciones:ver"
+    "estructura:ver","estructura:crear","estructura:editar","estructura:eliminar",
+    "nomina:ver","nomina:crear","nomina:editar","nomina:eliminar","nomina:evaluar",
+    "objetivos:ver","objetivos:crear","objetivos:editar","objetivos:eliminar",
+    "aptitudes:ver","aptitudes:crear","aptitudes:editar","aptitudes:eliminar",
+    "asignaciones:ver","asignaciones:editar", "rrhh:evaluaciones:ver",
+    "rrhh:evaluaciones:cierre",
+    "rrhh:evaluaciones:reabrir",
+    "usuarios:manage"
+
   ],
   visor: ["estructura:ver","nomina:ver","aptitudes:ver"],
 };

@@ -86,4 +86,14 @@ usuarioSchema.methods.toJSON = function () {
   return obj;
 };
 
+/* ================== REGISTRO DE MODELOS ================== */
+
+// Modelo principal
+const Usuario = mongoose.models.Usuario || model('Usuario', usuarioSchema);
+
+// Alias "User" para que los ref: "User" (Evaluacion, timeline, etc.) no rompan
+if (!mongoose.models.User) {
+  mongoose.model('User', usuarioSchema);
+}
+
 export default model('Usuario', usuarioSchema);

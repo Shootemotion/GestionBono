@@ -325,21 +325,26 @@ export async function submitToEmployee(req, res) {
 export async function employeeAck(req, res) {
   try {
     const { id } = req.params;
+    const { comentarioEmpleado } = req.body || {};
+
     const ev = await Evaluacion.findById(id);
     if (!ev) return res.status(404).json({ message: "Evaluación no encontrada" });
-    if (ev.estado !== "PENDING_EMPLOYEE") {
-      return res.status(409).json({ message: "Estado inválido para ACK" });
-    }
+if (!["PENDING_EMPLOYEE", "MANAGER_DRAFT"].includes(ev.estado)) {
+  return res.status(409).json({ message: "Estado inválido para ACK" });
+}
 
-    // seguridad: solo el dueño puede confirmar
     const userEmpId = String(req.user?.empleadoId?._id || req.user?.empleadoId);
     if (!userEmpId || String(ev.empleado) !== userEmpId) {
       return res.status(403).json({ message: "No autorizado (ACK solo por el empleado)" });
     }
 
+    if (comentarioEmpleado !== undefined) {
+      ev.comentarioEmpleado = comentarioEmpleado || ev.comentarioEmpleado || "";
+    }
+
     ev.empleadoAck = { estado: "ACK", fecha: new Date(), userId: req.user?._id };
-    ev.estado = "PENDING_HR"; // si no usás HR, podrías pasar directo a CLOSED
-    pushTimeline(ev, { by: req.user?._id, action: "EMPLOYEE_ACK" });
+    ev.estado = "PENDING_HR";
+    pushTimeline(ev, { by: req.user?._id, action: "EMPLOYEE_ACK", note: comentarioEmpleado });
     await ev.save();
     res.json(ev);
   } catch (e) {
@@ -354,10 +359,9 @@ export async function employeeContest(req, res) {
     const { comentarioEmpleado } = req.body || {};
     const ev = await Evaluacion.findById(id);
     if (!ev) return res.status(404).json({ message: "Evaluación no encontrada" });
-    if (ev.estado !== "PENDING_EMPLOYEE") {
-      return res.status(409).json({ message: "Estado inválido para contestar" });
-    }
-
+if (!["PENDING_EMPLOYEE", "MANAGER_DRAFT"].includes(ev.estado)) {
+  return res.status(409).json({ message: "Estado inválido para contestar" });
+}
     const userEmpId = String(req.user?.empleadoId?._id || req.user?.empleadoId);
     if (!userEmpId || String(ev.empleado) !== userEmpId) {
       return res.status(403).json({ message: "No autorizado (solo el empleado puede contestar)" });
@@ -439,6 +443,7 @@ export async function reopenEvaluacion(req, res) {
 
 
 
+// src/controllers/evaluacion.controller.js
 export async function listPendingHR(req, res) {
   try {
     const { periodo, plantillaId } = req.query;
@@ -447,25 +452,46 @@ export async function listPendingHR(req, res) {
     if (plantillaId) q.plantillaId = new mongoose.Types.ObjectId(String(plantillaId));
 
     const items = await Evaluacion.find(q)
-      .populate({ path: "empleado", select: "nombre apellido area sector", populate: [
-        { path: "area", select: "nombre" },
-        { path: "sector", select: "nombre" },
-      ]})
-      .populate({ path: "manager", select: "nombre apellido email" })
-      .populate({ path: "plantillaId", select: "nombre" })
+      .populate({
+        path: "empleado",
+        select: "nombre apellido area sector",
+        populate: [
+          { path: "area", select: "nombre" },
+          { path: "sector", select: "nombre" },
+        ],
+      })
+      .populate({
+        path: "manager",      // ahora ref: "Usuario"
+        select: "nombre apellido email",
+      })
+      .populate({
+        path: "plantillaId",
+        select: "nombre fechaLimite",
+      })
       .lean();
 
-   // Devolver con alias consistentes
     const mapped = items.map(ev => ({
       ...ev,
-      plantilla: ev.plantillaId ? { _id: ev.plantillaId._id, nombre: ev.plantillaId.nombre } : null,
+      plantilla: ev.plantillaId
+        ? {
+            _id: ev.plantillaId._id,
+            nombre: ev.plantillaId.nombre,
+            fechaLimite: ev.plantillaId.fechaLimite || null,
+          }
+        : null,
     }));
+
+    // Para que veas qué viene
+    console.log("🔎 listPendingHR ejemplo:", mapped[0]);
+
     res.json(mapped);
   } catch (e) {
     console.error("listPendingHR error", e);
     res.status(500).json({ message: e.message || "Error listando pendientes" });
   }
 }
+
+
 
 export async function closeBulk(req, res) {
   try {

@@ -62,9 +62,8 @@ export default function MiDesempeno() {
     searchRef.current?.focus();
   }, []);
 
-  const empleadoIdFromUser = (u) =>
-    u?.empleadoId?._id || u?.empleadoId || u?._id || u?.id || null;
-
+const empleadoIdFromUser = (u) =>
+  u?.empleadoId?._id || u?.empleadoId || null;
   // ===== Resumen cabecera
   const resumenAnual = useMemo(() => {
     if (!data) return null;
@@ -270,26 +269,34 @@ export default function MiDesempeno() {
     }));
   };
 
-  const persistBorrador = async () => {
-    const empleadoId = empleadoIdFromUser(user);
-    const matches = await api(
-      `/evaluaciones?empleado=${empleadoId}&plantillaId=${selected._id}&periodo=${periodoSel}`
-    );
-    const ev = Array.isArray(matches) ? matches[0] : matches?.items?.[0] || null;
-    if (!ev?._id) {
-      toast.error("No encontré la evaluación para guardar.");
-      return null;
-    }
-    await api(`/evaluaciones/${ev._id}`, {
-      method: "PUT",
-      body: {
-        comentario: evalActual?.comentario ?? "",
-        comentarioEmpleado: evalActual?.comentario ?? "",
-        empleadoAck: evalActual?.empleadoAck ?? null,
-      },
-    });
-    return ev._id;
-  };
+ const persistBorrador = async () => {
+  const empleadoId = empleadoIdFromUser(user);
+  const matches = await api(
+    `/evaluaciones?empleado=${empleadoId}&plantillaId=${selected._id}&periodo=${periodoSel}`
+  );
+
+  const ev = Array.isArray(matches) ? matches[0] : matches?.items?.[0] || null;
+  if (!ev?._id) {
+    toast.error("No encontré la evaluación para enviar.");
+    return null;
+  }
+
+  // Según el estado elegido en los botones "De acuerdo / En desacuerdo"
+  const isContest = evalActual?.empleadoAck?.estado === "CONTEST";
+
+  const endpoint = isContest
+    ? `/evaluaciones/${ev._id}/employee-contest`
+    : `/evaluaciones/${ev._id}/employee-ack`;
+
+  const saved = await api(endpoint, {
+    method: "POST",
+    body: {
+      comentarioEmpleado: evalActual?.comentarioEmpleado ?? "",
+    },
+  });
+
+  return saved?._id || ev._id;
+};
 
   // ===== Render
   if (!user) {
@@ -607,6 +614,7 @@ export default function MiDesempeno() {
                       <div className="text-[11px] text-muted-foreground mb-1">
                         Comentario del Jefe
                       </div>
+
                       <textarea
                         className="w-full min-h-32 rounded-xl ring-1 ring-black/5 dark:ring-white/10 bg-slate-50/70 dark:bg-slate-800/50 px-3 py-2 text-sm resize-y"
                         placeholder="(Sólo visible si fue cargado por tu jefe)"
@@ -616,21 +624,23 @@ export default function MiDesempeno() {
                     </div>
                     {/* Luego COLABORADOR */}
                     <div>
-                      <div className="text-[11px] text-muted-foreground mb-1">
-                        Comentario del Colaborador
-                      </div>
-                      <textarea
-                        className="w-full min-h-32 rounded-xl ring-1 ring-black/5 dark:ring-white/10 bg-white/80 dark:bg-slate-900/70 px-3 py-2 text-sm resize-y shadow-sm"
-                        placeholder="Logros, bloqueos, contexto…"
-                        value={evalActual?.comentario ?? ""}
-                        onChange={(e) => {
-                          setEvalActual((prev) => ({
-                            ...(prev || {}),
-                            comentario: e.target.value,
-                          }));
-                        }}
-                      />
-                    </div>
+  <div className="text-[11px] text-muted-foreground mb-1">
+    Comentario del Colaborador
+  </div>
+
+
+  <textarea
+    className="w-full min-h-32 rounded-xl ring-1 ring-black/5 dark:ring-white/10 bg-white/80 dark:bg-slate-900/70 px-3 py-2 text-sm resize-y shadow-sm"
+    placeholder="Dejá tu devolución para esta evaluación (la verá tu jefe y RRHH)…"
+    value={evalActual?.comentarioEmpleado ?? ""}   // ahora usa comentarioEmpleado
+    onChange={(e) => {
+      setEvalActual((prev) => ({
+        ...(prev || {}),
+        comentarioEmpleado: e.target.value,        // solo toca comentarioEmpleado
+      }));
+    }}
+  />
+</div>
                   </div>
 
                   {/* Pie: Conformidad + Acciones */}
@@ -683,24 +693,24 @@ export default function MiDesempeno() {
                         Guardar borrador
                       </Button>
 
-                      <Button
-                        onClick={async () => {
-                          try {
-                            const id = await persistBorrador();
-                            if (!id) return;
-                            await api(`/evaluaciones/${id}/submit-to-hr`, { method: "POST" });
-                            toast.success("Enviada a RRHH.");
-                            const detalle = await api(`/evaluaciones/detalle/${id}`);
-                            setEvalActual(detalle);
-                          } catch (e) {
-                            console.error(e);
-                            toast.error("No pude enviar a RRHH.");
-                          }
-                        }}
-                        className="rounded-xl shadow-sm bg-indigo-600 hover:bg-indigo-700"
-                      >
-                        Enviar a RRHH
-                      </Button>
+   <Button
+  onClick={async () => {
+    try {
+      const id = await persistBorrador(); // ahora hace ACK o CONTEST con comentarioEmpleado
+      if (!id) return;
+
+      toast.success("Respuesta enviada a RRHH.");
+      const detalle = await api(`/evaluaciones/detalle/${id}`);
+      setEvalActual(detalle);
+    } catch (e) {
+      console.error(e);
+      toast.error("No pude enviar a RRHH.");
+    }
+  }}
+  className="rounded-xl shadow-sm bg-indigo-600 hover:bg-indigo-700"
+>
+  Enviar a RRHH
+</Button>
                     </div>
                   </div>
                 </div>
@@ -725,13 +735,13 @@ export default function MiDesempeno() {
                             fecha: evalActual?.fecha || selected?.fechaLimite,
                           }
                         : null,
-                      evalActual?.comentario
-                        ? {
-                            estado: "comentario-colaborador",
-                            fecha: new Date(),
-                            comentario: evalActual.comentario,
-                          }
-                        : null,
+                 evalActual?.comentarioEmpleado
+  ? {
+      estado: "comentario-colaborador",
+      fecha: new Date(),
+      comentario: evalActual.comentarioEmpleado,
+    }
+  : null,
                       evalActual?.comentarioManager
                         ? {
                             estado: "comentario-jefe",
