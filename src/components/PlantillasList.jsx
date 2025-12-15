@@ -34,7 +34,7 @@ export default function PlantillasList({
         const proceso = p.proceso || "—";
         const frecuencia = p.frecuencia || p.frequency || "—";
         const activo = p.activo !== false; // por defecto activo si no existe
- const hasOverride =
+        const hasOverride =
           p.__hasOverride ||
           (!!p.__override &&
             !p.__override.excluido &&
@@ -47,6 +47,13 @@ export default function PlantillasList({
         // clase común para TODAS las “píldoras” para que queden del mismo alto
         const pill = "inline-flex items-center h-6 px-2 rounded-full text-[11px] ring-1";
 
+        const overridePesoVal = p.__override?.peso;
+        const hasPesoOverride = overridePesoVal !== undefined && overridePesoVal !== null;
+        // Use override weight if present (robust check), otherwise base
+        const pesoDisplay = hasPesoOverride && !isNaN(Number(overridePesoVal))
+          ? Number(overridePesoVal)
+          : (p.pesoBase ?? 0);
+
         return (
           <li
             key={p._id}
@@ -54,12 +61,12 @@ export default function PlantillasList({
           >
             <div className="flex items-start justify-between gap-4">
               {/* Izquierda */}
-              <div className="min-w-0">
-         {/* Título */}
-                <div className="font-semibold truncate flex items-center gap-2">
-                  <span className="truncate">{p.nombre}</span>
+              <div className="min-w-0 flex-1">
+                {/* Título */}
+                <div className="font-semibold flex items-start flex-wrap gap-2 mb-1">
+                  <span className="break-words leading-tight mr-1">{p.nombre}</span>
                   {hasOverride && (
-                    <span className="inline-flex items-center h-5 px-2 rounded-full bg-amber-100 text-amber-700 text-[10px] ring-1 ring-amber-200">
+                    <span className="inline-flex items-center h-5 px-2 rounded-full bg-amber-100 text-amber-700 text-[10px] ring-1 ring-amber-200 whitespace-nowrap mt-0.5">
                       Override
                     </span>
                   )}
@@ -80,17 +87,16 @@ export default function PlantillasList({
                   )}
 
                   {/* Peso */}
-                  <span className={`${pill} bg-blue-50 text-blue-700 ring-blue-100`}>
-                    {peso}% peso
+                  <span className={`${pill} ${hasPesoOverride ? 'bg-amber-50 text-amber-700 ring-amber-200 font-bold' : 'bg-blue-50 text-blue-700 ring-blue-100'}`}>
+                    {pesoDisplay}% peso
                   </span>
 
                   {/* Estado */}
                   <span
-                    className={`${pill} ${
-                      activo
+                    className={`${pill} ${activo
                         ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
                         : "bg-gray-100 text-gray-600 ring-gray-200"
-                    }`}
+                      }`}
                   >
                     {activo ? "Activo" : "Inactivo"}
                   </span>

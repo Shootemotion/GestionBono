@@ -547,11 +547,23 @@ export default function GestionPlantillasPage() {
     [plantillas]
   );
   const totalObjetivos = useMemo(
-    () => objetivos.reduce((acc, o) => acc + (o.pesoBase || 0), 0),
+    () => objetivos.reduce((acc, o) => {
+      const ov = o.__override?.peso;
+      const peso = (ov !== undefined && ov !== null && !isNaN(Number(ov)))
+        ? Number(ov)
+        : (o.pesoBase || 0);
+      return acc + peso;
+    }, 0),
     [objetivos]
   );
   const totalAptitudes = useMemo(
-    () => aptitudes.reduce((acc, a) => acc + (a.pesoBase || 0), 0),
+    () => aptitudes.reduce((acc, a) => {
+      const ov = a.__override?.peso;
+      const peso = (ov !== undefined && ov !== null && !isNaN(Number(ov)))
+        ? Number(ov)
+        : (a.pesoBase || 0);
+      return acc + peso;
+    }, 0),
     [aptitudes]
   );
 
@@ -770,8 +782,8 @@ export default function GestionPlantillasPage() {
                     <div className="flex items-center justify-between px-3 py-2">
                       <button
                         className={`w-full text-left font-medium rounded-md px-2 py-1 transition-all ${isActiveScope("area", area._id)
-                            ? "bg-primary/10 text-primary"
-                            : "hover:bg-muted/60"
+                          ? "bg-primary/10 text-primary"
+                          : "hover:bg-muted/60"
                           } hover:ring-1 hover:ring-primary/20`}
                         onClick={() => {
                           setScopeType("area");
@@ -797,8 +809,8 @@ export default function GestionPlantillasPage() {
                             <div className="flex items-center justify-between gap-1">
                               <button
                                 className={`w-full text-left text-sm rounded-md px-3 py-1.5 transition-all ${isActiveScope("sector", sector._id)
-                                    ? "bg-primary/10 text-primary"
-                                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                                  ? "bg-primary/10 text-primary"
+                                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                                   } hover:ring-1 hover:ring-primary/20`}
                                 onClick={() => {
                                   setScopeType("sector");
@@ -864,8 +876,8 @@ export default function GestionPlantillasPage() {
                       <button
                         key={y}
                         className={`px-3 py-1 rounded-full text-sm ${year === y
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted"
                           }`}
                         onClick={() => setYear(y)}
                       >

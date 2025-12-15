@@ -47,6 +47,13 @@ const FeedbackSchema = new mongoose.Schema(
 
         // Para auditoría
         creadoPor: { type: mongoose.Schema.Types.ObjectId, ref: "Usuario" },
+
+        // Snapshot de scores al momento del feedback
+        scores: {
+            obj: Number,
+            comp: Number,
+            global: Number
+        }
     },
     {
         timestamps: true,

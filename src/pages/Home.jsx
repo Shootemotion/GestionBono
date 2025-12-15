@@ -18,8 +18,19 @@ import useCan, { useHasRole } from "@/hooks/useCan";
 import { API_ORIGIN } from "@/lib/api";
 
 function quarterLabel(d = new Date()) {
-  const q = Math.floor(d.getMonth() / 3) + 1;
-  return `Q${q}-${d.getFullYear()}`;
+  const month = d.getMonth();
+  const year = d.getFullYear();
+
+  // Fiscal Year starts in September (Month 8)
+  // Shift so Sep (8) -> 0, Oct (9) -> 1 ... Aug (7) -> 11
+  const fyMonth = (month + 4) % 12;
+  const fiscalQ = Math.floor(fyMonth / 3) + 1;
+
+  // Year: Sep-Dec use current year. Jan-Aug use previous year (relative to calendar).
+  // e.g. Sep 2025 -> Q1-2025. Jan 2026 -> Q2-2025.
+  const fiscalYear = (month >= 8) ? year : year - 1;
+
+  return `Q${fiscalQ}-${fiscalYear}`;
 }
 
 function initialsFromUser(user) {

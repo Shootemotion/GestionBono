@@ -30,7 +30,8 @@ export const saveFeedback = async (req, res) => {
         const {
             empleado, year, periodo,
             comentario, estado, fechaRealizacion,
-            comentarioEmpleado, empleadoAck
+            comentarioEmpleado, empleadoAck,
+            scores // Scores calculated by frontend
         } = req.body;
 
         if (!empleado || !year || !periodo) {
@@ -52,6 +53,7 @@ export const saveFeedback = async (req, res) => {
             fechaRealizacion: fechaRealizacion || new Date(),
             comentarioEmpleado,
             empleadoAck,
+            scores,
         };
 
         // Determine if this is a "Manager Action" (creating/updating feedback content)

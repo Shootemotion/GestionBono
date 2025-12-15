@@ -67,6 +67,8 @@ export const authenticateJWT = async (req, res, next) => {
     if (token) {
       const payload = jwt.verify(token, process.env.JWT_SECRET);
 
+
+
       const userDoc = await Usuario.findById(payload.sub)
         .populate({
           path: "empleado",

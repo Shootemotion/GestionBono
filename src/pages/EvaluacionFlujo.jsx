@@ -178,7 +178,15 @@ function getHitoColorClass(status) {
 function getAccumulatedValue(obj, metaId, currentPeriod, currentValue) {
   if (!obj || !Array.isArray(obj.hitos)) return currentValue || 0;
 
-  const periodOrder = ["Q1", "Q2", "Q3", "FINAL"];
+  // Dynamically determine period order from available hitos in the object
+  // Sorting effectively handles: 
+  // - "YYYYQX" (e.g. 2025Q1, 2025Q2)
+  // - "YYYYMXX" (e.g. 2025M01, 2025M02)
+  // - Simple "Q1", "Q2" (legacy support)
+  const periodOrder = obj.hitos
+    .map(h => h.periodo)
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
   const currentIdx = periodOrder.indexOf(currentPeriod);
   if (currentIdx === -1) return currentValue || 0;
 
@@ -188,7 +196,8 @@ function getAccumulatedValue(obj, metaId, currentPeriod, currentValue) {
     if (hIdx !== -1 && hIdx <= currentIdx) {
       const m = h.metas?.find(m => (m.metaId === metaId || m._id === metaId));
       if (h.periodo === currentPeriod) {
-        total += Number(currentValue || 0);
+        // If it's the current period being edited/viewed, use the passed currentValue
+        total += Number(currentValue ?? 0);
       } else if (m) {
         total += Number(m.resultado || 0);
       }
@@ -354,21 +363,53 @@ export default function EvaluacionFlujo() {
         const resultados = ev.metasResultados || [];
 
         // Merge metas
+        // Merge metas: ONLY keep metas that exist in the template (baseMetas)
         const map = new Map();
-        baseMetas.forEach(m => map.set(metaKey(m), { ...m }));
-        resultados.forEach(r => {
-          const key = metaKey(r);
-          const base = map.get(key) || {};
-          map.set(key, { ...base, ...r, esperado: r.esperado ?? base.esperado, modoAcumulacion: r.modoAcumulacion ?? base.modoAcumulacion });
+        // 1. Index results by key for fast lookup
+        const resultsMap = new Map();
+        resultados.forEach(r => resultsMap.set(metaKey(r), r));
+
+        // 2. Iterate over TEMPLATE metas and merge with result if exists
+        baseMetas.forEach(m => {
+          const key = metaKey(m);
+          const result = resultsMap.get(key) || {};
+          // Merge: Template takes precedence for definition, Result takes precedence for values
+          map.set(key, {
+            ...m,
+            ...result,
+            // Ensure critical definition fields come from Template if missing in result (or to override)
+            _id: m._id, // Keep template ID structure if possible, or result ID? Usually template ID is source of truth.
+            metaId: m.metaId || m._id,
+            nombre: m.nombre,
+            unidad: m.unidad,
+            esperado: m.esperado ?? m.target ?? m.meta, // Template value
+            // Result values
+            resultado: result.resultado ?? null,
+            cumple: result.cumple ?? false,
+            modoAcumulacion: m.modoAcumulacion ?? m.acumulativa ? "acumulativo" : "periodo"
+          });
         });
+
         const metas = deepCloneMetas(Array.from(map.values()));
+
+        // Calculate actual using ACCUMULATED values if applicable
+        let calculatedActual = null;
+        if (metas.length > 0) {
+          const metasForCalc = metas.map(m => {
+            if (m.modoAcumulacion === "acumulativo") {
+              return { ...m, resultado: getAccumulatedValue(item, m.metaId || m._id, p, m.resultado) };
+            }
+            return m;
+          });
+          calculatedActual = calcularResultadoGlobal(metasForCalc);
+        }
 
         localHito = {
           periodo: p,
           fecha: ev.fecha,
           estado: ev.estado,
           metas,
-          actual: ev.actual ?? (metas.length ? calcularResultadoGlobal(metas) : null),
+          actual: ev.actual ?? calculatedActual,
           comentario: ev.comentario ?? "",
           escala: ev.escala ?? null
         };
@@ -416,7 +457,23 @@ export default function EvaluacionFlujo() {
       // Recalcular actual si es objetivo
       let newActual = newLocalHito.actual;
       if (newLocalHito.metas && newLocalHito.metas.length > 0) {
-        newActual = calcularResultadoGlobal(newLocalHito.metas);
+        // Find full item object to calculate accumulated values
+        const itemObj = dashEmpleadoData?.objetivos?.find(o => o._id === itemId);
+
+        let metasForCalc = newLocalHito.metas;
+        if (itemObj) {
+          metasForCalc = newLocalHito.metas.map(m => {
+            if (m.modoAcumulacion === "acumulativo") {
+              const accVal = getAccumulatedValue(itemObj, m.metaId || m._id, newLocalHito.periodo, m.resultado);
+              return {
+                ...m,
+                resultado: accVal
+              };
+            }
+            return m;
+          });
+        }
+        newActual = calcularResultadoGlobal(metasForCalc);
       }
 
       return {
@@ -529,7 +586,13 @@ export default function EvaluacionFlujo() {
           year: anio,
           periodo,
           comentario,
-          estado
+          estado,
+          // Snapshot of scores at the moment of saving
+          scores: resumenEmpleado ? {
+            obj: resumenEmpleado.objetivos.score,
+            comp: resumenEmpleado.aptitudes.score,
+            global: resumenEmpleado.global
+          } : null
         }
       });
       toast.success(`Feedback ${periodo} guardado`);
@@ -642,34 +705,36 @@ export default function EvaluacionFlujo() {
                 const bucketCfg = bucketConfig(obj.bucket || "futuro");
 
                 return (
-                  <Card key={obj._id} className={`border-l-4 ${bucketCfg.badgeClass.replace("bg-", "border-l-").split(" ")[0]} shadow-sm transition-all ${isExpanded ? 'ring-2 ring-blue-100' : ''}`}>
-                    <CardHeader className="pb-3 cursor-pointer hover:bg-slate-50/50 transition-colors" onClick={() => toggleExpand(obj)}>
-                      <div className="flex justify-between items-start">
-                        <div className="space-y-1">
+                  <Card key={obj._id} className={`border-0 shadow-sm ring-1 ring-slate-100 bg-white transition-all overflow-hidden mb-4 ${isExpanded ? 'ring-2 ring-blue-500/20 shadow-md' : 'hover:shadow-md hover:ring-blue-500/10'}`}>
+                    <CardHeader className="py-3 px-4 cursor-pointer bg-white" onClick={() => toggleExpand(obj)}>
+                      <div className="flex justify-between items-start gap-4">
+                        <div className="space-y-2 flex-1">
                           <div className="flex items-center gap-2">
-                            <Badge variant="outline" className={`${bucketCfg.badgeClass} border-transparent font-normal`}>
+                            <Badge variant="outline" className={`${bucketCfg.badgeClass} border-transparent font-semibold px-2 py-0 text-[10px] rounded-full`}>
                               {bucketCfg.chip}
                             </Badge>
-                            <span className="text-xs text-slate-400 font-medium">Peso: {obj.peso}%</span>
+                            <span className="text-[10px] font-medium text-slate-400 bg-slate-50 px-1.5 py-0 rounded-full border border-slate-100">Peso: {obj.peso}%</span>
                           </div>
-                          <CardTitle className="text-base font-bold text-slate-800 leading-tight">
+                          <CardTitle className="text-base font-bold text-slate-800 leading-snug tracking-tight">
                             {obj.nombre}
                           </CardTitle>
                         </div>
-                        <div className="text-right">
-                          <div className="text-2xl font-black text-slate-700">{Math.round((obj.progreso * obj.peso) / 100)}%</div>
-                          <div className="text-[10px] text-slate-400 uppercase font-bold">Resultado</div>
+                        <div className="text-right pl-4 border-l border-slate-100">
+                          <div className="flex flex-col items-end">
+                            <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider mb-0.5">Resultado</span>
+                            <div className="text-xl font-black text-slate-700 leading-none">{Math.round((obj.progreso * obj.peso) / 100)}%</div>
+                          </div>
                         </div>
                       </div>
                     </CardHeader>
 
                     {isExpanded && (
-                      <CardContent className="pt-0 pb-6 px-6 bg-slate-50/30 border-t">
+                      <CardContent className="pt-0 pb-4 px-4 bg-slate-50/30 border-t border-slate-100">
                         {/* Milestone Selector */}
                         {obj.hitos && obj.hitos.length > 0 && (
-                          <div className="mb-6 mt-4">
-                            <label className="text-xs font-semibold text-slate-400 uppercase mb-2 block">Cronograma de Hitos</label>
-                            <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+                          <div className="mb-4 mt-4">
+                            <label className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded inline-block font-bold uppercase mb-2 tracking-wide">Cronograma de Hitos</label>
+                            <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-2">
                               {obj.hitos.map((h) => {
                                 const status = getHitoStatus(h);
                                 const colorClass = getHitoColorClass(status);
@@ -680,10 +745,12 @@ export default function EvaluacionFlujo() {
                                   <div
                                     key={h.periodo}
                                     onClick={() => isSelectable && loadItemEvaluacion(obj, h.periodo)}
-                                    className={`flex flex-col items-center justify-center p-2 rounded border ${colorClass} transition-all ${isSelected ? 'ring-2 ring-offset-1 ring-slate-400' : ''} ${isSelectable ? 'cursor-pointer hover:brightness-95' : 'opacity-60 cursor-not-allowed'}`}
+                                    className={`flex flex-col items-center justify-center py-1.5 px-1 rounded border transition-all duration-200 relative ${colorClass} 
+                                      ${isSelected ? 'ring-2 ring-offset-1 ring-blue-500 shadow-sm scale-105 z-10' : ''} 
+                                      ${isSelectable ? 'cursor-pointer hover:shadow-sm hover:-translate-y-0.5' : 'opacity-40 grayscale cursor-not-allowed'}`}
                                   >
-                                    <span className="text-[10px] font-bold uppercase">{h.periodo}</span>
-                                    <span className="text-xs font-semibold">{h.actual !== null ? `${Math.round(h.actual)}%` : "-"}</span>
+                                    <span className="text-[9px] font-black uppercase tracking-tight">{h.periodo}</span>
+                                    <span className="text-[10px] font-semibold mt-0">{h.actual !== null ? `${Math.round(h.actual)}%` : "-"}</span>
                                   </div>
                                 );
                               })}
@@ -692,18 +759,22 @@ export default function EvaluacionFlujo() {
                         )}
 
                         {localHito ? (
-                          <div className="space-y-6 mt-4 animate-in slide-in-from-top-2 duration-200">
-                            <div className="flex items-center justify-between bg-white p-3 rounded-lg border shadow-sm">
+                          <div className="space-y-4 mt-4 animate-in slide-in-from-top-4 duration-300">
+                            {/* Evaluation Header */}
+                            <div className="flex items-center justify-between bg-gradient-to-r from-slate-900 to-slate-800 p-2.5 rounded-lg shadow-sm shadow-slate-200 text-white">
                               <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-slate-600">Evaluando Período:</span>
-                                <Badge className="bg-slate-900 text-white hover:bg-slate-800">{localHito.periodo}</Badge>
+                                <span className="text-xs font-medium text-slate-300">Período:</span>
+                                <Badge className="bg-white/10 text-white border-white/20 text-xs px-2 py-0.5">{localHito.periodo}</Badge>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-slate-600">Score Hito:</span>
-                                <span className="text-lg font-bold text-emerald-600">{Number(localHito.actual).toFixed(1)}%</span>
+                              <div className="flex items-center gap-2 bg-white/10 px-3 py-1 rounded border border-white/10">
+                                <span className="text-[10px] font-medium text-slate-300 uppercase tracking-wider">Score Hito</span>
+                                <span className={`text-lg font-black ${Number(localHito.actual) >= 100 ? 'text-emerald-400' : 'text-white'}`}>
+                                  {Number(localHito.actual).toFixed(1)}%
+                                </span>
                               </div>
                             </div>
 
+                            {/* Metas List */}
                             <div className="space-y-3">
                               {localHito.metas.map((meta, idx) => {
                                 const isAcumulativo = meta.modoAcumulacion === "acumulativo";
@@ -714,26 +785,29 @@ export default function EvaluacionFlujo() {
                                 const cumple = evaluarCumple(valorEvaluado, meta.esperado, meta.operador, meta.unidad);
 
                                 return (
-                                  <div key={idx} className="bg-white p-4 rounded-lg border shadow-sm space-y-3">
-                                    <div className="flex justify-between items-start">
-                                      <div>
-                                        <div className="font-semibold text-sm text-slate-800">{meta.nombre}</div>
-                                        <div className="text-xs text-slate-500 mt-0.5 flex flex-wrap gap-2">
-                                          <span>Esperado: <b>{meta.operador} {meta.esperado} {meta.unidad}</b></span>
-                                          {isAcumulativo && <span className="text-purple-600 bg-purple-50 px-1.5 rounded border border-purple-100">Acumulativo</span>}
-                                          {meta.reglaCierre && <span className="text-indigo-600 bg-indigo-50 px-1.5 rounded border border-indigo-100">Cierre: {meta.reglaCierre}</span>}
-                                          {meta.reconoceEsfuerzo && <span className="text-blue-600 bg-blue-50 px-1.5 rounded border border-blue-100">Reconoce Esfuerzo</span>}
-                                          {meta.permiteOver && <span className="text-emerald-600 bg-emerald-50 px-1.5 rounded border border-emerald-100">Permite Over</span>}
-                                          {meta.tolerancia > 0 && <span className="text-amber-600 bg-amber-50 px-1.5 rounded border border-amber-100">Tol: {meta.tolerancia}</span>}
+                                  <div key={idx} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm hover:shadow-md transition-shadow duration-200 space-y-3 group">
+                                    <div className="flex justify-between items-start gap-4">
+                                      <div className="flex-1 space-y-1">
+                                        <div className="font-bold text-sm text-slate-800 leading-snug group-hover:text-blue-700 transition-colors">
+                                          {meta.nombre}
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5 text-[9px] font-semibold uppercase tracking-wide">
+                                          <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
+                                            Esperado: {meta.operador} {meta.esperado} {meta.unidad}
+                                          </span>
+                                          {isAcumulativo && <span className="bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded border border-purple-100">Acumulativo</span>}
+                                          {meta.reglaCierre && <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-100">{meta.reglaCierre}</span>}
+                                          {meta.permiteOver && <span className="bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-100">Over</span>}
                                         </div>
                                       </div>
-                                      <div className="w-32">
-                                        <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Resultado</label>
+
+                                      <div className="w-32 min-w-[120px]">
+                                        <label className="text-[9px] uppercase font-bold text-slate-400 mb-1 block">Resultado</label>
                                         {meta.unidad === "Cumple/No Cumple" ? (
-                                          <div className="flex items-center gap-2">
+                                          <label className={`flex items-center gap-2 p-1.5 rounded border-2 cursor-pointer transition-all ${meta.resultado ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-slate-50 hover:border-slate-300'}`}>
                                             <input
                                               type="checkbox"
-                                              className="h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                              className="h-4 w-4 rounded text-emerald-600 focus:ring-emerald-500 border-gray-300"
                                               checked={!!meta.resultado}
                                               onChange={(e) => {
                                                 const val = e.target.checked;
@@ -744,36 +818,42 @@ export default function EvaluacionFlujo() {
                                                 });
                                               }}
                                             />
-                                            <span className="text-sm">{meta.resultado ? "Cumple" : "No Cumple"}</span>
-                                          </div>
+                                            <span className={`text-xs font-bold ${meta.resultado ? 'text-emerald-700' : 'text-slate-500'}`}>
+                                              {meta.resultado ? "Cumple" : "No"}
+                                            </span>
+                                          </label>
                                         ) : (
-                                          <Input
-                                            type="number"
-                                            className="h-8 text-sm font-medium"
-                                            placeholder="Valor..."
-                                            value={meta.resultado ?? ""}
-                                            onChange={(e) => {
-                                              const val = e.target.value === "" ? null : Number(e.target.value);
-                                              handleUpdateLocalHito(obj._id, (prev) => {
-                                                const metas = [...prev.metas];
-                                                metas[idx] = { ...metas[idx], resultado: val };
-                                                return { ...prev, metas };
-                                              });
-                                            }}
-                                          />
+                                          <div className="relative">
+                                            <Input
+                                              type="number"
+                                              className="h-8 pl-2 pr-6 text-sm font-semibold border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all text-slate-700"
+                                              placeholder="0.00"
+                                              value={meta.resultado ?? ""}
+                                              onChange={(e) => {
+                                                const val = e.target.value === "" ? null : Number(e.target.value);
+                                                handleUpdateLocalHito(obj._id, (prev) => {
+                                                  const metas = [...prev.metas];
+                                                  metas[idx] = { ...metas[idx], resultado: val };
+                                                  return { ...prev, metas };
+                                                });
+                                              }}
+                                            />
+                                          </div>
                                         )}
                                       </div>
                                     </div>
+
                                     {meta.resultado !== null && (
-                                      <div className="mt-2">
-                                        <div className={`text-xs font-medium ${cumple ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                          {cumple ? "✔ Cumple Objetivo" : (isAcumulativo ? `⚠ Progreso actual: ${valorEvaluado} / ${meta.esperado}` : "✘ No alcanza objetivo")}
+                                      <div className={`mt-1 flex items-center gap-2 text-[10px] font-medium px-2 py-1.5 rounded border ${cumple ? 'bg-emerald-50 text-emerald-800 border-emerald-100' : 'bg-rose-50 text-rose-800 border-rose-100'}`}>
+                                        <span className="text-sm">{cumple ? "✔" : "✘"}</span>
+                                        <div className="flex-1">
+                                          {cumple ? "Cumple Obj." : (isAcumulativo ? `Progreso: ${valorEvaluado} / ${meta.esperado}` : "No alcanza")}
+                                          {isAcumulativo && (
+                                            <span className="opacity-80 ml-1">
+                                              (Acumulado: <b>{valorEvaluado}</b>)
+                                            </span>
+                                          )}
                                         </div>
-                                        {isAcumulativo && (
-                                          <div className="text-[10px] text-slate-500 mt-1">
-                                            Acumulado Total: <b>{valorEvaluado}</b> (Anteriores + Actual)
-                                          </div>
-                                        )}
                                       </div>
                                     )}
                                   </div>
@@ -782,36 +862,36 @@ export default function EvaluacionFlujo() {
                             </div>
 
                             {/* Comentarios y Acciones */}
-                            <div className="bg-white p-4 rounded-lg border shadow-sm space-y-4">
+                            <div className="bg-white p-3 rounded-lg border shadow-sm space-y-3">
                               <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Comentario del Evaluador</label>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Comentario</label>
                                 <textarea
-                                  className="w-full h-24 rounded border-slate-200 p-2 text-sm focus:ring-2 focus:ring-blue-500/20 outline-none resize-none"
-                                  placeholder="Justificación de la evaluación..."
+                                  className="w-full h-20 rounded border-slate-200 p-2 text-xs focus:ring-2 focus:ring-blue-500/20 outline-none resize-none"
+                                  placeholder="Justificación..."
                                   value={localHito.comentario}
                                   onChange={(e) => handleUpdateLocalHito(obj._id, (prev) => ({ ...prev, comentario: e.target.value }))}
                                 />
                               </div>
                               {data.comentarioManager && (
-                                <div className="bg-slate-50 p-3 rounded border border-slate-100">
-                                  <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Feedback Anterior</label>
-                                  <p className="text-sm text-slate-600 italic">"{data.comentarioManager}"</p>
+                                <div className="bg-slate-50 p-2 rounded border border-slate-100">
+                                  <label className="text-[9px] font-bold text-slate-400 uppercase mb-0.5 block">Feedback Anterior</label>
+                                  <p className="text-xs text-slate-600 italic line-clamp-2">"{data.comentarioManager}"</p>
                                 </div>
                               )}
-                              <div className="flex items-center justify-between pt-2">
-                                <Button variant="outline" size="sm" onClick={() => handleRecalculate(obj)} disabled={savingItems[obj._id]}>
-                                  <RefreshCw className={`w-3 h-3 mr-2 ${savingItems[obj._id] ? "animate-spin" : ""}`} /> Recalcular
+                              <div className="flex items-center justify-between pt-1">
+                                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleRecalculate(obj)} disabled={savingItems[obj._id]}>
+                                  <RefreshCw className={`w-3 h-3 mr-1 ${savingItems[obj._id] ? "animate-spin" : ""}`} /> Recalcular
                                 </Button>
-                                <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => handleSaveItem(obj, "draft")} disabled={savingItems[obj._id]}>
-                                  <Save className="w-4 h-4 mr-2" /> Guardar Avance
+                                <Button size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700" onClick={() => handleSaveItem(obj, "draft")} disabled={savingItems[obj._id]}>
+                                  <Save className="w-3 h-3 mr-1" /> Guardar
                                 </Button>
                               </div>
                             </div>
                           </div>
                         ) : (
-                          <div className="text-center py-12 text-slate-400">
-                            <Calendar className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                            <p>Seleccioná un hito del cronograma para evaluar</p>
+                          <div className="text-center py-8 text-slate-400">
+                            <Calendar className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                            <p className="text-xs">Seleccioná un hito para evaluar</p>
                           </div>
                         )}
                       </CardContent>
@@ -831,29 +911,31 @@ export default function EvaluacionFlujo() {
                 const localHito = data?.localHito;
 
                 return (
-                  <Card key={apt._id} className={`border-l-4 border-l-amber-500 shadow-sm transition-all ${isExpanded ? 'ring-2 ring-amber-100' : ''}`}>
-                    <CardHeader className="pb-3 cursor-pointer hover:bg-slate-50/50 transition-colors" onClick={() => toggleExpand(apt)}>
-                      <div className="flex justify-between items-start">
-                        <div className="space-y-1">
-                          <CardTitle className="text-base font-bold text-slate-800 leading-tight">
+                  <Card key={apt._id} className={`border-0 shadow-sm ring-1 ring-slate-100 transition-all overflow-hidden mb-4 group ${isExpanded ? 'ring-2 ring-amber-500/20 shadow-md bg-white' : 'hover:shadow-md bg-gradient-to-r from-amber-50/50 to-white hover:to-amber-50/30'}`}>
+                    <CardHeader className="py-3 px-4 cursor-pointer" onClick={() => toggleExpand(apt)}>
+                      <div className="flex justify-between items-start gap-4">
+                        <div className="space-y-1 flex-1">
+                          <CardTitle className="text-base font-bold text-slate-800 leading-snug tracking-tight group-hover:text-amber-700 transition-colors">
                             {apt.nombre}
                           </CardTitle>
-                          <p className="text-xs text-slate-500 line-clamp-2">{apt.descripcion}</p>
+                          <p className="text-xs text-slate-500 line-clamp-1 leading-relaxed">{apt.descripcion}</p>
                         </div>
-                        <div className="text-right">
-                          <div className="text-2xl font-black text-amber-600">{Math.round(apt.puntuacion)}%</div>
-                          <div className="text-[10px] text-slate-400 uppercase font-bold">Score</div>
+                        <div className="text-right pl-4 border-l border-slate-100">
+                          <div className="flex flex-col items-end">
+                            <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider mb-0.5">Score</span>
+                            <div className="text-xl font-black text-amber-500 leading-none">{Math.round(apt.puntuacion)}%</div>
+                          </div>
                         </div>
                       </div>
                     </CardHeader>
 
                     {isExpanded && (
-                      <CardContent className="pt-0 pb-6 px-6 bg-slate-50/30 border-t">
+                      <CardContent className="pt-0 pb-4 px-4 bg-slate-50/30 border-t border-slate-100">
                         {/* Milestone Selector (Added for Competencias) */}
                         {apt.hitos && apt.hitos.length > 0 && (
-                          <div className="mb-6 mt-4">
-                            <label className="text-xs font-semibold text-slate-400 uppercase mb-2 block">Cronograma de Hitos</label>
-                            <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+                          <div className="mb-4 mt-4">
+                            <label className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded inline-block font-bold uppercase mb-2 tracking-wide">Cronograma de Hitos</label>
+                            <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-2">
                               {apt.hitos.map((h) => {
                                 const status = getHitoStatus(h);
                                 const colorClass = getHitoColorClass(status);
@@ -864,10 +946,12 @@ export default function EvaluacionFlujo() {
                                   <div
                                     key={h.periodo}
                                     onClick={() => isSelectable && loadItemEvaluacion(apt, h.periodo)}
-                                    className={`flex flex-col items-center justify-center p-2 rounded border ${colorClass} transition-all ${isSelected ? 'ring-2 ring-offset-1 ring-slate-400' : ''} ${isSelectable ? 'cursor-pointer hover:brightness-95' : 'opacity-60 cursor-not-allowed'}`}
+                                    className={`flex flex-col items-center justify-center py-1.5 px-1 rounded border transition-all duration-200 relative ${colorClass} 
+                                      ${isSelected ? 'ring-2 ring-offset-1 ring-amber-500 shadow-sm scale-105 z-10' : ''} 
+                                      ${isSelectable ? 'cursor-pointer hover:shadow-sm hover:-translate-y-0.5' : 'opacity-40 grayscale cursor-not-allowed'}`}
                                   >
-                                    <span className="text-[10px] font-bold uppercase">{h.periodo}</span>
-                                    <span className="text-xs font-semibold">{h.actual !== null ? `${Math.round(h.actual)}%` : "-"}</span>
+                                    <span className="text-[9px] font-black uppercase tracking-tight">{h.periodo}</span>
+                                    <span className="text-[10px] font-semibold mt-0">{h.actual !== null ? `${Math.round(h.actual)}%` : "-"}</span>
                                   </div>
                                 );
                               })}
@@ -876,59 +960,66 @@ export default function EvaluacionFlujo() {
                         )}
 
                         {localHito ? (
-                          <div className="space-y-6 mt-4 animate-in slide-in-from-top-2 duration-200">
-                            <div className="flex items-center justify-between bg-white p-3 rounded-lg border shadow-sm">
+                          <div className="space-y-4 mt-4 animate-in slide-in-from-top-4 duration-300">
+                            {/* Evaluation Header */}
+                            <div className="flex items-center justify-between bg-gradient-to-r from-amber-950 to-amber-800 p-2.5 rounded-lg shadow-sm shadow-amber-100 text-white">
                               <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-slate-600">Evaluando Período:</span>
-                                <Badge className="bg-slate-900 text-white hover:bg-slate-800">{localHito.periodo}</Badge>
+                                <span className="text-xs font-medium text-amber-200">Período:</span>
+                                <Badge className="bg-white/10 text-white border-white/20 text-xs px-2 py-0.5">{localHito.periodo}</Badge>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-slate-600">Nivel:</span>
-                                <Badge variant="outline" className="text-amber-700 border-amber-200 bg-amber-50">
-                                  {localHito.escala ? `${localHito.escala}/5` : "Sin calificar"}
-                                </Badge>
+                              <div className="flex items-center gap-2 bg-white/10 px-3 py-1 rounded border border-white/10">
+                                <span className="text-[10px] font-medium text-amber-200 uppercase tracking-wider">Nivel</span>
+                                <span className="text-lg font-black text-white">
+                                  {localHito.escala ? `${localHito.escala}/5` : "-"}
+                                </span>
                               </div>
                             </div>
 
-                            <div className="bg-white p-6 rounded-lg border shadow-sm space-y-6">
+                            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm space-y-4">
                               <div>
-                                <label className="text-sm font-bold text-slate-700 mb-2 block">Nivel de Competencia (1-5)</label>
-                                <div className="flex gap-2">
+                                <label className="text-xs font-bold text-slate-700 mb-2 block flex justify-between">
+                                  <span>Nivel de Competencia</span>
+                                  <span className="text-slate-400 font-normal text-[10px]">Selecciona opción</span>
+                                </label>
+                                <div className="grid grid-cols-5 gap-2">
                                   {[1, 2, 3, 4, 5].map((val) => (
                                     <button
                                       key={val}
                                       onClick={() => handleUpdateLocalHito(apt._id, (prev) => ({ ...prev, escala: val }))}
-                                      className={`flex-1 h-12 rounded-lg border-2 font-bold text-lg transition-all ${localHito.escala === val ? "border-amber-500 bg-amber-50 text-amber-700 scale-105 shadow-md" : "border-slate-100 bg-slate-50 text-slate-400 hover:border-amber-200"}`}
+                                      className={`h-9 rounded-lg border-2 font-black text-lg transition-all duration-200 relative overflow-hidden group/btn ${localHito.escala === val ? "border-amber-500 bg-amber-50 text-amber-600 shadow-sm ring-1 ring-amber-200 ring-offset-1" : "border-slate-100 bg-white text-slate-300 hover:border-amber-200 hover:text-amber-400"}`}
                                     >
-                                      {val}
+                                      <span className="relative z-10">{val}</span>
+                                      {localHito.escala === val && <div className="absolute inset-0 bg-amber-100/50 animate-pulse"></div>}
                                     </button>
                                   ))}
                                 </div>
-                                <div className="flex justify-between text-xs text-slate-400 mt-2 px-1">
-                                  <span>Bajo Desempeño</span>
-                                  <span>Excelente Desempeño</span>
+                                <div className="flex justify-between text-[9px] font-semibold text-slate-400 mt-1 px-1 uppercase tracking-wide">
+                                  <span>Bajo</span>
+                                  <span>Excelente</span>
                                 </div>
                               </div>
 
-                              <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Comentario del Evaluador</label>
+                              <div className="border-t border-slate-100 pt-3">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Comentario</label>
                                 <textarea
-                                  className="w-full h-24 rounded border-slate-200 p-2 text-sm focus:ring-2 focus:ring-amber-500/20 outline-none resize-none"
-                                  placeholder="Justificación de la competencia..."
+                                  className="w-full h-20 rounded-lg border-slate-200 bg-slate-50 p-2 text-xs focus:ring-2 focus:ring-amber-500/10 focus:border-amber-500 transition-all outline-none resize-none placeholder:text-slate-400"
+                                  placeholder="Justifica..."
                                   value={localHito.comentario}
                                   onChange={(e) => handleUpdateLocalHito(apt._id, (prev) => ({ ...prev, comentario: e.target.value }))}
                                 />
                               </div>
 
-                              <Button size="sm" className="bg-amber-600 hover:bg-amber-700" onClick={() => handleSaveItem(apt, "draft")} disabled={savingItems[apt._id]}>
-                                <Save className="w-4 h-4 mr-2" /> Guardar Avance
-                              </Button>
+                              <div className="flex justify-end pt-1">
+                                <Button size="sm" className="h-8 bg-amber-600 hover:bg-amber-700 text-white shadow-sm shadow-amber-200" onClick={() => handleSaveItem(apt, "draft")} disabled={savingItems[apt._id]}>
+                                  <Save className="w-3 h-3 mr-1" /> Guardar
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         ) : (
-                          <div className="text-center py-12 text-slate-400">
-                            <Calendar className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                            <p>Seleccioná un hito del cronograma para evaluar</p>
+                          <div className="text-center py-8 text-slate-300 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50/50">
+                            <Calendar className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                            <p className="font-medium text-xs text-slate-500">Seleccioná un hito para evaluar</p>
                           </div>
                         )}
                       </CardContent>

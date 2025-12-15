@@ -168,14 +168,81 @@ export async function computeForEmployees(empleadoIds, anio) {
         }
       }
 
-      const scoreObj = sumPesoObj > 0 ? weightedProgressSum / sumPesoObj : 0;
-      const scoreApt = sumPesoApt > 0 ? weightedAptScoreSum / sumPesoApt : 0;
-      const scoreFinal = Math.round((0.8 * scoreObj + 0.2 * scoreApt) * 10) / 10;
-      const bono =
-        objetivosArr.length > 0 || aptitudesArr.length > 0 ? `${scoreFinal}%` : null;
-
-      // Filter feedbacks for this employee
+      // --- Filter feedbacks for this employee ---
       const empFeedbacks = feedbacksArr.filter(f => String(f.empleado) === empIdStr);
+
+      const periodOrder = ["Q1", "Q2", "Q3", "FINAL"];
+
+      // Find latest non-DRAFT feedback (The "Effective" one)
+      const latestFeedback = empFeedbacks
+        .sort((a, b) => periodOrder.indexOf(b.periodo) - periodOrder.indexOf(a.periodo))
+        .find(f => f.estado !== "DRAFT");
+
+      // Determine Cutoff Period (Default to FINAL if no feedback, or use latest feedback's period)
+      // If no authorized feedback exists, maybe we shouldn't filter? Or assume year-to-date?
+      // For legacy matching, if we have a locked Q2, we should only calc up to Q2.
+      const cutoffPeriod = latestFeedback ? latestFeedback.periodo : "FINAL";
+      const cutoffIndex = periodOrder.indexOf(cutoffPeriod);
+
+      // --- Recalculate based on Cutoff (Live Fallback) ---
+      // We re-iterate or just filter the `hitos` we already generated?
+      // We already generated `hitos` for all periods. We just need to filter them BEFORE averaging.
+
+      // Re-map objectives to apply cutoff
+      objetivosArr.forEach(obj => {
+        // Filter hitos up to cutoff
+        const validHitos = obj.hitos.filter(h => periodOrder.indexOf(h.periodo) <= cutoffIndex);
+        const progresos = validHitos.map(h => h.actual ?? 0);
+
+        const isCumulative = obj.metas?.some(m => m.acumulativa || m.modoAcumulacion === 'acumulativo');
+        const newProgreso = isCumulative
+          ? Math.max(...progresos, 0)
+          : (progresos.length ? Math.round(progresos.reduce((a, b) => a + b, 0) / progresos.length) : 0);
+
+        // Update the object in place (referenced in array)
+        obj.progreso = newProgreso;
+        // Note: Weights don't change, but weighted sums need updating?
+        // Yes, we need to re-sum below.
+      });
+
+      // Re-map aptitudes
+      aptitudesArr.forEach(apt => {
+        const validHitos = apt.hitos.filter(h => periodOrder.indexOf(h.periodo) <= cutoffIndex);
+        const puntuaciones = validHitos
+          .map(h => h.actual)
+          .filter(val => val !== null && val !== undefined);
+
+        const newPuntuacion = puntuaciones.length
+          ? Math.round(puntuaciones.reduce((a, b) => a + b, 0) / puntuaciones.length)
+          : 0;
+
+        apt.puntuacion = newPuntuacion;
+      });
+
+      // --- Re-Calculate Global Scores based on new progressions ---
+      weightedProgressSum = objetivosArr.reduce((acc, curr) => acc + (curr.progreso * curr.peso), 0);
+      weightedAptScoreSum = aptitudesArr.reduce((acc, curr) => acc + (curr.puntuacion * curr.peso), 0);
+
+      let scoreObj = sumPesoObj > 0 ? weightedProgressSum / sumPesoObj : 0;
+      let scoreApt = sumPesoApt > 0 ? weightedAptScoreSum / sumPesoApt : 0;
+      let scoreFinal = Math.round((0.7 * scoreObj + 0.3 * scoreApt) * 10) / 10;
+      let bono = (objetivosArr.length > 0 || aptitudesArr.length > 0) ? `${scoreFinal}%` : null;
+
+      // START OVERRIDE CHECK (If snapshot exists, it wins over our recalc)
+      if (latestFeedback && latestFeedback.scores?.global != null) {
+        scoreObj = latestFeedback.scores.obj ?? scoreObj;
+        scoreApt = latestFeedback.scores.comp ?? scoreApt;
+        scoreFinal = latestFeedback.scores.global;
+        bono = `${scoreFinal}%`;
+      }
+
+      if (process.env.NODE_ENV !== 'production' && Number(anio) === 1989) {
+        console.log(`DEBUG 1989: Emp ${empIdStr}`);
+        console.log(`- Plantillas Aplicables: ${aplicables.length}`);
+        console.log(`- Objetivos: ${objetivosArr.length}`);
+        console.log(`- Aptitudes: ${aptitudesArr.length}`);
+        if (objetivosArr.length > 0) console.log("Sample Obj:", objetivosArr[0].nombre);
+      }
 
       return {
         empleado: {
@@ -191,7 +258,8 @@ export async function computeForEmployees(empleadoIds, anio) {
         },
         objetivos: { count: objetivosArr.length, sumPeso: sumPesoObj, items: objetivosArr },
         aptitudes: { count: aptitudesArr.length, sumPeso: sumPesoApt, items: aptitudesArr },
-        feedbacks: empFeedbacks,
+        // Estricto: Solo mostrar feedback si hay Objetivos. Ignorar Aptitudes (Competencias) según feedback del usuario.
+        feedbacks: (objetivosArr.length > 0) ? empFeedbacks : [],
         scoreObj,
         scoreApt,
         scoreFinal,
@@ -319,6 +387,13 @@ export const dashByEmpleado = async (req, res, next) => {
       year: year,
     }).lean();
 
+    // 🔹 feedbacks del empleado para ese año (FIX: Needed for bonus calc)
+    const feedbacksArr = await Feedback.find({
+      empleado: empleado._id,
+      year: year,
+    }).lean();
+
+    const empIdStr = String(empleado._id);
     const objetivosArr = [];
     const aptitudesArr = [];
     let sumPesoObj = 0, weightedProgressSum = 0;
@@ -331,7 +406,7 @@ export const dashByEmpleado = async (req, res, next) => {
 
       // Peso base (share 100% en empleado directo)
       const basePeso = Number(p.pesoBase || 0);
-      const peso = (ov && typeof ov.peso === "number") ? Number(ov.peso) : basePeso;
+      const peso = (ov && ov.peso != null && !isNaN(Number(ov.peso))) ? Number(ov.peso) : basePeso;
 
       // Hitos + metas evaluadas
       const hitos = await Promise.all(
@@ -439,10 +514,34 @@ export const dashByEmpleado = async (req, res, next) => {
     const sumBasePesoObj = objetivosArr.reduce((acc, curr) => acc + (curr.pesoBase || 0), 0);
     const sumBasePesoApt = aptitudesArr.reduce((acc, curr) => acc + (curr.pesoBase || 0), 0);
 
-    const scoreObj = sumBasePesoObj > 0 ? weightedProgressSum / sumBasePesoObj : 0;
-    const scoreApt = sumBasePesoApt > 0 ? weightedAptScoreSum / sumBasePesoApt : 0;
-    const scoreFinal = Math.round((0.7 * scoreObj + 0.3 * scoreApt) * 10) / 10;
-    const bono = (objetivosArr.length || aptitudesArr.length) ? `${scoreFinal}%` : null;
+    let scoreObj = sumPesoObj > 0 ? weightedProgressSum / sumPesoObj : 0;
+    let scoreApt = sumPesoApt > 0 ? weightedAptScoreSum / sumPesoApt : 0;
+    let scoreFinal = Math.round((0.7 * scoreObj + 0.3 * scoreApt) * 10) / 10;
+    let bono = (objetivosArr.length > 0 || aptitudesArr.length > 0) ? `${scoreFinal}%` : null;
+
+    // Filter feedbacks for this employee
+    const empFeedbacks = feedbacksArr.filter(f => String(f.empleado) === empIdStr);
+
+    // --- LOGIC: Use Latest Feedback for Bonus ---
+    const periodOrder = ["Q1", "Q2", "Q3", "FINAL"];
+    // Find latest non-DRAFT
+    const latestFeedback = empFeedbacks
+      .sort((a, b) => periodOrder.indexOf(b.periodo) - periodOrder.indexOf(a.periodo))
+      .find(f => f.estado !== "DRAFT");
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[BONUS DEBUG] Emp: ${empIdStr}`);
+      console.log(`- Latest Non-Draft: ${latestFeedback?.periodo || 'None'}`);
+      console.log(`- Scores:`, latestFeedback?.scores);
+    }
+
+    // OVERRIDE if Latest Feedback exists and has valid scores
+    if (latestFeedback && latestFeedback.scores?.global != null) {
+      scoreObj = latestFeedback.scores.obj ?? scoreObj;
+      scoreApt = latestFeedback.scores.comp ?? scoreApt;
+      scoreFinal = latestFeedback.scores.global;
+      bono = `${scoreFinal}%`;
+    }
 
     return res.json({
       empleado: {
@@ -455,6 +554,8 @@ export const dashByEmpleado = async (req, res, next) => {
       },
       objetivos: { count: objetivosArr.length, sumPeso: sumPesoObj, items: objetivosArr },
       aptitudes: { count: aptitudesArr.length, sumPeso: sumPesoApt, items: aptitudesArr },
+      // Estricto: Solo mostrar feedback si hay Objetivos (ignorando Competencias/Aptitudes globales)
+      feedbacks: (objetivosArr.length > 0) ? empFeedbacks : [],
       scoreObj, scoreApt, scoreFinal, bono,
     });
   } catch (err) {

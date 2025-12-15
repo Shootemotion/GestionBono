@@ -1,16 +1,55 @@
 import { useState, useEffect, useMemo } from "react";
 import { api } from "@/lib/api";
 import { toast } from "react-toastify";
-import { ChevronDown, ChevronRight, Search, Download, DollarSign, UserCircle2, MessageSquare } from "lucide-react";
+import { ChevronDown, ChevronRight, Search, Download, DollarSign, UserCircle2, MessageSquare, TrendingUp, Award, Wallet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+
+// --- Components ---
+
+// Circular Progress Component
+const CircularScore = ({ score, size = 80, strokeWidth = 8, color = "text-emerald-500" }) => {
+    const radius = (size - strokeWidth) / 2;
+    const circumference = radius * 2 * Math.PI;
+    const offset = circumference - ((score || 0) / 100) * circumference;
+
+    return (
+        <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
+            <svg className="transform -rotate-90 w-full h-full">
+                <circle
+                    className="text-slate-200"
+                    strokeWidth={strokeWidth}
+                    stroke="currentColor"
+                    fill="transparent"
+                    r={radius}
+                    cx={size / 2}
+                    cy={size / 2}
+                />
+                <circle
+                    className={`${color} transition-all duration-1000 ease-out`}
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={circumference}
+                    strokeDashoffset={offset}
+                    strokeLinecap="round"
+                    stroke="currentColor"
+                    fill="transparent"
+                    r={radius}
+                    cx={size / 2}
+                    cy={size / 2}
+                />
+            </svg>
+            <div className="absolute flex flex-col items-center">
+                <span className={`text-xl font-black ${color}`}>{score}%</span>
+                <span className="text-[9px] uppercase font-bold text-slate-400">Global</span>
+            </div>
+        </div>
+    );
+};
 
 export default function ResultadosBono() {
     const [year, setYear] = useState(new Date().getFullYear());
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
-
-    // State for accordion expansion
     const [expandedAreas, setExpandedAreas] = useState({});
 
     useEffect(() => {
@@ -22,6 +61,12 @@ export default function ResultadosBono() {
         try {
             const data = await api(`/bono/results/${year}`);
             setResults(Array.isArray(data) ? data : []);
+            // Auto expand all for better UX initially
+            const areas = {};
+            (Array.isArray(data) ? data : []).forEach(r => {
+                if (r.snapshot?.areaNombre) areas[r.snapshot.areaNombre] = true;
+            });
+            setExpandedAreas(areas);
         } catch (err) {
             console.error(err);
             toast.error("Error cargando resultados");
@@ -34,11 +79,8 @@ export default function ResultadosBono() {
         setExpandedAreas(prev => ({ ...prev, [areaName]: !prev[areaName] }));
     };
 
-    // Grouping logic
     const groupedData = useMemo(() => {
         const groups = {};
-
-        // Filter first
         const filtered = results.filter(r => {
             const name = `${r.empleado?.nombre} ${r.empleado?.apellido}`.toLowerCase();
             return name.includes(searchTerm.toLowerCase());
@@ -47,163 +89,210 @@ export default function ResultadosBono() {
         filtered.forEach(r => {
             const area = r.snapshot?.areaNombre || "Sin Área";
             const sector = r.snapshot?.sectorNombre || "Sin Sector";
-
             if (!groups[area]) groups[area] = {};
             if (!groups[area][sector]) groups[area][sector] = [];
-
             groups[area][sector].push(r);
         });
-
         return groups;
     }, [results, searchTerm]);
 
     const formatCurrency = (val) => {
-        return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(val || 0);
+        return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(val || 0);
     };
 
-    return (
-        <div className="min-h-screen bg-[#f5f9fc] p-6 lg:p-8">
-            <div className="max-w-[1600px] mx-auto space-y-6">
+    const totalBonos = results.reduce((acc, curr) => acc + (curr.bonoFinal || 0), 0);
 
-                {/* Header */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    return (
+        <div className="min-h-screen bg-[#f8fafc] p-6 lg:p-8 font-sans text-slate-600">
+            <div className="max-w-[1400px] mx-auto space-y-8">
+
+                {/* --- Header Section --- */}
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                     <div>
-                        <h1 className="text-2xl font-bold text-slate-800">Resultados de Bonos {year}</h1>
-                        <p className="text-slate-500">Detalle de cálculo y asignación de bonos por desempeño.</p>
+                        <h1 className="text-3xl font-black text-slate-800 tracking-tight">Resultados de Bonos {year}</h1>
+                        <p className="text-slate-500 mt-1 text-lg">Gestión de performance y compensaciones.</p>
                     </div>
-                    <div className="flex items-center gap-4">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+
+                    <div className="flex flex-wrap items-center gap-3">
+                        {/* Search */}
+                        <div className="relative group">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 group-focus-within:text-blue-500 transition-colors" />
                             <input
                                 type="text"
                                 placeholder="Buscar empleado..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="pl-9 pr-4 py-2 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none w-64"
+                                className="pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white shadow-sm text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none w-64 transition-all"
                             />
                         </div>
-                        <select
-                            value={year}
-                            onChange={(e) => setYear(Number(e.target.value))}
-                            className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none"
-                        >
-                            {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
-                        </select>
-                        <button className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
-                            <Download size={16} /> Exportar
+
+                        {/* Export */}
+                        <button className="bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 text-slate-700 px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 shadow-sm transition-all">
+                            <Download size={18} /> <span>Exportar</span>
                         </button>
+
+                        {/* Total Card (Mini) */}
+                        <div className="bg-slate-900 text-white px-5 py-2.5 rounded-xl shadow-lg shadow-slate-900/20 flex flex-col items-end">
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total a Pagar</div>
+                            <div className="text-lg font-black">{formatCurrency(totalBonos)}</div>
+                        </div>
                     </div>
                 </div>
 
-                {/* Content */}
+                {/* --- Content Grid --- */}
                 {loading ? (
-                    <div className="text-center py-20 text-slate-400">Cargando resultados...</div>
+                    <div className="flex flex-col items-center justify-center py-32 opacity-50 space-y-4">
+                        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                        <p className="font-medium animate-pulse">Calculando bonos...</p>
+                    </div>
                 ) : (
-                    <div className="space-y-4">
+                    <div className="space-y-8">
                         {Object.keys(groupedData).length === 0 && (
-                            <div className="text-center py-20 bg-white rounded-xl border border-dashed border-slate-300 text-slate-400">
-                                No hay resultados calculados para este año.
+                            <div className="py-20 text-center bg-white rounded-3xl border border-dashed border-slate-200 shadow-sm">
+                                <Award className="w-16 h-16 mx-auto text-slate-200 mb-4" />
+                                <h3 className="text-lg font-bold text-slate-400">Sin Resultados</h3>
+                                <p className="text-slate-400">No se encontraron empleados para el criterio seleccionado.</p>
                             </div>
                         )}
 
                         {Object.entries(groupedData).map(([areaName, sectors]) => (
-                            <div key={areaName} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                            <div key={areaName} className="space-y-4">
                                 {/* Area Header */}
-                                <button
+                                <div
                                     onClick={() => toggleArea(areaName)}
-                                    className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 transition-colors border-b border-slate-100"
+                                    className="flex items-center gap-3 cursor-pointer group select-none"
                                 >
-                                    <div className="flex items-center gap-3">
-                                        {expandedAreas[areaName] ? <ChevronDown size={20} className="text-slate-400" /> : <ChevronRight size={20} className="text-slate-400" />}
-                                        <h3 className="font-bold text-slate-800 text-lg">{areaName}</h3>
-                                        <Badge variant="secondary" className="bg-white border border-slate-200 text-slate-600">
-                                            {Object.values(sectors).reduce((acc, curr) => acc + curr.length, 0)} Empleados
-                                        </Badge>
+                                    <div className={`p-1.5 rounded-lg transition-colors ${expandedAreas[areaName] ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200'}`}>
+                                        {expandedAreas[areaName] ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                                     </div>
-                                    <div className="text-sm text-slate-500 font-medium">
-                                        Total Bonos: {formatCurrency(Object.values(sectors).flat().reduce((acc, curr) => acc + (curr.bonoFinal || 0), 0))}
-                                    </div>
-                                </button>
+                                    <h2 className="text-xl font-bold text-slate-700">{areaName}</h2>
+                                    <Badge className="bg-slate-200 hover:bg-slate-300 text-slate-600 border-0">{Object.values(sectors).reduce((a, b) => a + b.length, 0)}</Badge>
+                                    <div className="h-px bg-slate-200 flex-grow ml-4 group-hover:bg-slate-300 transition-colors" />
+                                </div>
 
-                                {/* Sectors & Employees */}
+                                {/* Employee Cards Grid */}
                                 {expandedAreas[areaName] && (
-                                    <div className="p-0">
+                                    <div className="grid grid-cols-1 gap-6 pl-2 lg:pl-0">
                                         {Object.entries(sectors).map(([sectorName, employees]) => (
-                                            <div key={sectorName} className="border-b border-slate-100 last:border-0">
-                                                <div className="px-6 py-2 bg-slate-50/50 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                            <div key={sectorName} className="space-y-4">
+                                                {/* Sector Label */}
+                                                <div className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-2 border-l-2 border-slate-200 ml-1">
                                                     {sectorName}
                                                 </div>
 
-                                                <div className="divide-y divide-slate-100">
-                                                    {employees.map(emp => (
-                                                        <div key={emp._id} className="p-6 hover:bg-blue-50/30 transition-colors grid grid-cols-1 lg:grid-cols-[2fr_1fr_1fr_1fr] gap-6 items-start">
+                                                <div className="grid grid-cols-1 gap-4">
+                                                    {employees.map(emp => {
+                                                        const globalScore = Math.round(emp.resultado?.total || 0);
+                                                        const scoreColor = globalScore >= 80 ? "text-emerald-500" : globalScore >= 50 ? "text-amber-500" : "text-rose-500";
+                                                        const isPrelim = emp.estado === "calculado";
 
-                                                            {/* 1. Employee Info */}
-                                                            <div className="flex items-start gap-4">
-                                                                <div className="w-12 h-12 rounded-full bg-slate-200 flex-shrink-0 overflow-hidden">
-                                                                    {emp.empleado?.fotoUrl ? (
-                                                                        <img src={emp.empleado.fotoUrl} alt="" className="w-full h-full object-cover" />
-                                                                    ) : (
-                                                                        <div className="w-full h-full flex items-center justify-center text-slate-400">
-                                                                            <UserCircle2 size={24} />
+                                                        return (
+                                                            <div key={emp._id} className="group bg-white rounded-2xl p-5 border border-slate-100 shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] hover:border-blue-100 transition-all duration-300 flex flex-col md:flex-row gap-6 relative overflow-hidden">
+
+                                                                {/* Status Stripe */}
+                                                                <div className={`absolute top-0 left-0 w-1.5 h-full ${globalScore >= 50 ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+
+                                                                {/* 1. Bio Section */}
+                                                                <div className="flex items-center gap-4 min-w-[240px]">
+                                                                    <div className="relative">
+                                                                        <div className="w-16 h-16 rounded-2xl bg-slate-100 overflow-hidden shadow-inner ring-4 ring-white">
+                                                                            {emp.empleado?.fotoUrl ? (
+                                                                                <img src={emp.empleado.fotoUrl} alt="" className="w-full h-full object-cover" />
+                                                                            ) : (
+                                                                                <div className="w-full h-full flex items-center justify-center text-slate-300">
+                                                                                    <UserCircle2 size={32} />
+                                                                                </div>
+                                                                            )}
                                                                         </div>
-                                                                    )}
-                                                                </div>
-                                                                <div>
-                                                                    <div className="font-bold text-slate-800 text-base">
-                                                                        {emp.empleado?.nombre} {emp.empleado?.apellido}
+                                                                        <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center ${globalScore >= 50 ? 'bg-emerald-500' : 'bg-rose-500'}`}>
+                                                                            {globalScore >= 50 ? <Award size={10} className="text-white" /> : <ChevronDown size={12} className="text-white" />}
+                                                                        </div>
                                                                     </div>
-                                                                    <div className="text-sm text-slate-500">{emp.snapshot?.puesto}</div>
-                                                                    <div className="text-xs text-slate-400 mt-1">Ingreso: {new Date(emp.snapshot?.fechaIngreso).toLocaleDateString()}</div>
+                                                                    <div>
+                                                                        <h3 className="font-bold text-slate-800 text-lg leading-tight group-hover:text-blue-600 transition-colors">
+                                                                            {emp.empleado?.nombre} {emp.empleado?.apellido}
+                                                                        </h3>
+                                                                        <p className="text-sm text-slate-500 font-medium">{emp.snapshot?.puesto}</p>
+                                                                        <div className="flex items-center gap-2 mt-1">
+                                                                            <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-5 border-slate-200 ${isPrelim ? 'text-amber-600 bg-amber-50' : 'text-emerald-600 bg-emerald-50'}`}>
+                                                                                {isPrelim ? "Preliminar" : "Final"}
+                                                                            </Badge>
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
-                                                            </div>
 
-                                                            {/* 2. Feedback & Scores */}
-                                                            <div className="space-y-2">
-                                                                <div className="flex items-center justify-between text-sm">
-                                                                    <span className="text-slate-500">Objetivos ({emp.pesos?.objetivos}%):</span>
-                                                                    <span className="font-bold text-blue-600">{Math.round(emp.resultado?.objetivos || 0)}%</span>
-                                                                </div>
-                                                                <div className="flex items-center justify-between text-sm">
-                                                                    <span className="text-slate-500">Competencias ({emp.pesos?.competencias}%):</span>
-                                                                    <span className="font-bold text-amber-500">{Math.round(emp.resultado?.competencias || 0)}%</span>
-                                                                </div>
-                                                                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                                                                    <span className="font-bold text-slate-700 text-sm">Score Global:</span>
-                                                                    <Badge className="bg-slate-800 text-white hover:bg-slate-900">
-                                                                        {Math.round(emp.resultado?.total || 0)}%
-                                                                    </Badge>
-                                                                </div>
-                                                            </div>
+                                                                {/* 2. Performance Metrics */}
+                                                                <div className="flex-1 flex items-center gap-6 border-l border-slate-100 pl-6 border-dashed">
+                                                                    {/* Gauge */}
+                                                                    <CircularScore score={globalScore} color={scoreColor} />
 
-                                                            {/* 3. Manager Comment */}
-                                                            <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-sm text-slate-600 italic relative">
-                                                                <MessageSquare className="w-4 h-4 text-slate-300 absolute top-2 right-2" />
-                                                                <p className="line-clamp-3">
-                                                                    {emp.feedbackComentario || "Sin comentarios del líder."}
-                                                                </p>
-                                                            </div>
+                                                                    {/* Details */}
+                                                                    <div className="space-y-2 flex-1 min-w-[120px]">
+                                                                        <div className="flex justify-between items-center text-sm">
+                                                                            <span className="text-slate-500 font-medium flex items-center gap-1"><TargetIcon className="w-3 h-3" /> Obj.</span>
+                                                                            <span className="font-bold text-slate-700">{Math.round(emp.resultado?.objetivos || 0)}%</span>
+                                                                        </div>
+                                                                        <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                                                                            <div className="h-full bg-blue-500 rounded-full" style={{ width: `${emp.resultado?.objetivos || 0}%` }} />
+                                                                        </div>
 
-                                                            <div className="flex flex-col items-end gap-1">
-                                                                <div className="text-xs text-slate-400 uppercase font-bold">Bono Calculado</div>
-                                                                <div className="text-2xl font-black text-emerald-600 flex items-center">
-                                                                    {formatCurrency(emp.bonoFinal)}
+                                                                        <div className="flex justify-between items-center text-sm mt-3">
+                                                                            <span className="text-slate-500 font-medium flex items-center gap-1"><StarIcon className="w-3 h-3" /> Comp.</span>
+                                                                            <span className="font-bold text-slate-700">{Math.round(emp.resultado?.competencias || 0)}%</span>
+                                                                        </div>
+                                                                        <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                                                                            <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${emp.resultado?.competencias || 0}%` }} />
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
-                                                                <div className="text-xs text-slate-500">
-                                                                    Base: {formatCurrency(emp.bonoBase)}
-                                                                    {emp.bonoBase > 0 && (
-                                                                        <span className="ml-1 text-blue-600 font-medium">
-                                                                            ({Math.round((emp.bonoFinal / emp.bonoBase) * 100)}%)
+
+                                                                <div className="flex flex-col justify-center gap-2 px-4 border-l border-slate-100 border-dashed min-w-[160px]">
+                                                                    <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Configuración</span>
+
+                                                                    <div className="flex items-center gap-2 text-slate-700 font-medium text-xs">
+                                                                        <Wallet size={14} className="text-blue-500" />
+                                                                        <span>Target: {emp.bonusConfig?.target || 1} Sueldos</span>
+                                                                    </div>
+
+                                                                    <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-slate-500">
+                                                                        <div className="flex items-center gap-1" title="Umbral Mínimo">
+                                                                            <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                                                                            <span>Umbral: {emp.bonusConfig?.umbral}%</span>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1" title="Pago Mínimo">
+                                                                            <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                                                                            <span>Mín: {emp.bonusConfig?.min}%</span>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1 col-span-2" title="Tope Máximo">
+                                                                            <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                                                                            <span>Máx: {emp.bonusConfig?.max}%</span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* 3. Financial Receipt */}
+                                                                <div className="min-w-[200px] bg-slate-50/80 rounded-xl p-4 border border-slate-200/60 backdrop-blur-sm flex flex-col justify-center relative">
+                                                                    <div className="flex justify-between items-center text-xs text-slate-400 mb-1">
+                                                                        <span>Bono Base</span>
+                                                                        <span>{formatCurrency(emp.bonoBase)}</span>
+                                                                    </div>
+                                                                    <div className="flex justify-between items-center text-xs text-slate-500 font-semibold mb-2">
+                                                                        <span>Desempeño</span>
+                                                                        <span className={scoreColor}>x {Math.round((emp.bonoFinal / (emp.bonoBase || 1)) * 100)}%</span>
+                                                                    </div>
+                                                                    <div className="h-px bg-slate-200 mb-2" />
+
+                                                                    <div className="flex flex-col items-end">
+                                                                        <span className="text-[10px] font-bold uppercase text-slate-400">Total a Pagar</span>
+                                                                        <span className="text-2xl font-black text-slate-800 tracking-tight">
+                                                                            {formatCurrency(emp.bonoFinal)}
                                                                         </span>
-                                                                    )}
+                                                                    </div>
                                                                 </div>
-                                                                <Badge variant="outline" className={`mt-2 border-slate-200 ${emp.estado === 'calculado' ? 'text-blue-600 bg-blue-50' : 'text-slate-500'}`}>
-                                                                    {emp.estado === "borrador" ? "Borrador" : emp.estado === "calculado" ? "Preliminar" : "Aprobado"}
-                                                                </Badge>
-                                                            </div>
 
-                                                        </div>
-                                                    ))}
+                                                            </div>
+                                                        );
+                                                    })}
                                                 </div>
                                             </div>
                                         ))}
@@ -217,3 +306,11 @@ export default function ResultadosBono() {
         </div>
     );
 }
+
+// Simple Icons to avoid more imports if not available
+const TargetIcon = (props) => (
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg>
+)
+const StarIcon = (props) => (
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
+)

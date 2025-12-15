@@ -61,6 +61,9 @@ function flatItemsFromRow(row, tipoFiltro) {
     if (tipoFiltro !== "aptitud") pushItems(row.objetivos, "objetivo");
     if (tipoFiltro !== "objetivo") pushItems(row.aptitudes, "aptitud");
 
+    // Verificar singular y plural por seguridad
+    pushItems(row.feedbacks || row.feedback, "feedback");
+
     return out;
   }
 
@@ -270,30 +273,34 @@ export default function SeguimientoReferente() {
           const dashObj = flatRows.find(r => r.empleado && String(r.empleado._id) === String(emp._id));
           const empFeedbacks = dashObj?.feedbacks || [];
 
-          feedbackItems.push({
-            _id: `feedback-global`, // ID especial
-            _tipo: "feedback",
-            nombre: "Feedback Trimestral",
-            empleado: emp,
-            empleados: [emp],
-            area: emp.area,
-            sector: emp.sector,
-            peso: 0,
-            hitos: [
-              { periodo: "Q1", fecha: `${anio}-11-01` },
-              { periodo: "Q2", fecha: `${anio + 1}-02-01` },
-              { periodo: "Q3", fecha: `${anio + 1}-05-01` },
-              { periodo: "FINAL", fecha: `${anio + 1}-08-30` }
-            ].map(h => {
-              const fb = empFeedbacks.find(f => f.periodo === h.periodo);
-              return {
-                ...h,
-                estado: fb ? fb.estado : "DRAFT",
-                feedbackId: fb?._id,
-                actual: fb ? (fb.estado === "CLOSED" ? 100 : null) : null
-              };
-            })
-          });
+          // CORREGIDO: Solo inyectar fila de feedback si el backend realmente devolvió items de feedback.
+          // Esto respeta la lógica del backend donde feedbacks vacíos = no hay flujo de feedback.
+          if (empFeedbacks.length > 0) {
+            feedbackItems.push({
+              _id: `feedback-global`, // ID especial
+              _tipo: "feedback",
+              nombre: "Feedback Trimestral",
+              empleado: emp,
+              empleados: [emp],
+              area: emp.area,
+              sector: emp.sector,
+              peso: 0,
+              hitos: [
+                { periodo: "Q1", fecha: `${anio}-11-01` },
+                { periodo: "Q2", fecha: `${anio + 1}-02-01` },
+                { periodo: "Q3", fecha: `${anio + 1}-05-01` },
+                { periodo: "FINAL", fecha: `${anio + 1}-08-30` }
+              ].map(h => {
+                const fb = empFeedbacks.find(f => f.periodo === h.periodo);
+                return {
+                  ...h,
+                  estado: fb ? fb.estado : "DRAFT", // This fallback is fine only if fb exists for other periods, but here we require at least one fb to enter
+                  feedbackId: fb?._id,
+                  actual: fb ? (fb.estado === "CLOSED" ? 100 : null) : null
+                };
+              })
+            });
+          }
         }
 
         flatRows.push(...feedbackItems);
@@ -406,7 +413,7 @@ export default function SeguimientoReferente() {
   const flatItems = useMemo(() => {
     const out = [];
     for (const r of filteredRows) {
-      out.push(...flatItemsFromRow(r, "todos")); // Traemos todo primero
+      out.push(...flatItemsFromRow(r, tipoFiltro)); // Pass filtered type directly
     }
 
     // Filtrado por Pestaña Principal
