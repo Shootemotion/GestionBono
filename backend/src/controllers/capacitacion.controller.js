@@ -19,7 +19,7 @@ export async function createCapacitacion(req, res, next) {
     const base = { empleado: id, nombre, proveedor, horas, fecha, vence, fechaVto, estado };
     if (req.file) {
       // normalizar ruta a /uploads/...
-      const abs = String(req.file.path).replaceAll("\\","/");
+      const abs = String(req.file.path).replaceAll("\\", "/");
       const i = abs.lastIndexOf("/uploads/");
       base.certificadoUrl = (i >= 0 ? abs.substring(i) : `/uploads/${req.file.filename}`).replace(/^\/+/, "");
     }
@@ -34,7 +34,7 @@ export async function updateCapacitacion(req, res, next) {
     const { itemId } = req.params;
     const updates = { ...req.body };
     if (req.file) {
-      const abs = String(req.file.path).replaceAll("\\","/");
+      const abs = String(req.file.path).replaceAll("\\", "/");
       const i = abs.lastIndexOf("/uploads/");
       updates.certificadoUrl = (i >= 0 ? abs.substring(i) : `/uploads/${req.file.filename}`).replace(/^\/+/, "");
     }
@@ -50,5 +50,27 @@ export async function deleteCapacitacion(req, res, next) {
     const del = await Capacitacion.findByIdAndDelete(itemId);
     if (!del) return res.status(404).json({ message: "Registro no encontrado" });
     res.sendStatus(204);
+  } catch (e) { next(e); }
+}
+
+export async function getCapacitacionesResumen(req, res, next) {
+  try {
+    const { id } = req.params;
+    const items = await Capacitacion.find({ empleado: id }).lean();
+
+    const total = items.reduce((acc, c) => acc + (Number(c.horas) || 0), 0);
+
+    // Vencen en 30 días
+    const today = new Date();
+    const limit = new Date();
+    limit.setDate(today.getDate() + 30);
+
+    const vencen30 = items.filter(c => {
+      if (!c.vence || !c.fechaVto) return false;
+      const d = new Date(c.fechaVto);
+      return d >= today && d <= limit;
+    }).length;
+
+    res.json({ total, vencen30 });
   } catch (e) { next(e); }
 }

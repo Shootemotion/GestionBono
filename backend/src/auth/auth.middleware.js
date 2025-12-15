@@ -134,6 +134,7 @@ export const authenticateJWT = async (req, res, next) => {
           _id: String(userDoc.empleado._id),
           nombre: userDoc.empleado.nombre,
           apellido: userDoc.empleado.apellido,
+          apodo: userDoc.empleado.apodo,
           puesto: userDoc.empleado.puesto,
           fotoUrl: userDoc.empleado.fotoUrl,
           area: userDoc.empleado.area,

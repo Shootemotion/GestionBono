@@ -7,10 +7,11 @@ import {
   subirFotoEmpleado,
   subirCVEmpleado,
   actualizarSueldoEmpleado,
+  eliminarSueldoHistorico,
 } from '../controllers/empleados.controller.js';
 import { requireCap, requireCapOrSelf } from '../auth/auth.middleware.js';
-import { listCarrera, createCarrera, updateCarrera, deleteCarrera } from "../controllers/carrera.controller.js";
-import { listCapacitaciones, createCapacitacion, updateCapacitacion, deleteCapacitacion } from "../controllers/capacitacion.controller.js";
+import { listCarrera, createCarrera, updateCarrera, deleteCarrera, getCarreraResumen } from "../controllers/carrera.controller.js";
+import { listCapacitaciones, createCapacitacion, updateCapacitacion, deleteCapacitacion, getCapacitacionesResumen } from "../controllers/capacitacion.controller.js";
 import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
@@ -41,7 +42,12 @@ function assertObjectId(req, res, next) {
 // ---- middleware: precargar empleado por :id ----
 async function preloadEmpleado(req, res, next) {
   try {
-    const emp = await Empleado.findById(req.params.id).populate("area", "nombre").populate("sector", "nombre");
+    const emp = await Empleado.findById(req.params.id)
+      .populate({
+        path: "area",
+        populate: { path: "referentes", select: "nombre apellido email celular" }
+      })
+      .populate("sector", "nombre");
     if (!emp) return res.status(404).json({ message: 'Empleado no encontrado' });
     req.empleado = emp;
     next();
@@ -117,6 +123,13 @@ router.post(
   actualizarSueldoEmpleado
 );
 
+router.delete(
+  '/:id/sueldo/:subId',
+  requireCap('nomina:editar'),
+  assertObjectId,
+  eliminarSueldoHistorico
+);
+
 // ---- multer para CV con destino por empleado ----
 const storageCV = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -187,6 +200,9 @@ router.put("/:id/carrera/:itemId",
 router.delete("/:id/carrera/:itemId",
   requireCap("nomina:editar"), assertObjectId, deleteCarrera);
 
+router.get("/:id/carrera/resumen",
+  requireCapOrSelf("nomina:ver"), assertObjectId, preloadEmpleado, getCarreraResumen);
+
 /* ========== CAPACITACIONES ========== */
 router.get("/:id/capacitaciones",
   requireCapOrSelf("nomina:ver"), assertObjectId, preloadEmpleado, listCapacitaciones);
@@ -199,5 +215,8 @@ router.put("/:id/capacitaciones/:itemId",
 
 router.delete("/:id/capacitaciones/:itemId",
   requireCap("nomina:editar"), assertObjectId, deleteCapacitacion);
+
+router.get("/:id/capacitaciones/resumen",
+  requireCapOrSelf("nomina:ver"), assertObjectId, preloadEmpleado, getCapacitacionesResumen);
 
 export default router;

@@ -1,5 +1,6 @@
 // backend/src/controllers/empleados.controller.js
 import Empleado from '../models/Empleado.model.js';
+import Carrera from '../models/Carrera.model.js';
 import mongoose from "mongoose";
 
 export const getEmpleados = async (req, res, next) => {
@@ -111,6 +112,17 @@ export const createEmpleado = async (req, res, next) => {
       ...(sueldoBase ? { sueldoBase } : {}), // opcional, si viene lo guarda
     });
 
+    // Crear registro inicial en Carrera (historial de puestos)
+    await Carrera.create({
+      empleado: empleado._id,
+      puesto: empleado.puesto,
+      area: empleado.area,
+      sector: empleado.sector,
+      desde: empleado.fechaIngreso, // fecha de inicio = fecha de ingreso
+      hasta: null, // vigente
+      motivo: "Inicio de relación laboral",
+    });
+
     res.status(201).json(empleado);
   } catch (err) {
     // manejo simple de únicos duplicados
@@ -133,7 +145,7 @@ export const updateEmpleado = async (req, res, next) => {
     if (!isRRHH) {
       // Si no es RRHH, solo permitimos editar email y celular
       // (Foto se sube por otro endpoint)
-      const allowed = ["email", "celular"];
+      const allowed = ["email", "celular", "apodo"];
       const filtered = {};
       Object.keys(updates).forEach(k => {
         if (allowed.includes(k)) filtered[k] = updates[k];
@@ -202,7 +214,7 @@ export const subirFotoEmpleado = async (req, res, next) => {
 export const actualizarSueldoEmpleado = async (req, res, next) => {
   try {
     const { id } = req.params; // empleadoId
-    const { monto, moneda = "ARS", vigenteDesde = new Date() } = req.body || {};
+    const { monto, moneda = "ARS", vigenteDesde = new Date(), comentario = "" } = req.body || {};
 
     if (monto == null || isNaN(Number(monto))) {
       return res.status(400).json({ message: "monto requerido (number)" });
@@ -224,6 +236,7 @@ export const actualizarSueldoEmpleado = async (req, res, next) => {
         moneda: prev.moneda || "ARS",
         desde: prev.vigenteDesde || new Date(),
         hasta: new Date(),
+        comentario: prev.comentario, // Guardamos el comentario que tenía ese sueldo
       });
     }
 
@@ -231,8 +244,34 @@ export const actualizarSueldoEmpleado = async (req, res, next) => {
     empleado.sueldoBase.monto = Number(monto);
     empleado.sueldoBase.moneda = String(moneda);
     empleado.sueldoBase.vigenteDesde = new Date(vigenteDesde);
+    empleado.sueldoBase.comentario = comentario; // Guardamos el nuevo comentario
 
     await empleado.save();
+    await empleado.save();
+    const populated = await Empleado.findById(id)
+      .populate({
+        path: "area",
+        populate: { path: "referentes", select: "nombre apellido email celular" }
+      })
+      .populate("sector", "nombre")
+      .lean();
+
+    res.json({ success: true, empleado: populated });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const eliminarSueldoHistorico = async (req, res, next) => {
+  try {
+    const { id, subId } = req.params; // empId, historyId
+    const empleado = await Empleado.findById(id);
+    if (!empleado) return res.status(404).json({ message: "Empleado no encontrado" });
+
+    // Pull from historico
+    empleado.sueldoBase.historico.pull(subId);
+    await empleado.save();
+
     const populated = await Empleado.findById(id)
       .select("nombre apellido sueldoBase area sector")
       .populate("area", "nombre")

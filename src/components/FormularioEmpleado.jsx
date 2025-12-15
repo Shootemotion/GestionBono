@@ -45,7 +45,8 @@ export default function FormularioEmpleado({
   const [apodo, setApodo] = useState("");
   const [dni, setDni] = useState("");
   const [cuil, setCuil] = useState("");
-  const [email, setEmail] = useState("");
+  const [emailUser, setEmailUser] = useState("");
+  const [emailDomain, setEmailDomain] = useState("@diagnos.com.ar");
   const [celular, setCelular] = useState("");
   const [fechaIngreso, setFechaIngreso] = useState("");
   const [domicilio, setDomicilio] = useState("");
@@ -108,7 +109,20 @@ export default function FormularioEmpleado({
       setApodo(empleadoInicial.apodo || "");
       setDni(empleadoInicial.dni || "");
       setCuil(empleadoInicial.cuil || "");
-      setEmail(empleadoInicial.email || "");
+      setCuil(empleadoInicial.cuil || "");
+      if (empleadoInicial.email) {
+        const parts = empleadoInicial.email.split("@");
+        if (parts.length === 2) {
+          setEmailUser(parts[0]);
+          setEmailDomain("@" + parts[1]);
+        } else {
+          setEmailUser(empleadoInicial.email);
+          setEmailDomain("@diagnos.com.ar"); // fallback
+        }
+      } else {
+        setEmailUser("");
+        setEmailDomain("@diagnos.com.ar");
+      }
       setCelular(empleadoInicial.celular || "");
       setDomicilio(empleadoInicial.domicilio || "");
       setFechaIngreso(
@@ -131,7 +145,9 @@ export default function FormularioEmpleado({
       setApodo("");
       setDni("");
       setCuil("");
-      setEmail("");
+      setCuil("");
+      setEmailUser("");
+      setEmailDomain("@diagnos.com.ar");
       setCelular("");
       setDomicilio("");
       setFechaIngreso("");
@@ -146,6 +162,27 @@ export default function FormularioEmpleado({
       setEditCategoria(true);
     }
   }, [empleadoInicial]);
+
+  // ---------- Auto-llenado de CUIL (Solo creación) ----------
+  useEffect(() => {
+    if (!isNew) return;
+    // Si el usuario borra el DNI, limpiamos CUIL? O dejamos el prefijo?
+    // Mejor dejamos el prefijo 20 + lo que haya quedado
+    setCuil((prev) => {
+      const limpio = String(prev ?? "").trim();
+      // Si está vacío, arrancamos con 20 + dni
+      if (!limpio) return "20" + dni;
+
+      // Intentamos detectar si ya tiene un prefijo válido (2 digitos)
+      // Asumimos que los primeros 2 chars son prefijo si son numéricos.
+      const prefix = limpio.slice(0, 2);
+      if (/^\d{2}$/.test(prefix)) {
+        return prefix + dni;
+      }
+      // Fallback
+      return "20" + dni;
+    });
+  }, [dni, isNew]);
 
   // ---------- Sectores del área + validación ----------
   const sectoresDelArea = useMemo(() => {
@@ -172,8 +209,9 @@ export default function FormularioEmpleado({
     if (isEmpty(cuil)) next.cuil = "Ingresá el CUIL.";
     else if (!/^\d{11}$/.test(String(cuil))) next.cuil = "El CUIL debe tener 11 dígitos.";
 
-    if (isEmpty(email)) next.email = "Ingresá el email.";
-    else if (!isValidEmail(email)) next.email = "El email no es válido.";
+    const finalEmail = `${emailUser}${emailDomain}`;
+    if (isEmpty(emailUser)) next.email = "Ingresá el email.";
+    else if (!isValidEmail(finalEmail)) next.email = "El email no es válido.";
 
     if (isEmpty(fechaIngreso)) next.fechaIngreso = "Seleccioná la fecha de ingreso.";
     if (isEmpty(puesto)) next.puesto = "Seleccioná el puesto.";
@@ -210,7 +248,9 @@ export default function FormularioEmpleado({
       apodo,
       dni,
       cuil,
-      email,
+      dni,
+      cuil,
+      email: `${emailUser}${emailDomain}`,
       celular,
       domicilio,
       fechaIngreso,
@@ -223,10 +263,9 @@ export default function FormularioEmpleado({
   };
 
   const inputCls = (hasError) =>
-    `w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 ${
-      hasError
-        ? "border-red-500 focus-visible:ring-red-500"
-        : "border-border focus-visible:ring-ring"
+    `w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 ${hasError
+      ? "border-red-500 focus-visible:ring-red-500"
+      : "border-border focus-visible:ring-ring"
     }`;
 
   /* ---------- Opciones por defecto de Puesto (si no envías por props) ---------- */
@@ -398,17 +437,20 @@ export default function FormularioEmpleado({
       {/* Email / Celular */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div>
-          <label className="block text-sm font-medium text-muted-foreground">Email</label>
-          <input
-            ref={refs.email}
-            type="email"
-            className={inputCls(!!errors.email)}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            aria-invalid={!!errors.email}
-          />
-          {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
+          <label className="block text-sm font-medium text-muted-foreground">Fecha de ingreso</label>
+          <div className="relative">
+            <input
+              ref={refs.fechaIngreso}
+              type="date"
+              className={`${inputCls(!!errors.fechaIngreso)} pr-8`}
+              value={fechaIngreso}
+              onChange={(e) => setFechaIngreso(e.target.value)}
+              required
+              aria-invalid={!!errors.fechaIngreso}
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">📅</span>
+          </div>
+          {errors.fechaIngreso && <p className="mt-1 text-xs text-red-600">{errors.fechaIngreso}</p>}
         </div>
         <div>
           <label className="block text-sm font-medium text-muted-foreground">Celular</label>
@@ -437,20 +479,32 @@ export default function FormularioEmpleado({
 
       {/* Fecha de ingreso */}
       <div>
-        <label className="block text-sm font-medium text-muted-foreground">Fecha de ingreso</label>
-        <div className="relative">
+        <label className="block text-sm font-medium text-muted-foreground">Email</label>
+        <div className="flex">
           <input
-            ref={refs.fechaIngreso}
-            type="date"
-            className={`${inputCls(!!errors.fechaIngreso)} pr-8`}
-            value={fechaIngreso}
-            onChange={(e) => setFechaIngreso(e.target.value)}
+            ref={refs.email}
+            type="text"
+            className={`flex-1 rounded-l-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 ${!!errors.email
+              ? "border-red-500 focus-visible:ring-red-500 z-10"
+              : "border-border focus-visible:ring-ring"
+              }`}
+            value={emailUser}
+            onChange={(e) => setEmailUser(e.target.value)}
+            placeholder="usuario"
             required
-            aria-invalid={!!errors.fechaIngreso}
+            aria-invalid={!!errors.email}
           />
-          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">📅</span>
+          <select
+            className="rounded-r-md border border-l-0 border-border bg-slate-50 px-2 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            value={emailDomain}
+            onChange={(e) => setEmailDomain(e.target.value)}
+          >
+            <option value="@diagnos.com.ar">@diagnos.com.ar</option>
+            <option value="@gmail.com">@gmail.com</option>
+            <option value="@hotmail.com">@hotmail.com</option>
+          </select>
         </div>
-        {errors.fechaIngreso && <p className="mt-1 text-xs text-red-600">{errors.fechaIngreso}</p>}
+        {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
       </div>
 
       {/* Área / Sector */}
@@ -517,9 +571,8 @@ function InlineEditable({ value, placeholder, editing, onEdit, onChange, onBlur,
         <input
           ref={refInput}
           autoFocus
-          className={`border-b bg-transparent outline-none text-base font-semibold px-1 py-0.5 min-w-[140px] ${
-            error ? "border-red-500" : "border-input"
-          }`}
+          className={`border-b bg-transparent outline-none text-base font-semibold px-1 py-0.5 min-w-[140px] ${error ? "border-red-500" : "border-input"
+            }`}
           placeholder={placeholder}
           value={value}
           onChange={(e) => onChange(e.target.value)}

@@ -1,6 +1,7 @@
 // src/pages/LegajoEmpleado.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { Home, Copy, Check, Briefcase, Building2, UserCircle, Mail, Phone, Calendar, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "react-toastify";
 import { useAuth } from "@/context/AuthContext";
@@ -11,37 +12,41 @@ import { API_ORIGIN } from "@/lib/api";
 /* ---------- UI helpers ---------- */
 const EstadoTag = ({ estado = "ACTIVO" }) => {
   const map = {
-    ACTIVO: "bg-emerald-100 text-emerald-700",
-    SUSPENDIDO: "bg-amber-100 text-amber-800",
-    DESVINCULADO: "bg-rose-100 text-rose-700",
+    VINCULADO: "bg-emerald-500/10 text-emerald-700 border border-emerald-200",
+    ACTIVO: "bg-emerald-500/10 text-emerald-700 border border-emerald-200", // Legacy support
+    SUSPENDIDO: "bg-amber-500/10 text-amber-700 border border-amber-200", // Legacy
+    DESVINCULADO: "bg-rose-500/10 text-rose-700 border border-rose-200",
   };
   return (
-    <span className={`px-2 py-0.5 rounded-full text-[11px] ${map[estado] || "bg-slate-100 text-slate-700"}`}>
+    <span className={`px-2.5 py-0.5 rounded-full text-[10px] uppercase font-semibold tracking-wide ${map[estado] || "bg-slate-100 text-slate-600"}`}>
       {estado}
     </span>
   );
 };
 
 const Label = ({ children }) => (
-  <div className="text-[11px] text-muted-foreground mb-1">{children}</div>
+  <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-1.5 ml-1">{children}</div>
 );
 
 const Field = ({ label, value }) => (
-  <div>
+  <div className="group">
     <Label>{label}</Label>
-    <div className="rounded-md border border-border/60 bg-muted/20 px-2 py-2 text-sm">{value ?? "—"}</div>
+    <div className="min-h-[2.5rem] rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm text-slate-700 font-medium group-hover:bg-slate-50 transition-colors">
+      {value ?? "—"}
+    </div>
   </div>
 );
 
-const FieldInput = ({ label, type = "text", value, onChange, disabled }) => (
+const FieldInput = ({ label, type = "text", value, onChange, disabled, ...props }) => (
   <div>
     <Label>{label}</Label>
     <input
       type={type}
-      className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+      className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all disabled:bg-slate-100 disabled:text-slate-400 placeholder:text-slate-300"
       value={value}
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
+      {...props}
     />
   </div>
 );
@@ -128,11 +133,12 @@ export default function LegajoEmpleado() {
 
   // Formularios
   const [estadoLaboral, setEstadoLaboral] = useState("ACTIVO");
-  const [cvFile, setCvFile] = useState(null);
+  const cvInputRef = useRef(null);
   const [sueldo, setSueldo] = useState({
     monto: "",
     moneda: "ARS",
     vigenteDesde: new Date().toISOString().slice(0, 10),
+    comentario: "", // Initialized comentario
   });
 
   // Edición de info básica (CENTRO)
@@ -176,11 +182,13 @@ export default function LegajoEmpleado() {
           vigenteDesde: e?.sueldoBase?.vigenteDesde
             ? String(e.sueldoBase.vigenteDesde).slice(0, 10)
             : new Date().toISOString().slice(0, 10),
+          comentario: "", // Initialize comentario when loading existing data
         });
 
         setBasicForm({
           nombre: e?.nombre ?? "",
           apellido: e?.apellido ?? "",
+          apodo: e?.apodo ?? "",
           email: e?.email ?? "",
           celular: e?.celular ?? "",
           domicilio: e?.domicilio ?? "",
@@ -202,6 +210,8 @@ export default function LegajoEmpleado() {
   }, [id]);
 
   // Traer puestos si hay endpoint (no rompe si 404)
+  // Traer puestos si hay endpoint (no rompe si 404, pero ensucia log)
+  /*
   useEffect(() => {
     (async () => {
       try {
@@ -210,9 +220,10 @@ export default function LegajoEmpleado() {
           const nombres = p.map((x) => x?.nombre).filter(Boolean);
           if (nombres.length) setPuestos(nombres);
         }
-      } catch {/* noop */ }
+      } catch { }
     })();
   }, []);
+  */
 
   // Resúmenes opcionales
   useEffect(() => {
@@ -261,8 +272,7 @@ export default function LegajoEmpleado() {
 
   /* ---------- Acciones ---------- */
   const onBack = () => {
-    if (window.history.length > 1) navigate(-1);
-    else navigate("/gestion-estructura");
+    navigate("/");
   };
 
   const onGuardarEstado = async () => {
@@ -280,6 +290,11 @@ export default function LegajoEmpleado() {
   const onGuardarBasica = async () => {
     try {
       const payload = { ...basicForm };
+
+      // Validate email domain
+      if (payload.email && !payload.email.endsWith("@diagnos.com.ar")) {
+        return toast.error("El email debe ser del dominio @diagnos.com.ar");
+      }
       if (payload.area && payload.area._id) payload.area = payload.area._id;
       if (payload.sector && payload.sector._id) payload.sector = payload.sector._id;
 
@@ -300,6 +315,7 @@ export default function LegajoEmpleado() {
         monto: Number(sueldo.monto),
         moneda: sueldo.moneda || "ARS",
         vigenteDesde: sueldo.vigenteDesde ? new Date(sueldo.vigenteDesde) : new Date(),
+        comentario: sueldo.comentario || undefined, // Include comentario in payload
       };
       if (!payload.monto || payload.monto <= 0) return toast.error("Ingresá un monto válido.");
       const resp = await api(`/empleados/${id}/sueldo`, { method: "POST", body: payload });
@@ -311,6 +327,7 @@ export default function LegajoEmpleado() {
         vigenteDesde: updEmp?.sueldoBase?.vigenteDesde
           ? String(updEmp.sueldoBase.vigenteDesde).slice(0, 10)
           : sueldo.vigenteDesde,
+        comentario: "", // Clear comentario after saving
       });
       toast.success("Sueldo actualizado y registrado en histórico.");
     } catch (e) {
@@ -319,19 +336,35 @@ export default function LegajoEmpleado() {
     }
   };
 
-  const onSubirCV = async () => {
-    if (!cvFile) return toast.info("Seleccioná un archivo .pdf/.docx primero.");
+  const handleCvUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
     try {
       const fd = new FormData();
-      fd.append("cv", cvFile);
+      fd.append("cv", file);
       const resp = await api(`/empleados/${id}/cv`, { method: "POST", body: fd });
       const upd = resp?.empleado || resp;
       setEmp(upd);
-      setCvFile(null);
-      toast.success("CV subido.");
+      toast.success("CV subido correctamente.");
     } catch (e) {
       console.error(e);
       toast.error("No se pudo subir el CV.");
+    } finally {
+      if (cvInputRef.current) cvInputRef.current.value = "";
+    }
+  };
+
+  const onEliminarSueldo = async (subId) => {
+    if (!window.confirm("¿Estás seguro de eliminar este registro histórico?")) return;
+    try {
+      const resp = await api(`/empleados/${id}/sueldo/${subId}`, { method: "DELETE" });
+      const updEmp = resp?.empleado || resp;
+      setEmp(updEmp);
+      toast.success("Registro eliminado.");
+    } catch (e) {
+      console.error(e);
+      toast.error("Error al eliminar.");
     }
   };
 
@@ -351,6 +384,47 @@ export default function LegajoEmpleado() {
     }
   };
 
+  const [copiedRef, setCopiedRef] = useState(false);
+  const [copiedEmp, setCopiedEmp] = useState(false);
+  const [copiedAll, setCopiedAll] = useState(false);
+
+  const copyReferente = () => {
+    const ref = emp?.area?.referentes?.[0];
+    if (!ref) return;
+    const text = `Referente: ${ref.nombre} ${ref.apellido}\nEmail: ${ref.email}\nCel: ${ref.celular || "—"}`;
+    navigator.clipboard.writeText(text);
+    setCopiedRef(true);
+    setTimeout(() => setCopiedRef(false), 2000);
+    toast.success("Datos del referente copiados.");
+  };
+
+  const copyEmpleado = () => {
+    const text = `Empleado: ${emp.nombre} ${emp.apellido}\nEmail: ${emp.email}\nCel: ${emp.celular || "—"}`;
+    navigator.clipboard.writeText(text);
+    setCopiedEmp(true);
+    setTimeout(() => setCopiedEmp(false), 2000);
+    toast.success("Datos de contacto copiados.");
+  };
+
+  const copyAll = () => {
+    let text = `DATOS DE CONTACTO\n\n`;
+    text += `Empleado: ${emp.nombre} ${emp.apellido}\n`;
+    text += `Email: ${emp.email}\n`;
+    text += `Cel: ${emp.celular || "—"}\n\n`;
+
+    if (emp?.area?.referentes?.[0]) {
+      const ref = emp.area.referentes[0];
+      text += `Referente: ${ref.nombre} ${ref.apellido}\n`;
+      text += `Email: ${ref.email}\n`;
+      text += `Cel: ${ref.celular || "—"}\n`;
+    }
+
+    navigator.clipboard.writeText(text);
+    setCopiedAll(true);
+    setTimeout(() => setCopiedAll(false), 2000);
+    toast.success("Tarjeta completa copiada.");
+  };
+
   if (loading) return <div className="p-6">Cargando…</div>;
   if (!emp) return <div className="p-6 text-sm text-muted-foreground">Empleado no encontrado.</div>;
 
@@ -364,170 +438,273 @@ export default function LegajoEmpleado() {
 
   return (
     <div className="min-h-screen bg-[#f5f9fc]">
-      <div className="mx-auto max-w-6xl px-6 py-6 space-y-6">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-8 font-sans">
         {/* Header */}
-        <div className="rounded-xl bg-card/95 backdrop-blur ring-1 ring-border/60 p-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <div className="h-12 w-12 rounded-full ring-1 ring-border/60 overflow-hidden bg-muted/40 relative group">
-              {avatar ? (
-                <img src={avatar} alt="foto" className="h-full w-full object-cover" />
-              ) : (
-                <img
-                  src={`https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
-                    `${emp.nombre} ${emp.apellido}`
-                  )}`}
-                  alt="iniciales"
-                  className="h-full w-full object-cover"
-                />
-              )}
-              {canEditBasic && (
-                <label className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
-                  <input type="file" accept="image/*" className="hidden" onChange={onSubirFoto} />
-                  <span className="text-white text-[10px]">Editar</span>
-                </label>
-              )}
-            </div>
-            <div>
-              <h1 className="text-lg font-semibold">
-                {emp.apellido?.toUpperCase()}, {emp.nombre?.toUpperCase()}
-              </h1>
-              <div className="text-xs text-muted-foreground">{emp.puesto || "—"}</div>
-              <div className="mt-1">
-                {isRRHH && <EstadoTag estado={emp?.estadoLaboral || "ACTIVO"} />}
+        <div className="relative overflow-hidden rounded-3xl bg-white p-6 shadow-sm border border-slate-100">
+          <div className="absolute top-0 left-0 w-full h-24 bg-gradient-to-r from-blue-50 to-indigo-50/50" />
+
+          <div className="relative flex flex-col md:flex-row items-center md:items-end justify-between gap-6 pt-8">
+            <div className="flex flex-col md:flex-row items-center gap-5 text-center md:text-left">
+              <div className="h-24 w-24 rounded-full p-1 bg-white shadow-lg ring-1 ring-slate-100 -mt-8 md:mt-0 relative group">
+                <div className="h-full w-full rounded-full overflow-hidden bg-slate-100 relative">
+                  {avatar ? (
+                    <img src={avatar} alt="foto" className="h-full w-full object-cover" />
+                  ) : (
+                    <img
+                      src={`https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
+                        `${emp.nombre} ${emp.apellido}`
+                      )}&backgroundColor=e2e8f0&textColor=475569`}
+                      alt="iniciales"
+                      className="h-full w-full object-cover"
+                    />
+                  )}
+                  {canEditBasic && (
+                    <label className="absolute inset-0 bg-slate-900/60 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition-all duration-300 backdrop-blur-[1px]">
+                      <input type="file" accept="image/*" className="hidden" onChange={onSubirFoto} />
+                      <span className="text-white text-[10px] font-medium tracking-wide uppercase">Editar</span>
+                    </label>
+                  )}
+                </div>
+              </div>
+
+              <div className="mb-1">
+                <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+                  {emp.nombre} {emp.apellido}
+                </h1>
+                <div className="text-sm font-medium text-slate-500 mt-1 flex flex-wrap justify-center md:justify-start items-center gap-2">
+                  <span>{emp.puesto || "Sin puesto definido"}</span>
+                  <span className="text-slate-300">•</span>
+                  {isRRHH && <EstadoTag estado={emp?.estadoLaboral || "ACTIVO"} />}
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Estado laboral en cabecera */}
-          <div className="flex items-center gap-2">
-            {isRRHH && (
-              <>
-                <select
-                  className="rounded-md border border-input bg-background px-2 py-2 text-sm"
-                  value={estadoLaboral}
-                  onChange={(e) => setEstadoLaboral(e.target.value)}
-                  title="Estado laboral"
-                >
-                  <option value="ACTIVO">ACTIVO</option>
-                  <option value="SUSPENDIDO">SUSPENDIDO</option>
-                  <option value="DESVINCULADO">DESVINCULADO</option>
-                </select>
-                <button
-                  onClick={onGuardarEstado}
-                  className="rounded-md px-3 py-2 text-sm bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-                >
-                  Guardar estado
-                </button>
-              </>
-            )}
-            <button onClick={onBack} className="text-sm px-3 py-2 rounded-md bg-muted hover:bg-muted/70">
-              Volver
-            </button>
+            {/* Actions */}
+            <div className="flex items-center gap-3">
+              {isRRHH && (
+                <div className="flex bg-slate-50 rounded-lg p-1 border border-slate-200">
+                  <select
+                    className="bg-transparent text-xs font-semibold text-slate-700 px-2 py-1.5 outline-none cursor-pointer"
+                    value={estadoLaboral}
+                    onChange={(e) => setEstadoLaboral(e.target.value)}
+                  >
+                    <option value="VINCULADO">VINCULADO</option>
+                    <option value="DESVINCULADO">DESVINCULADO</option>
+                  </select>
+                  <button
+                    onClick={onGuardarEstado}
+                    className="px-3 py-1.5 bg-white rounded-md text-xs font-medium text-slate-700 shadow-sm border border-slate-200 hover:text-blue-600 transition-colors"
+                  >
+                    Guardar
+                  </button>
+                </div>
+              )}
+              <button
+                onClick={onBack}
+                className="h-9 px-4 rounded-lg bg-white border border-slate-200 text-slate-600 text-sm font-medium shadow-sm hover:bg-slate-50 hover:text-slate-900 transition-all flex items-center gap-2"
+              >
+                <Home size={16} /> Home
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Sidebar IZQUIERDO: Chips + snapshot + tips */}
-          <aside className="lg:col-span-1 space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* Sidebar IZQUIERDO */}
+          <aside className="lg:col-span-4 space-y-6">
             {/* Chips resumen */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-4">
               {isRRHH && (
-                <div className="rounded-lg border border-border/60 bg-card p-3">
-                  <div className="text-[11px] text-muted-foreground">Sueldo vigente</div>
-                  <div className="text-base font-semibold">{sueldoVigenteTxt}</div>
-                  <div className="text-[11px] text-muted-foreground">
+                <div className="rounded-2xl bg-white p-4 shadow-sm border border-slate-100 flex flex-col justify-between hover:shadow-md transition-shadow">
+                  <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Sueldo</div>
+                  <div className="mt-2 text-lg font-bold text-slate-800 tracking-tight">{sueldoVigenteTxt}</div>
+                  <div className="mt-1 text-[10px] font-medium text-emerald-600 bg-emerald-50 w-fit px-1.5 py-0.5 rounded-md">
                     Desde {emp?.sueldoBase?.vigenteDesde ? String(emp.sueldoBase.vigenteDesde).slice(0, 10) : "—"}
                   </div>
                 </div>
               )}
-              <div className="rounded-lg border border-border/60 bg-card p-3">
-                <div className="text-[11px] text-muted-foreground">Último puesto</div>
-                <div className="text-base font-semibold">{ultimoPuesto}</div>
+              <div className="rounded-2xl bg-white p-4 shadow-sm border border-slate-100 flex flex-col justify-between hover:shadow-md transition-shadow">
+                <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Puesto Actual</div>
+                <div className="mt-2 text-sm font-bold text-slate-800 leading-tight">{ultimoPuesto}</div>
               </div>
-              <div className="rounded-lg border border-border/60 bg-card p-3">
-                <div className="text-[11px] text-muted-foreground">Capacitaciones</div>
-                <div className="text-base font-semibold">{capsTotales}</div>
+              <div className="rounded-2xl bg-white p-4 shadow-sm border border-slate-100 flex flex-col justify-between hover:shadow-md transition-shadow">
+                <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Capacitaciones</div>
+                <div className="mt-2 flex items-baseline gap-1">
+                  <span className="text-2xl font-bold text-slate-800">{capsTotales}</span>
+                  <span className="text-xs text-slate-500 font-medium">realizadas</span>
+                </div>
               </div>
               {isRRHH && (
-                <div className="rounded-lg border border-border/60 bg-card p-3">
-                  <div className="text-[11px] text-muted-foreground">Vencen 30 días</div>
-                  <div className="text-base font-semibold">{capsVencen}</div>
+                <div className="rounded-2xl bg-white p-4 shadow-sm border border-slate-100 flex flex-col justify-between hover:shadow-md transition-shadow">
+                  <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Vencimientos</div>
+                  <div className="mt-2 flex items-baseline gap-1">
+                    <span className={`text-2xl font-bold ${capsVencen > 0 ? "text-amber-500" : "text-slate-800"}`}>{capsVencen}</span>
+                    <span className="text-xs text-slate-500 font-medium">en 30 días</span>
+                  </div>
                 </div>
               )}
             </div>
 
             {/* Snapshot */}
-            <div className="rounded-xl bg-card ring-1 ring-border/60 p-4">
-              <div className="grid grid-cols-2 gap-3 text-xs text-muted-foreground">
-                <div>DNI: <b className="text-foreground">{emp.dni}</b></div>
-                <div>CUIL: <b className="text-foreground">{emp.cuil}</b></div>
-                <div>
-                  Ingreso:{" "}
-                  <b className="text-foreground">
-                    {emp.fechaIngreso ? String(emp.fechaIngreso).slice(0, 10) : "—"}
-                  </b>
+            <div className="rounded-2xl bg-white shadow-lg shadow-slate-200/50 border border-slate-100 overflow-hidden">
+              {/* Header Gradient */}
+              <div className="bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-4 flex justify-between items-center">
+                <h3 className="text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                  <UserCircle size={18} className="text-white/80" />
+                  Datos Clave
+                </h3>
+                <button onClick={copyAll} className="text-white/70 hover:text-white transition-colors bg-white/10 hover:bg-white/20 p-1.5 rounded-lg" title="Copiar toda la tarjeta">
+                  {copiedAll ? <Check size={16} className="text-emerald-300" /> : <Copy size={16} />}
+                </button>
+              </div>
+
+              <div className="p-6 space-y-6">
+                {/* Contacto Empleado */}
+                <div className="relative group">
+                  <div className="absolute -left-2 top-0 bottom-0 w-0.5 bg-violet-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-widest flex items-center gap-1.5">
+                      Contacto Directo
+                    </h4>
+                    <button onClick={copyEmpleado} className="text-slate-400 hover:text-indigo-600 transition-colors" title="Copiar contacto">
+                      {copiedEmp ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                    </button>
+                  </div>
+
+                  <div className="space-y-3 pl-1">
+                    <div className="flex items-start gap-3">
+                      <Mail size={16} className="text-slate-400 mt-0.5" />
+                      <div className="flex-1">
+                        <span className="text-xs text-slate-500 block mb-0.5">Email</span>
+                        <div className="text-sm font-medium text-slate-800 break-all">{emp.email}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Phone size={16} className="text-slate-400" />
+                      <div className="flex-1">
+                        <span className="text-xs text-slate-500 block mb-0.5">Celular</span>
+                        <div className="text-sm font-medium text-slate-800">{emp.celular || "—"}</div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div>Área: <b className="text-foreground">{emp?.area?.nombre || "—"}</b></div>
-                <div className="col-span-2">Sector: <b className="text-foreground">{emp?.sector?.nombre || "—"}</b></div>
+
+                <div className="border-t border-slate-100 my-4" />
+
+                {/* Identificación */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <span className="text-xs text-slate-400 block mb-1">DNI</span>
+                    <div className="font-mono text-sm font-semibold text-slate-700 bg-slate-50 px-2 py-1 rounded-md border border-slate-100 inline-block w-full text-center">
+                      {emp.dni}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-xs text-slate-400 block mb-1">CUIL</span>
+                    <div className="font-mono text-sm font-semibold text-slate-700 bg-slate-50 px-2 py-1 rounded-md border border-slate-100 inline-block w-full text-center">
+                      {emp.cuil}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 mt-4 bg-blue-50/50 p-2.5 rounded-lg border border-blue-100/50">
+                  <Calendar size={16} className="text-blue-500" />
+                  <div>
+                    <span className="text-xs text-blue-400 block font-medium">Fecha de Ingreso</span>
+                    <div className="text-sm font-bold text-blue-700">{emp.fechaIngreso ? String(emp.fechaIngreso).slice(0, 10) : "—"}</div>
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-100 my-4" />
+
+                {/* Estructura & Referente */}
+                <div>
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Organización</h4>
+
+                  <div className="flex items-start gap-3 mb-4">
+                    <Building2 size={16} className="text-slate-400 mt-0.5" />
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">{emp?.area?.nombre || "—"}</div>
+                      <div className="text-xs text-slate-500">{emp?.sector?.nombre || "—"}</div>
+                    </div>
+                  </div>
+
+                  {emp?.area?.referentes?.length > 0 && (
+                    <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                      <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-200/60">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1.5">
+                          Referente
+                        </span>
+                        <button onClick={copyReferente} className="text-slate-400 hover:text-indigo-600 transition-colors" title="Copiar datos">
+                          {copiedRef ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                        </button>
+                      </div>
+                      {emp.area.referentes.map(ref => (
+                        <div key={ref._id} className="text-sm space-y-1">
+                          <div className="font-bold text-slate-800 flex items-center gap-2">
+                            <div className="w-5 h-5 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center text-[10px] font-bold">
+                              {ref.nombre[0]}{ref.apellido[0]}
+                            </div>
+                            {ref.nombre} {ref.apellido}
+                          </div>
+                          <div className="pl-7 space-y-0.5">
+                            <div className="text-xs text-slate-500">{ref.email}</div>
+                            <div className="text-xs text-slate-400">{ref.celular || "—"}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* Tips / accesos */}
-            {isRRHH && (
-              <div className="rounded-xl bg-card ring-1 ring-border/60 p-4">
-                <div className="text-sm font-semibold mb-2">Accesos rápidos</div>
-                <ul className="text-sm list-disc pl-5 space-y-1 text-muted-foreground">
-                  <li>Cambiar estado laboral desde el header</li>
-                  <li>Editar datos desde “Información básica”</li>
-                  <li>Actualizar sueldo en “Datos laborales”</li>
-                </ul>
-              </div>
-            )}
+
           </aside>
 
           {/* PANEL CENTRAL: Tabs siempre arriba + contenido */}
-          <section className="lg:col-span-2 space-y-4">
-            {/* Tabs (sticky en el panel central) */}
-            <div className="sticky top-4 z-10">
-              <div className="rounded-lg bg-card/95 backdrop-blur ring-1 ring-border/60 p-2">
-                <div className="flex gap-2 flex-wrap">
-                  {TABS.map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => setTab(t)}
-                      className={`px-3 py-1.5 rounded-md text-sm ring-1 ring-border/60 ${tab === t ? "bg-background shadow-sm" : "bg-muted hover:bg-muted/70 text-muted-foreground"
-                        }`}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
+          <section className="lg:col-span-8 space-y-6">
+            {/* Tabs (sticky) */}
+            <div className="sticky top-4 z-20">
+              <div className="rounded-2xl bg-white/90 backdrop-blur-md shadow-sm border border-slate-200/60 p-1.5 flex flex-wrap gap-1">
+                {TABS.map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setTab(t)}
+                    className={`flex-1 min-w-[120px] px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-200 ${tab === t
+                      ? "bg-slate-900 text-white shadow-md shadow-slate-900/20"
+                      : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                      }`}
+                  >
+                    {t}
+                  </button>
+                ))}
               </div>
             </div>
 
             {/* Contenido por pestaña */}
             {/* Información básica */}
             {tab === "Informacion basica" && (
-              <div className="rounded-xl bg-card ring-1 ring-border/60 p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-semibold">Información básica</h3>
+              <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-100">
+                <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+                  <h3 className="text-lg font-bold text-slate-800">Información básica</h3>
                   {!editBasic ? (
                     canEditBasic && (
                       <button
                         onClick={() => setEditBasic(true)}
-                        className="text-xs rounded-md px-3 py-1.5 bg-slate-900 text-white hover:bg-slate-800"
+                        className="text-xs font-semibold rounded-lg px-4 py-2 bg-slate-900 text-white hover:bg-slate-800 transition-colors shadow-sm"
                       >
-                        Editar
+                        Editar Información
                       </button>
                     )
                   ) : (
                     <div className="flex gap-2">
                       <button
                         onClick={onGuardarBasica}
-                        className="text-xs rounded-md px-3 py-1.5 bg-emerald-600 text-white hover:bg-emerald-700"
+                        className="text-xs font-semibold rounded-lg px-4 py-2 bg-emerald-500 text-white hover:bg-emerald-600 transition-colors shadow-sm"
                       >
-                        Guardar
+                        Guardar cambios
                       </button>
                       <button
                         onClick={() => {
@@ -535,6 +712,7 @@ export default function LegajoEmpleado() {
                           setBasicForm({
                             nombre: emp?.nombre ?? "",
                             apellido: emp?.apellido ?? "",
+                            apodo: emp?.apodo ?? "",
                             email: emp?.email ?? "",
                             celular: emp?.celular ?? "",
                             domicilio: emp?.domicilio ?? "",
@@ -559,6 +737,7 @@ export default function LegajoEmpleado() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <Field label="Nombre" value={emp.nombre} />
                     <Field label="Apellido" value={emp.apellido} />
+                    <Field label="Apodo" value={emp.apodo} />
                     <Field label="Email" value={emp.email || "—"} />
                     <Field label="Celular" value={emp.celular || "—"} />
                     <Field label="Domicilio" value={emp.domicilio || "—"} />
@@ -574,18 +753,24 @@ export default function LegajoEmpleado() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <FieldInput label="Nombre" value={basicForm.nombre} onChange={(v) => setBasicForm(s => ({ ...s, nombre: v }))} disabled={!isRRHH} />
                     <FieldInput label="Apellido" value={basicForm.apellido} onChange={(v) => setBasicForm(s => ({ ...s, apellido: v }))} disabled={!isRRHH} />
+                    <FieldInput label="Apodo (Opcional)" value={basicForm.apodo} onChange={(v) => setBasicForm(s => ({ ...s, apodo: v }))} disabled={!canEditBasic} />
                     <FieldInput label="Email" type="email" value={basicForm.email} onChange={(v) => setBasicForm(s => ({ ...s, email: v }))} />
                     <FieldInput
                       label="Celular"
                       value={basicForm.celular}
-                      onChange={(v) => setBasicForm(s => ({ ...s, celular: v.replace(/[^0-9+-\s]/g, "") }))}
+                      onChange={(v) => {
+                        const val = v.replace(/[^0-9]/g, "");
+                        if (val.length <= 12) setBasicForm(s => ({ ...s, celular: val }));
+                      }}
+                      maxLength={12}
+                      placeholder="2975123123"
                     />
                     <FieldInput label="Domicilio" value={basicForm.domicilio} onChange={(v) => setBasicForm(s => ({ ...s, domicilio: v }))} disabled={!isRRHH} />
 
                     <div>
                       <Label>Puesto</Label>
                       <select
-                        className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                        className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all disabled:bg-slate-50 disabled:text-slate-400"
                         value={basicForm.puesto}
                         onChange={(e) => setBasicForm(s => ({ ...s, puesto: e.target.value }))}
                         disabled={!isRRHH}
@@ -597,7 +782,7 @@ export default function LegajoEmpleado() {
                     <div>
                       <Label>Categoría</Label>
                       <select
-                        className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                        className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all disabled:bg-slate-50 disabled:text-slate-400"
                         value={basicForm.categoria}
                         onChange={(e) => setBasicForm(s => ({ ...s, categoria: e.target.value }))}
                         disabled={!isRRHH}
@@ -610,7 +795,7 @@ export default function LegajoEmpleado() {
                     <div>
                       <Label>Área</Label>
                       <select
-                        className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                        className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all disabled:bg-slate-50 disabled:text-slate-400"
                         value={basicForm.area}
                         onChange={(e) => {
                           const areaId = e.target.value;
@@ -625,7 +810,7 @@ export default function LegajoEmpleado() {
                     <div>
                       <Label>Sector</Label>
                       <select
-                        className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                        className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all disabled:bg-slate-50 disabled:text-slate-400"
                         value={basicForm.sector}
                         onChange={(e) => setBasicForm(s => ({ ...s, sector: e.target.value }))}
                         disabled={!isRRHH || !basicForm.area || sectoresFiltrados.length === 0}
@@ -667,27 +852,46 @@ export default function LegajoEmpleado() {
 
                     {/* ACTUAL */}
                     <div className="rounded-lg border border-border/60 bg-muted/20 p-3 mb-4 flex items-center justify-between">
-                      <div>
-                        <div className="text-xs text-muted-foreground">Sueldo actual</div>
-                        <div className="text-xl font-semibold">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className="text-xs text-muted-foreground">Sueldo actual</div>
+                          <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-emerald-100 text-emerald-700 tracking-wider">Vigente</span>
+                        </div>
+                        <div className="text-2xl font-bold text-slate-800">
                           {fmtMoney(emp?.sueldoBase?.monto, emp?.sueldoBase?.moneda)}
                         </div>
-                        <div className="text-xs text-muted-foreground">
-                          Vigente desde {emp?.sueldoBase?.vigenteDesde ? String(emp.sueldoBase.vigenteDesde).slice(0, 10) : "—"}
+                        <div className="flex items-center gap-4 mt-2">
+                          <div className="text-xs text-slate-500 font-medium">
+                            Desde: {emp?.sueldoBase?.vigenteDesde ? String(emp.sueldoBase.vigenteDesde).slice(0, 10) : "—"}
+                          </div>
+                          {emp?.sueldoBase?.comentario && (
+                            <div className="text-xs text-slate-500 italic border-l-2 border-slate-200 pl-2 max-w-sm truncate" title={emp.sueldoBase.comentario}>
+                              “{emp.sueldoBase.comentario}”
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <span className="px-2 py-0.5 text-xs rounded-full bg-emerald-100 text-emerald-700">Vigente</span>
                     </div>
 
                     {/* FORM ACTUALIZAR */}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                      <FieldInput
-                        label="Monto"
-                        type="number"
-                        value={sueldo.monto}
-                        onChange={(v) => setSueldo((s) => ({ ...s, monto: v }))}
-                        disabled={!isRRHH}
-                      />
+                      <div className="relative">
+                        <FieldInput
+                          label="Nuevo Monto"
+                          type="number"
+                          value={sueldo.monto}
+                          onChange={(v) => setSueldo((s) => ({ ...s, monto: v }))}
+                          disabled={!isRRHH}
+                        />
+                        {/* Percentage Badge */}
+                        {emp?.sueldoBase?.monto > 0 && sueldo.monto > 0 && sueldo.monto !== emp.sueldoBase.monto && (
+                          <div className={`absolute right-0 top-0 text-xs font-bold px-2 py-1 rounded-bl-lg rounded-tr-lg ${sueldo.monto > emp.sueldoBase.monto ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                            }`}>
+                            {sueldo.monto > emp.sueldoBase.monto ? "▲" : "▼"}
+                            {Math.abs(((sueldo.monto - emp.sueldoBase.monto) / emp.sueldoBase.monto) * 100).toFixed(2)}%
+                          </div>
+                        )}
+                      </div>
                       <div>
                         <Label>Moneda</Label>
                         <select
@@ -716,6 +920,15 @@ export default function LegajoEmpleado() {
                           Actualizar sueldo
                         </button>
                       </div>
+                      <div className="md:col-span-4">
+                        <FieldInput
+                          label="Motivo / Comentario (Opcional)"
+                          value={sueldo.comentario}
+                          onChange={(v) => setSueldo((s) => ({ ...s, comentario: v }))}
+                          placeholder="Ej: Aumento anual por desempeño..."
+                          disabled={!isRRHH}
+                        />
+                      </div>
                     </div>
 
                     {/* HISTÓRICO */}
@@ -726,29 +939,92 @@ export default function LegajoEmpleado() {
                           <table className="min-w-[560px] w-full text-sm table-auto">
                             <thead className="sticky top-0 bg-muted/40">
                               <tr className="text-[11px] uppercase text-muted-foreground">
-                                <th className="text-left px-3 py-2">Desde</th>
-                                <th className="text-left px-3 py-2">Hasta</th>
-                                <th className="text-left px-3 py-2">Monto</th>
+                                <th className="text-left px-3 py-2">Fecha</th>
+                                <th className="text-left px-3 py-2">Monto Ant.</th>
+                                <th className="text-left px-3 py-2">Monto Nuevo</th>
+                                <th className="text-left px-3 py-2">%</th>
                                 <th className="text-left px-3 py-2">Moneda</th>
+                                <th className="text-left px-3 py-2">Comentario</th>
+                                <th className="px-3 py-2 w-10"></th>
                               </tr>
                             </thead>
                             <tbody>
-                              {historico.length ? (
-                                historico.map((h, i) => (
-                                  <tr key={i} className="border-t border-border/50 odd:bg-background even:bg-muted/20">
-                                    <td className="px-3 py-2">{h?.desde ? String(h.desde).slice(0, 10) : "—"}</td>
-                                    <td className="px-3 py-2">{h?.hasta ? String(h.hasta).slice(0, 10) : "—"}</td>
-                                    <td className="px-3 py-2">{fmtMoney(h?.monto, h?.moneda)}</td>
-                                    <td className="px-3 py-2">{h?.moneda ?? "—"}</td>
-                                  </tr>
-                                ))
-                              ) : (
-                                <tr>
-                                  <td className="px-3 py-2 text-sm text-muted-foreground" colSpan={4}>
-                                    Sin registros previos.
-                                  </td>
-                                </tr>
-                              )}
+                              {(() => {
+                                // Combinar actual con histórico para mostrar toda la evolución
+                                const current = {
+                                  _id: "current",
+                                  monto: emp?.sueldoBase?.monto,
+                                  moneda: emp?.sueldoBase?.moneda,
+                                  vigenteDesde: emp?.sueldoBase?.vigenteDesde,
+                                  comentario: emp?.sueldoBase?.comentario,
+                                  isCurrent: true
+                                };
+
+                                // Si no hay sueldo actual definido, mostrar solo histórico
+                                const rawHist = historico || [];
+                                const sortedHist = [...rawHist].sort((a, b) => new Date(b.desde) - new Date(a.desde));
+
+                                // Si hay un monto actual, lo ponemos primero
+                                const allSalaries = (current.monto)
+                                  ? [current, ...sortedHist]
+                                  : sortedHist;
+
+                                if (!allSalaries.length) {
+                                  return (
+                                    <tr>
+                                      <td className="px-3 py-2 text-sm text-muted-foreground" colSpan={7}>
+                                        Sin registros.
+                                      </td>
+                                    </tr>
+                                  );
+                                }
+
+                                return allSalaries.map((h, i, arr) => {
+                                  const prevItem = arr[i + 1]; // El siguiente en la lista (más antiguo)
+                                  const prevAmount = prevItem?.monto;
+
+                                  const diffPercent = prevAmount
+                                    ? ((h.monto - prevAmount) / prevAmount) * 100
+                                    : null;
+
+                                  const dateStr = h.isCurrent
+                                    ? (h.vigenteDesde ? String(h.vigenteDesde).slice(0, 10) : "—")
+                                    : (h.desde ? String(h.desde).slice(0, 10) : "—");
+
+                                  return (
+                                    <tr key={h._id || i} className={`border-t border-border/50 transition-colors group ${h.isCurrent ? "bg-emerald-50/50 hover:bg-emerald-50" : "odd:bg-background even:bg-muted/20 hover:bg-muted/40"}`}>
+                                      <td className="px-3 py-2 font-medium">
+                                        {dateStr}
+                                        {h.isCurrent && <span className="ml-2 text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full uppercase tracking-wide">Actual</span>}
+                                      </td>
+                                      <td className="px-3 py-2 text-muted-foreground text-xs">
+                                        {prevAmount ? fmtMoney(prevAmount, prevItem?.moneda) : "—"}
+                                      </td>
+                                      <td className="px-3 py-2 font-medium bg-slate-50/50">{fmtMoney(h?.monto, h?.moneda)}</td>
+                                      <td className="px-3 py-2 font-mono text-xs">
+                                        {diffPercent != null ? (
+                                          <span className={diffPercent > 0 ? "text-emerald-600 font-bold" : diffPercent < 0 ? "text-red-600 font-bold" : "text-slate-400"}>
+                                            {diffPercent > 0 ? "+" : ""}{diffPercent.toFixed(1)}%
+                                          </span>
+                                        ) : <span className="text-slate-300">—</span>}
+                                      </td>
+                                      <td className="px-3 py-2">{h?.moneda ?? "—"}</td>
+                                      <td className="px-3 py-2 text-xs text-muted-foreground italic max-w-[150px] truncate" title={h?.comentario}>{h?.comentario || "—"}</td>
+                                      <td className="px-3 py-2 text-right">
+                                        {isRRHH && !h.isCurrent && (
+                                          <button
+                                            onClick={() => onEliminarSueldo(h._id)}
+                                            className="text-slate-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 p-1"
+                                            title="Eliminar registro"
+                                          >
+                                            <Trash2 size={14} />
+                                          </button>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                });
+                              })()}
                             </tbody>
                           </table>
                         </div>
@@ -759,10 +1035,10 @@ export default function LegajoEmpleado() {
 
                 {/* Carrera / Historial de puestos */}
                 <div className="rounded-xl bg-card ring-1 ring-border/60 p-4">
-                  <h3 className="text-sm font-semibold mb-2">Carrera / Historial de puestos</h3>
+                  <h3 className="text-sm font-semibold mb-2">Desarrollo Profesional</h3>
                   <div className="overflow-x-auto">
                     <div className="min-w-0">
-                      <CarreraTable empleadoId={id} canEdit={isRRHH} />
+                      <CarreraTable empleadoId={id} canEdit={isRRHH} areas={areas} sectores={sectores} />
                     </div>
                   </div>
                 </div>
@@ -772,7 +1048,6 @@ export default function LegajoEmpleado() {
             {/* Capacitaciones */}
             {tab === "Capacitaciones" && (
               <div className="rounded-xl bg-card ring-1 ring-border/60 p-4">
-                <h3 className="text-sm font-semibold mb-2">Capacitaciones</h3>
                 <div className="overflow-x-auto">
                   <div className="min-w-0">
                     <CapacitacionesTable empleadoId={id} canEdit={isRRHH} />
@@ -788,7 +1063,12 @@ export default function LegajoEmpleado() {
                   <h3 className="text-sm font-semibold">CV del empleado</h3>
                   {emp?.cvUrl && (
                     <a
-                      href={`${/^https?:\/\//i.test(emp.cvUrl) ? emp.cvUrl : `/${emp.cvUrl}`}`}
+                      href={(() => {
+                        const url = emp.cvUrl;
+                        if (/^https?:\/\//i.test(url)) return url;
+                        const base = (typeof API_ORIGIN === "string" && API_ORIGIN) ? API_ORIGIN : window.location.origin;
+                        return `${base.replace(/\/+$/, "")}/${String(url).replace(/^\/+/, "")}`;
+                      })()}
                       target="_blank"
                       rel="noreferrer"
                       className="text-xs underline"
@@ -799,14 +1079,16 @@ export default function LegajoEmpleado() {
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <input
+                    ref={cvInputRef}
                     type="file"
                     accept=".pdf,.doc,.docx"
-                    onChange={(e) => setCvFile(e.target.files?.[0] || null)}
-                    disabled={!isRRHH}
+                    className="hidden"
+                    onChange={handleCvUpload}
+                    disabled={!canEditBasic}
                   />
                   <button
-                    disabled={!isRRHH}
-                    onClick={onSubirCV}
+                    disabled={!canEditBasic}
+                    onClick={() => cvInputRef.current?.click()}
                     className="rounded-md px-3 py-2 text-sm bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
                   >
                     Subir CV

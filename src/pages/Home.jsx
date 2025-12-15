@@ -175,7 +175,7 @@ export default function Home() {
       desc: "Indicadores clave de alto nivel.",
       icon: LayoutDashboard,
       to: "/seguimiento-ejecutivo",
-      allow: canViewEjecutivo,
+      allow: canViewEjecutivo && (hasRoleRRHH || hasRoleDirectivo),
       gradient: "from-pink-600 to-rose-600",
       textColor: "text-pink-50",
     },
@@ -212,7 +212,9 @@ export default function Home() {
 
             <div>
               <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-white mb-2">
-                Hola, <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">{displayName.split(" ")[0]}</span>
+                Hola, <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
+                  {user?.empleado?.apodo ? user.empleado.apodo : (user?.empleado?.nombre || user?.nombre || (displayName.includes(",") ? displayName.split(",")[1].trim() : displayName.split(" ")[0]))}!
+                </span>
               </h1>
               <div className="flex flex-wrap items-center gap-3 text-sm text-slate-300">
                 <span className="flex items-center gap-1.5 bg-white/10 px-3 py-1 rounded-full backdrop-blur-sm border border-white/10">
@@ -246,7 +248,7 @@ export default function Home() {
       <div className="max-w-7xl mx-auto px-6 lg:px-8 -mt-24 relative z-10 pb-12">
         <h2 className="text-lg font-semibold text-white/90 mb-6 flex items-center gap-2">
           <LayoutDashboard className="h-5 w-5" />
-          Panel de Control
+          Panel de Navegación
         </h2>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

@@ -1,5 +1,5 @@
 // src/components/Navbar.jsx
-import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import logo from '@/assets/DiagnosLogo.png';
@@ -26,6 +26,7 @@ import {
 function Navbar({ showDisabledInsteadOfHiding = false }) {
   const { user, logout, setUser } = useAuth();
   const nav = useNavigate();
+  const location = useLocation();
 
   // ====== Avatar (misma lógica que EmpleadoCard) ======
   const fotoSrc = (empleado) => {
@@ -172,49 +173,51 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
 
           {/* Desktop Navigation */}
           <div className="hidden xl:flex flex-1 justify-center items-center px-4">
-            <div className="flex items-center gap-1">
-              {isNormalUser ? (
-                <>
-                  {/* 🚩 VISOR puro → solo Seguimiento y Mi desempeño */}
-                  {renderNavItem('/seguimiento', 'Seguimiento', <LayoutDashboard />, true)}
-                  {user && renderNavItem('/mi-desempeno', 'Mi Desempeño', <Target />, true)}
-                  {user?.empleado?._id && renderNavItem(`/nomina/legajo/${user.empleado._id}`, 'Mi Legajo', <UserCircle />, true)}
-                </>
-              ) : (
-                <>
-                  {/* Nómina */}
-                  {renderNavItem('/gestion-estructura', 'Nómina', <Users />, canViewEstructura)}
+            {location.pathname !== '/' && (
+              <div className="flex items-center gap-1">
+                {isNormalUser ? (
+                  <>
+                    {/* 🚩 VISOR puro → solo Seguimiento y Mi desempeño */}
+                    {renderNavItem('/seguimiento', 'Seguimiento', <LayoutDashboard />, true)}
+                    {user && renderNavItem('/mi-desempeno', 'Mi Desempeño', <Target />, true)}
+                    {user?.empleado?._id && renderNavItem(`/nomina/legajo/${user.empleado._id}`, 'Mi Legajo', <UserCircle />, true)}
+                  </>
+                ) : (
+                  <>
+                    {/* Nómina */}
+                    {renderNavItem('/gestion-estructura', 'Nómina', <Users />, canViewEstructura)}
 
-                  {/* Departamentos */}
-                  {renderNavItem('/gestion-departamentos', 'Departamentos', <Building2 />, canViewEstructuraFinal)}
+                    {/* Departamentos */}
+                    {renderNavItem('/gestion-departamentos', 'Departamentos', <Building2 />, canViewEstructuraFinal)}
 
-                  {/* Seguimiento Ejecutivo */}
-                  {renderNavItem('/seguimiento-ejecutivo', 'Tablero', <BarChart3 />, true)}
+                    {/* Seguimiento Ejecutivo */}
+                    {renderNavItem('/seguimiento-ejecutivo', 'Tablero', <BarChart3 />, true)}
 
-                  {/* Objetivos (solo RRHH o Directivos) */}
-                  {(hasRoleRRHH || hasRoleDirectivo) && renderNavItem('/plantillas', 'Objetivos', <Target />, true)}
-                  {(hasRoleRRHH || hasRoleDirectivo) && renderNavItem('/rrhh-evaluaciones', 'Cierre', <CheckCircle />, true)}
+                    {/* Objetivos (solo RRHH o Directivos) */}
+                    {(hasRoleRRHH || hasRoleDirectivo) && renderNavItem('/plantillas', 'Objetivos', <Target />, true)}
+                    {(hasRoleRRHH || hasRoleDirectivo) && renderNavItem('/rrhh-evaluaciones', 'Cierre', <CheckCircle />, true)}
 
-                  {/* Asignaciones (solo RRHH o Directivos) */}
-                  {(hasRoleRRHH || hasRoleDirectivo) && renderNavItem('/asignaciones', 'Asignaciones', <UserPlus />, true)}
+                    {/* Asignaciones (solo RRHH o Directivos) */}
+                    {(hasRoleRRHH || hasRoleDirectivo) && renderNavItem('/asignaciones', 'Asignaciones', <UserPlus />, true)}
 
-                  {/* Bonos (solo RRHH o Directivos) */}
-                  {(hasRoleRRHH || hasRoleDirectivo) && renderNavItem('/configuracion-bono', 'Config. Bonos', <DollarSign />, true)}
-                  {(hasRoleRRHH || hasRoleDirectivo) && renderNavItem('/resultados-bono', 'Resultados', <BarChart3 />, true)}
+                    {/* Bonos (solo RRHH o Directivos) */}
+                    {(hasRoleRRHH || hasRoleDirectivo) && renderNavItem('/configuracion-bono', 'Config. Bonos', <DollarSign />, true)}
+                    {(hasRoleRRHH || hasRoleDirectivo) && renderNavItem('/resultados-bono', 'Resultados', <BarChart3 />, true)}
 
-                  {/* Seguimiento (RRHH/Directivos/Nómina/Referentes) */}
-                  {(hasRoleRRHH || hasRoleDirectivo || canViewNomina || hasReferente) &&
-                    renderNavItem('/seguimiento', 'Seguimiento', <LayoutDashboard />, true)}
+                    {/* Seguimiento (RRHH/Directivos/Nómina/Referentes) */}
+                    {(hasRoleRRHH || hasRoleDirectivo || canViewNomina || hasReferente) &&
+                      renderNavItem('/seguimiento', 'Seguimiento', <LayoutDashboard />, true)}
 
-                  {/* Mi desempeño (todos logueados) */}
-                  {user && renderNavItem('/mi-desempeno', 'Mi Desempeño', <Target />, true)}
-                  {user?.empleado?._id && renderNavItem(`/nomina/legajo/${user.empleado._id}`, 'Mi Legajo', <UserCircle />, true)}
+                    {/* Mi desempeño (todos logueados) */}
+                    {user && renderNavItem('/mi-desempeno', 'Mi Desempeño', <Target />, true)}
+                    {user?.empleado?._id && renderNavItem(`/nomina/legajo/${user.empleado._id}`, 'Mi Legajo', <UserCircle />, true)}
 
-                  {/* Usuarios (solo SUPERADMIN) */}
-                  {isSuperAdmin && renderNavItem('/usuarios', 'Usuarios', <Users />, true)}
-                </>
-              )}
-            </div>
+                    {/* Usuarios (solo SUPERADMIN) */}
+                    {isSuperAdmin && renderNavItem('/usuarios', 'Usuarios', <Users />, true)}
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           {/* User Menu & Mobile Toggle */}
@@ -335,24 +338,26 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
       {/* Mobile Menu */}
       {mobileMenuOpen && (
         <div className="xl:hidden bg-white border-t border-slate-200">
-          <div className="px-2 pt-2 pb-3 space-y-1">
-            {/* Mobile links here - simplified for brevity, ideally reuse renderNavItem logic adapted for mobile */}
-            {isNormalUser ? (
-              <>
-                <NavLink to="/seguimiento" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Seguimiento</NavLink>
-                <NavLink to="/mi-desempeno" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Mi Desempeño</NavLink>
-              </>
-            ) : (
-              <>
-                <NavLink to="/gestion-estructura" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Nómina</NavLink>
-                <NavLink to="/gestion-departamentos" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Departamentos</NavLink>
-                <NavLink to="/seguimiento-ejecutivo" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Tablero</NavLink>
-                {(hasRoleRRHH || hasRoleDirectivo) && <NavLink to="/plantillas" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Objetivos</NavLink>}
-                {(hasRoleRRHH || hasRoleDirectivo) && <NavLink to="/resultados-bono" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Bonos</NavLink>}
-                {isSuperAdmin && <NavLink to="/usuarios" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Usuarios</NavLink>}
-              </>
-            )}
-          </div>
+          {location.pathname !== '/' && (
+            <div className="px-2 pt-2 pb-3 space-y-1">
+              {/* Mobile links here - simplified for brevity, ideally reuse renderNavItem logic adapted for mobile */}
+              {isNormalUser ? (
+                <>
+                  <NavLink to="/seguimiento" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Seguimiento</NavLink>
+                  <NavLink to="/mi-desempeno" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Mi Desempeño</NavLink>
+                </>
+              ) : (
+                <>
+                  <NavLink to="/gestion-estructura" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Nómina</NavLink>
+                  <NavLink to="/gestion-departamentos" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Departamentos</NavLink>
+                  <NavLink to="/seguimiento-ejecutivo" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Tablero</NavLink>
+                  {(hasRoleRRHH || hasRoleDirectivo) && <NavLink to="/plantillas" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Objetivos</NavLink>}
+                  {(hasRoleRRHH || hasRoleDirectivo) && <NavLink to="/resultados-bono" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Bonos</NavLink>}
+                  {isSuperAdmin && <NavLink to="/usuarios" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Usuarios</NavLink>}
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
     </header>
