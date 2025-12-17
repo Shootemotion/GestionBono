@@ -674,10 +674,16 @@ export default function GestionPlantillasPage() {
               Creá y administrá objetivos y aptitudes base por Año y Alcance.
             </p>
           </div>
-          <Button onClick={() => nav("/simulador")} variant="outline" className="gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-calculator"><rect width="16" height="20" x="4" y="2" rx="2" /><line x1="8" x2="16" y1="6" y2="6" /><line x1="16" x2="16" y1="14" y2="18" /><path d="M16 10h.01" /><path d="M12 10h.01" /><path d="M8 10h.01" /><path d="M12 14h.01" /><path d="M8 14h.01" /><path d="M12 18h.01" /><path d="M8 18h.01" /></svg>
-            Simulador
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button onClick={() => nav("/asignaciones")} variant="outline" className="gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-git-branch"><line x1="6" x2="6" y1="3" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></svg>
+              Excepciones & Override
+            </Button>
+            <Button onClick={() => nav("/simulador")} variant="outline" className="gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-calculator"><rect width="16" height="20" x="4" y="2" rx="2" /><line x1="8" x2="16" y1="6" y2="6" /><line x1="16" x2="16" y1="14" y2="18" /><path d="M16 10h.01" /><path d="M12 10h.01" /><path d="M8 10h.01" /><path d="M12 14h.01" /><path d="M8 14h.01" /><path d="M12 18h.01" /><path d="M8 18h.01" /></svg>
+              Simulador
+            </Button>
+          </div>
         </div>
 
         {/* Layout: sidebar + main */}
@@ -1035,15 +1041,15 @@ export default function GestionPlantillasPage() {
                 )}
               </div>
 
-              {/* Aptitudes */}
+              {/* Competencias */}
               <div className="rounded-xl bg-card shadow-sm ring-1 ring-border/60 p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <h2 className="font-semibold">💡 Aptitudes</h2>
+                    <h2 className="font-semibold">💡 Competencias</h2>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="inline-flex h-7 items-center px-3 rounded-full bg-indigo-100 text-indigo-700 text-xs ring-1 ring-indigo-200">
-                      {aptitudes.length} aptitudes
+                      {aptitudes.length} competencias
                     </span>
                     {hasScopedFilter && (
                       <span className="inline-flex h-7 items-center px-3 rounded-full bg-blue-100 text-blue-700 text-xs ring-1 ring-blue-200">

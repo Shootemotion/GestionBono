@@ -1,6 +1,6 @@
 // src/components/Navbar.jsx
 import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import logo from '@/assets/DiagnosLogo.png';
 import { Button } from '@/components/ui/button';
@@ -20,13 +20,105 @@ import {
   Camera,
   Menu,
   X,
-  ChevronDown
+  ChevronDown,
+  UserCircle2,
+  TrendingUp,
+  Calculator,
+  Home
 } from 'lucide-react';
+
+// --- Subcomponentes para Dropdowns ---
+// Ahora controlado por props para evitar que queden abiertos varios a la vez
+const DropdownGroup = ({ title, icon, items = [], isOpen, onMouseEnter, onMouseLeave, closeMenu }) => {
+  const location = useLocation();
+
+  // Si algún hijo está activo, marcamos el grupo como visualmente activo
+  const isActiveGroup = items.some(item => location.pathname.startsWith(item.to));
+
+  // Filtramos los permitidos
+  const visibleItems = items.filter(i => i.allowed);
+  if (visibleItems.length === 0) return null;
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      <button
+        className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200
+        ${isActiveGroup || isOpen ? 'text-blue-600 bg-blue-50/50' : 'text-slate-600 hover:text-blue-600 hover:bg-slate-50'}
+        `}
+      >
+        <span>{title}</span>
+        <ChevronDown size={14} className={`transition-transform duration-200 opacity-50 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {/* Menú Flotante */}
+      {isOpen && (
+        <div className="absolute top-full left-0 mt-1 w-56 bg-white rounded-xl shadow-xl ring-1 ring-black/5 p-1 z-[60] animate-in fade-in zoom-in-95 duration-100">
+          {visibleItems.map((sub, idx) => (
+            <Link
+              key={idx}
+              to={sub.to}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors
+                ${location.pathname === sub.to ? 'bg-blue-50 text-blue-700 font-medium' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}
+              `}
+              onClick={closeMenu} // cerrar al click
+            >
+              <div className={`p-1.5 rounded-md ${location.pathname === sub.to ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500 group-hover:bg-white'}`}>
+                {sub.icon}
+              </div>
+              {sub.label}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const MobileLink = ({ to, label, onClick }) => (
+  <NavLink
+    to={to}
+    onClick={onClick}
+    className={({ isActive }) =>
+      `block px-3 py-2 rounded-md text-sm font-medium transition-colors ${isActive ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+      }`
+    }
+  >
+    {label}
+  </NavLink>
+);
 
 function Navbar({ showDisabledInsteadOfHiding = false }) {
   const { user, logout, setUser } = useAuth();
   const nav = useNavigate();
   const location = useLocation();
+
+  // Estados para manejo coordinado de menús
+  const [activeMenu, setActiveMenu] = useState(null);
+  const closeTimeoutRef = useRef(null);
+
+  const handleMenuEnter = (menuName) => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+    setActiveMenu(menuName);
+  };
+
+  const handleMenuLeave = () => {
+    closeTimeoutRef.current = setTimeout(() => {
+      setActiveMenu(null);
+    }, 150);
+  };
+
+  const closeMenu = () => {
+    setActiveMenu(null);
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+  };
+
 
   // ====== Avatar (misma lógica que EmpleadoCard) ======
   const fotoSrc = (empleado) => {
@@ -96,6 +188,7 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
   // Permisos / roles
   const { ok: canViewEstructura } = useCan('estructura:ver');
   const { ok: canViewNomina } = useCan('nomina:ver');
+  const { ok: canViewEjecutivo } = useCan('seguimiento-ejecutivo:ver');
   const { ok: hasRoleRRHH } = useHasRole(['rrhh', 'jefe_area', 'jefe_sector']);
   const { ok: hasRoleDirectivo } = useHasRole(['directivo']);
 
@@ -160,12 +253,12 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
         <div className="flex items-center justify-between h-14">
 
           {/* Logo */}
-          <div className="flex-shrink-0 flex items-center gap-2">
-            <Link to="/" className="flex items-center gap-2 group">
-              <div className="bg-blue-600 rounded-lg p-1 group-hover:bg-blue-700 transition-colors">
-                <img src={logo} alt="Diagnos" className="h-5 w-auto filter brightness-0 invert" />
+          <div className="flex-shrink-0 flex items-center gap-3">
+            <Link to="/" className="flex items-center gap-2.5 group">
+              <div className="bg-blue-600 rounded-lg p-1.5 group-hover:bg-blue-700 transition-colors">
+                <img src={logo} alt="Diagnos" className="h-6 w-auto filter brightness-0 invert" />
               </div>
-              <span className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-700 to-blue-500 hidden md:block">
+              <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-700 to-blue-500 hidden md:block tracking-tight">
                 Diagnos
               </span>
             </Link>
@@ -175,45 +268,79 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
           <div className="hidden xl:flex flex-1 justify-center items-center px-4">
             {location.pathname !== '/' && (
               <div className="flex items-center gap-1">
+                {/* Home Icon */}
+                <NavLink to="/" className={linkClass}>
+                  <span className="w-5 h-5"><Home /></span>
+                  <span className="leading-none text-center">Home</span>
+                </NavLink>
                 {isNormalUser ? (
                   <>
-                    {/* 🚩 VISOR puro → solo Seguimiento y Mi desempeño */}
                     {renderNavItem('/seguimiento', 'Seguimiento', <LayoutDashboard />, true)}
                     {user && renderNavItem('/mi-desempeno', 'Mi Desempeño', <Target />, true)}
                     {user?.empleado?._id && renderNavItem(`/nomina/legajo/${user.empleado._id}`, 'Mi Legajo', <UserCircle />, true)}
                   </>
                 ) : (
                   <>
-                    {/* Nómina */}
-                    {renderNavItem('/gestion-estructura', 'Nómina', <Users />, canViewEstructura)}
+                    {/* --- Mi Espacio --- */}
+                    <DropdownGroup
+                      title="Mi Espacio"
+                      icon={<UserCircle2 className="w-4 h-4" />}
+                      items={[
+                        { to: '/mi-desempeno', label: 'Mi Desempeño', icon: <Target className="w-4 h-4" />, allowed: true },
+                        { to: user?.empleado?._id ? `/nomina/legajo/${user.empleado._id}` : '#', label: 'Mi Legajo', icon: <UserCircle className="w-4 h-4" />, allowed: !!user?.empleado?._id }
+                      ]}
+                      isOpen={activeMenu === 'Mi Espacio'}
+                      onMouseEnter={() => handleMenuEnter('Mi Espacio')}
+                      onMouseLeave={handleMenuLeave}
+                      closeMenu={closeMenu}
+                    />
 
-                    {/* Departamentos */}
-                    {renderNavItem('/gestion-departamentos', 'Departamentos', <Building2 />, canViewEstructuraFinal)}
+                    {/* --- Gestión & Seguimiento --- */}
+                    <DropdownGroup
+                      title="Gestión"
+                      icon={<Target className="w-4 h-4" />}
+                      items={[
+                        { to: '/plantillas', label: 'Objetivos', icon: <Target className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo },
+                        { to: '/seguimiento', label: 'Seguimiento', icon: <TrendingUp className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo || canViewNomina || hasReferente },
+                        { to: '/rrhh-evaluaciones', label: 'Cierre Eval.', icon: <CheckCircle className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo },
+                        { to: '/asignaciones', label: 'Asignaciones', icon: <UserPlus className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo }
+                      ]}
+                      isOpen={activeMenu === 'Gestión'}
+                      onMouseEnter={() => handleMenuEnter('Gestión')}
+                      onMouseLeave={handleMenuLeave}
+                      closeMenu={closeMenu}
+                    />
 
-                    {/* Seguimiento Ejecutivo */}
-                    {renderNavItem('/seguimiento-ejecutivo', 'Tablero', <BarChart3 />, true)}
+                    {/* --- Estructura & Organización --- */}
+                    <DropdownGroup
+                      title="Estructura"
+                      icon={<Building2 className="w-4 h-4" />}
+                      items={[
+                        { to: '/gestion-estructura', label: 'Equipo / Nómina', icon: <Users className="w-4 h-4" />, allowed: canViewEstructura },
+                        { to: '/gestion-departamentos', label: 'Departamentos', icon: <Building2 className="w-4 h-4" />, allowed: canViewEstructuraFinal },
+                        { to: '/usuarios', label: 'Usuarios', icon: <Users className="w-4 h-4" />, allowed: isSuperAdmin }
+                      ]}
+                      isOpen={activeMenu === 'Estructura'}
+                      onMouseEnter={() => handleMenuEnter('Estructura')}
+                      onMouseLeave={handleMenuLeave}
+                      closeMenu={closeMenu}
+                    />
 
-                    {/* Objetivos (solo RRHH o Directivos) */}
-                    {(hasRoleRRHH || hasRoleDirectivo) && renderNavItem('/plantillas', 'Objetivos', <Target />, true)}
-                    {(hasRoleRRHH || hasRoleDirectivo) && renderNavItem('/rrhh-evaluaciones', 'Cierre', <CheckCircle />, true)}
-
-                    {/* Asignaciones (solo RRHH o Directivos) */}
-                    {(hasRoleRRHH || hasRoleDirectivo) && renderNavItem('/asignaciones', 'Asignaciones', <UserPlus />, true)}
-
-                    {/* Bonos (solo RRHH o Directivos) */}
-                    {(hasRoleRRHH || hasRoleDirectivo) && renderNavItem('/configuracion-bono', 'Config. Bonos', <DollarSign />, true)}
-                    {(hasRoleRRHH || hasRoleDirectivo) && renderNavItem('/resultados-bono', 'Resultados', <BarChart3 />, true)}
-
-                    {/* Seguimiento (RRHH/Directivos/Nómina/Referentes) */}
-                    {(hasRoleRRHH || hasRoleDirectivo || canViewNomina || hasReferente) &&
-                      renderNavItem('/seguimiento', 'Seguimiento', <LayoutDashboard />, true)}
-
-                    {/* Mi desempeño (todos logueados) */}
-                    {user && renderNavItem('/mi-desempeno', 'Mi Desempeño', <Target />, true)}
-                    {user?.empleado?._id && renderNavItem(`/nomina/legajo/${user.empleado._id}`, 'Mi Legajo', <UserCircle />, true)}
-
-                    {/* Usuarios (solo SUPERADMIN) */}
-                    {isSuperAdmin && renderNavItem('/usuarios', 'Usuarios', <Users />, true)}
+                    {/* --- Resultados & Estrategia --- */}
+                    <DropdownGroup
+                      title="Resultados"
+                      icon={<BarChart3 className="w-4 h-4" />}
+                      items={[
+                        { to: '/seguimiento-ejecutivo', label: 'Tablero Ejec.', icon: <LayoutDashboard className="w-4 h-4" />, allowed: canViewEjecutivo },
+                        { to: '/configuracion-bono', label: 'Config. Bonos', icon: <DollarSign className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo },
+                        { to: '/resultados-bono', label: 'Resultados', icon: <BarChart3 className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo },
+                        { to: '/simulador', label: 'Simulador', icon: <Calculator className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo || user?.isJefeArea || user?.isJefeSector }
+                      ]}
+                      isOpen={activeMenu === 'Resultados'}
+                      onMouseEnter={() => handleMenuEnter('Resultados')}
+                      onMouseLeave={handleMenuLeave}
+                      closeMenu={closeMenu}
+                    />
                   </>
                 )}
               </div>
@@ -337,23 +464,57 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
 
       {/* Mobile Menu */}
       {mobileMenuOpen && (
-        <div className="xl:hidden bg-white border-t border-slate-200">
+        <div className="xl:hidden bg-white border-t border-slate-200 h-[calc(100vh-3.5rem)] overflow-y-auto">
           {location.pathname !== '/' && (
-            <div className="px-2 pt-2 pb-3 space-y-1">
-              {/* Mobile links here - simplified for brevity, ideally reuse renderNavItem logic adapted for mobile */}
+            <div className="px-4 pt-4 pb-8 space-y-6">
+              {/* Simplified mobile menu - just showing all links under headers */}
               {isNormalUser ? (
-                <>
+                <div className="space-y-2">
                   <NavLink to="/seguimiento" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Seguimiento</NavLink>
                   <NavLink to="/mi-desempeno" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Mi Desempeño</NavLink>
-                </>
+                </div>
               ) : (
                 <>
-                  <NavLink to="/gestion-estructura" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Nómina</NavLink>
-                  <NavLink to="/gestion-departamentos" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Departamentos</NavLink>
-                  <NavLink to="/seguimiento-ejecutivo" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Tablero</NavLink>
-                  {(hasRoleRRHH || hasRoleDirectivo) && <NavLink to="/plantillas" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Objetivos</NavLink>}
-                  {(hasRoleRRHH || hasRoleDirectivo) && <NavLink to="/resultados-bono" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Bonos</NavLink>}
-                  {isSuperAdmin && <NavLink to="/usuarios" className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50">Usuarios</NavLink>}
+                  {/* Mi Espacio */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Mi Espacio</h3>
+                    <div className="space-y-1">
+                      <MobileLink to="/mi-desempeno" label="Mi Desempeño" />
+                      {user?.empleado?._id && <MobileLink to={`/nomina/legajo/${user.empleado._id}`} label="Mi Legajo" />}
+                    </div>
+                  </div>
+
+                  {/* Gestión */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Gestión</h3>
+                    <div className="space-y-1">
+                      {(hasRoleRRHH || hasRoleDirectivo) && <MobileLink to="/plantillas" label="Objetivos" />}
+                      {(hasRoleRRHH || hasRoleDirectivo || canViewNomina || hasReferente) && <MobileLink to="/seguimiento" label="Seguimiento" />}
+                      {(hasRoleRRHH || hasRoleDirectivo) && <MobileLink to="/asignaciones" label="Asignaciones" />}
+                      {(hasRoleRRHH || hasRoleDirectivo) && <MobileLink to="/rrhh-evaluaciones" label="Cierres" />}
+                    </div>
+                  </div>
+
+                  {/* Estructura */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Estructura</h3>
+                    <div className="space-y-1">
+                      {canViewEstructura && <MobileLink to="/gestion-estructura" label="Nómina / Equipo" />}
+                      {canViewEstructuraFinal && <MobileLink to="/gestion-departamentos" label="Departamentos" />}
+                      {isSuperAdmin && <MobileLink to="/usuarios" label="Usuarios" />}
+                    </div>
+                  </div>
+
+                  {/* Resultados */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Resultados</h3>
+                    <div className="space-y-1">
+                      {(canViewEjecutivo && (hasRoleRRHH || hasRoleDirectivo)) && <MobileLink to="/seguimiento-ejecutivo" label="Tablero Ejecutivo" />}
+                      {(hasRoleRRHH || hasRoleDirectivo) && <MobileLink to="/configuracion-bono" label="Config. Bonos" />}
+                      {(hasRoleRRHH || hasRoleDirectivo) && <MobileLink to="/resultados-bono" label="Resultados Finales" />}
+                      {(hasRoleRRHH || hasRoleDirectivo || user?.isJefeArea || user?.isJefeSector) && <MobileLink to="/simulador" label="Simulador" />}
+                    </div>
+                  </div>
                 </>
               )}
             </div>

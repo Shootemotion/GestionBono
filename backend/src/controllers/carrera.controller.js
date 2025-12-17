@@ -51,6 +51,7 @@ export async function getCarreraResumen(req, res, next) {
     // Si no hay, devolvemos null o string vacía
     res.json({
       ultimoPuesto: ultimo?.puesto || null,
+      desde: ultimo?.desde || null,
     });
   } catch (e) {
     next(e);

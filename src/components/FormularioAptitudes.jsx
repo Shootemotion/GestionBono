@@ -229,8 +229,8 @@ export default function FormularioAptitudes({
       apiScope === "area"
         ? d?.areaId || d?.scopeId || initialScopeId || ""
         : apiScope === "sector"
-        ? d?.sectorId || d?.scopeId || initialScopeId || ""
-        : d?.empleadoId || d?.scopeId || initialScopeId || ""
+          ? d?.sectorId || d?.scopeId || initialScopeId || ""
+          : d?.empleadoId || d?.scopeId || initialScopeId || ""
     );
 
     setFrecuencia(d?.frecuencia || "anual");
@@ -275,8 +275,8 @@ export default function FormularioAptitudes({
         scopeType === "empleado"
           ? "Seleccioná un empleado."
           : scopeType === "sector"
-          ? "Seleccioná un sector."
-          : "Seleccioná un área.";
+            ? "Seleccioná un sector."
+            : "Seleccioná un área.";
     }
     // campos base
     if (!nombre.trim()) errs.nombre = "El nombre es obligatorio.";
@@ -330,9 +330,9 @@ export default function FormularioAptitudes({
     try {
       const saved = isEdit
         ? await api(`/templates/${templateId || data?._id}`, {
-            method: "PUT",
-            body,
-          })
+          method: "PUT",
+          body,
+        })
         : await api("/templates", { method: "POST", body });
 
       toast.success(isEdit ? "Aptitud actualizada" : "Aptitud creada");
@@ -365,400 +365,400 @@ export default function FormularioAptitudes({
   if (loading) return <FormSkeleton />;
 
   return (
-    <form onSubmit={(e) => handleSubmit(e)} className="space-y-6">
-      {/* Banner de error de carga (cuando viene templateId y falla) */}
-      {loadError ? (
-        <FormAlert title={`${statusPrefix(loadError.status)} al cargar la plantilla`}>
-          <div className="space-y-2">
-            <div>{loadError.message}</div>
-            {loadError.traceId ? (
-              <div className="text-xs opacity-80">ID de seguimiento: {loadError.traceId}</div>
-            ) : null}
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => fetchTemplateOnce(templateId)}
-              >
-                Reintentar
-              </Button>
-              <details className="text-xs">
-                <summary className="cursor-pointer select-none">Detalles técnicos</summary>
-                <pre className="mt-1 max-h-48 overflow-auto bg-black/5 p-2 rounded">
-{JSON.stringify(loadError.data ?? {}, null, 2)}
-                </pre>
-              </details>
+    <form onSubmit={(e) => handleSubmit(e)} className="flex flex-col h-full">
+      {/* Contenido Scrollable */}
+      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {/* Banner de error de carga (cuando viene templateId y falla) */}
+        {loadError ? (
+          <FormAlert title={`${statusPrefix(loadError.status)} al cargar la plantilla`}>
+            <div className="space-y-2">
+              <div>{loadError.message}</div>
+              {loadError.traceId ? (
+                <div className="text-xs opacity-80">ID de seguimiento: {loadError.traceId}</div>
+              ) : null}
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => fetchTemplateOnce(templateId)}
+                >
+                  Reintentar
+                </Button>
+                <details className="text-xs">
+                  <summary className="cursor-pointer select-none">Detalles técnicos</summary>
+                  <pre className="mt-1 max-h-48 overflow-auto bg-black/5 p-2 rounded">
+                    {JSON.stringify(loadError.data ?? {}, null, 2)}
+                  </pre>
+                </details>
+              </div>
             </div>
-          </div>
-        </FormAlert>
-      ) : null}
+          </FormAlert>
+        ) : null}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* IZQUIERDA */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold">💡 Aptitud</h3>
-            <span className={pill}>Año: {year}</span>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* IZQUIERDA */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold">💡 Aptitud</h3>
+              <span className={pill}>Año: {year}</span>
+            </div>
 
-          <div>
-            <label className="text-xs">Nombre</label>
-            <input
-              className={inputCls}
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              placeholder="Ej.: Liderazgo en equipo"
-              aria-invalid={!!fieldErrors.nombre}
-              required
-            />
-            <FieldError name="nombre" />
-          </div>
-
-          <div>
-            <label className="text-xs">Proceso (opcional)</label>
-            <select
-              className={inputCls}
-              value={proceso}
-              onChange={(e) => setProceso(e.target.value)}
-              aria-invalid={!!fieldErrors.proceso}
-            >
-              {PROCESOS.map((p) => (
-                <option key={p.value || "blank"} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-            <FieldError name="proceso" />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs">Peso (%)</label>
+              <label className="text-xs">Nombre</label>
               <input
-                type="number"
-                className={`${inputCls} ${peso === "0" ? "text-muted-foreground" : ""}`}
-                value={peso}
-                min={0}
-                max={100}
-                inputMode="decimal"
-                placeholder="0"
-                onFocus={(e) => e.target.select()}
-                onBlur={() => setPeso((v) => (v === "" ? "0" : v))}
-                onChange={(e) => {
-                  const raw = e.target.value.replace(/[^0-9.]/g, "");
-                  setPeso(raw.slice(0, 3));
-                }}
-                aria-invalid={!!fieldErrors.peso}
+                className={inputCls}
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                placeholder="Ej.: Liderazgo en equipo"
+                aria-invalid={!!fieldErrors.nombre}
+                required
               />
-              <FieldError name="peso" />
+              <FieldError name="nombre" />
             </div>
+
             <div>
-              <label className="text-xs">Frecuencia</label>
+              <label className="text-xs">Proceso (opcional)</label>
               <select
                 className={inputCls}
-                value={frecuencia}
-                onChange={(e) => setFrecuencia(e.target.value)}
-                aria-invalid={!!fieldErrors.frecuencia}
+                value={proceso}
+                onChange={(e) => setProceso(e.target.value)}
+                aria-invalid={!!fieldErrors.proceso}
               >
-                <option value="mensual">Mensual</option>
-                <option value="trimestral">Trimestral</option>
-                <option value="semestral">Semestral</option>
-                <option value="anual">Anual</option>
+                {PROCESOS.map((p) => (
+                  <option key={p.value || "blank"} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
               </select>
-              <FieldError name="frecuencia" />
+              <FieldError name="proceso" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs">Peso (%)</label>
+                <input
+                  type="number"
+                  className={`${inputCls} ${peso === "0" ? "text-muted-foreground" : ""}`}
+                  value={peso}
+                  min={0}
+                  max={100}
+                  inputMode="decimal"
+                  placeholder="0"
+                  onFocus={(e) => e.target.select()}
+                  onBlur={() => setPeso((v) => (v === "" ? "0" : v))}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/[^0-9.]/g, "");
+                    setPeso(raw.slice(0, 3));
+                  }}
+                  aria-invalid={!!fieldErrors.peso}
+                />
+                <FieldError name="peso" />
+              </div>
+              <div>
+                <label className="text-xs">Frecuencia</label>
+                <select
+                  className={inputCls}
+                  value={frecuencia}
+                  onChange={(e) => setFrecuencia(e.target.value)}
+                  aria-invalid={!!fieldErrors.frecuencia}
+                >
+                  <option value="mensual">Mensual</option>
+                  <option value="trimestral">Trimestral</option>
+                  <option value="semestral">Semestral</option>
+                  <option value="anual">Anual</option>
+                </select>
+                <FieldError name="frecuencia" />
+              </div>
+            </div>
+
+            {/* Override de cierre fiscal */}
+            <div>
+              <label className="text-xs flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={usarFechaCierreCustom}
+                  onChange={(e) => setUsarFechaCierreCustom(e.target.checked)}
+                />
+                Fecha de cierre diferente al 31/08 del año fiscal
+              </label>
+
+              {usarFechaCierreCustom && (
+                <input
+                  type="date"
+                  className={inputCls}
+                  value={fechaCierre}
+                  onChange={(e) => setFechaCierre(e.target.value)}
+                />
+              )}
             </div>
           </div>
 
-          {/* Override de cierre fiscal */}
-          <div>
-            <label className="text-xs flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={usarFechaCierreCustom}
-                onChange={(e) => setUsarFechaCierreCustom(e.target.checked)}
-              />
-              Fecha de cierre diferente al 31/08 del año fiscal
-            </label>
+          {/* DERECHA - Configuración */}
+          <div className="space-y-4">
+            <h3 className="text-base font-semibold">⚙️ Configuración</h3>
 
-            {usarFechaCierreCustom && (
-              <input
-                type="date"
-                className={inputCls}
-                value={fechaCierre}
-                onChange={(e) => setFechaCierre(e.target.value)}
-              />
+            <div>
+              <label className="text-xs">Ámbito</label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScopeType("area");
+                    setScopeId("");
+                  }}
+                  className={`rounded-md border px-2 py-2 text-sm ${scopeType === "area"
+                    ? "bg-primary/10 text-primary border-primary/30"
+                    : "bg-background hover:bg-accent"
+                    }`}
+                >
+                  Área
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScopeType("sector");
+                    setScopeId("");
+                  }}
+                  className={`rounded-md border px-2 py-2 text-sm ${scopeType === "sector"
+                    ? "bg-primary/10 text-primary border-primary/30"
+                    : "bg-background hover:bg-accent"
+                    }`}
+                >
+                  Sector
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScopeType("empleado");
+                    setScopeId("");
+                    setEmpQuery("");
+                  }}
+                  className={`rounded-md border px-2 py-2 text-sm ${scopeType === "empleado"
+                    ? "bg-primary/10 text-primary border-primary/30"
+                    : "bg-background hover:bg-accent"
+                    }`}
+                >
+                  Empleado
+                </button>
+              </div>
+            </div>
+
+            {scopeType === "area" && (
+              <div>
+                <label className="text-xs">Área</label>
+                <select
+                  className={inputCls}
+                  value={scopeId}
+                  onChange={(e) => setScopeId(e.target.value)}
+                  aria-invalid={!!fieldErrors.scopeId}
+                  required
+                >
+                  <option value="">Seleccioná un área…</option>
+                  {areas.map((a) => (
+                    <option key={a._id} value={a._id}>
+                      {a.nombre}
+                    </option>
+                  ))}
+                </select>
+                <FieldError name="scopeId" />
+                {areas.length === 0 && (
+                  <p className="mt-1 text-xs text-amber-700">
+                    No hay áreas disponibles. Verificá permisos o carga inicial.
+                  </p>
+                )}
+              </div>
             )}
-          </div>
-        </div>
 
-        {/* DERECHA - Configuración */}
-        <div className="space-y-4">
-          <h3 className="text-base font-semibold">⚙️ Configuración</h3>
+            {scopeType === "sector" && (
+              <div>
+                <label className="text-xs">Sector</label>
+                <select
+                  className={inputCls}
+                  value={scopeId}
+                  onChange={(e) => setScopeId(e.target.value)}
+                  aria-invalid={!!fieldErrors.scopeId}
+                  required
+                >
+                  <option value="">Seleccioná un sector…</option>
+                  {sectores.map((s) => (
+                    <option key={s._id} value={s._id}>
+                      {s.nombre}
+                    </option>
+                  ))}
+                </select>
+                <FieldError name="scopeId" />
+                {sectores.length === 0 && (
+                  <p className="mt-1 text-xs text-amber-700">
+                    No hay sectores disponibles para seleccionar.
+                  </p>
+                )}
+              </div>
+            )}
 
-          <div>
-            <label className="text-xs">Ámbito</label>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setScopeType("area");
-                  setScopeId("");
-                }}
-                className={`rounded-md border px-2 py-2 text-sm ${
-                  scopeType === "area"
-                    ? "bg-primary/10 text-primary border-primary/30"
-                    : "bg-background hover:bg-accent"
-                }`}
-              >
-                Área
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setScopeType("sector");
-                  setScopeId("");
-                }}
-                className={`rounded-md border px-2 py-2 text-sm ${
-                  scopeType === "sector"
-                    ? "bg-primary/10 text-primary border-primary/30"
-                    : "bg-background hover:bg-accent"
-                }`}
-              >
-                Sector
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setScopeType("empleado");
-                  setScopeId("");
-                  setEmpQuery("");
-                }}
-                className={`rounded-md border px-2 py-2 text-sm ${
-                  scopeType === "empleado"
-                    ? "bg-primary/10 text-primary border-primary/30"
-                    : "bg-background hover:bg-accent"
-                }`}
-              >
-                Empleado
-              </button>
-            </div>
-          </div>
+            {scopeType === "empleado" && (
+              <div ref={empBoxRef}>
+                <label className="text-xs">Empleado</label>
 
-          {scopeType === "area" && (
-            <div>
-              <label className="text-xs">Área</label>
-              <select
-                className={inputCls}
-                value={scopeId}
-                onChange={(e) => setScopeId(e.target.value)}
-                aria-invalid={!!fieldErrors.scopeId}
-                required
-              >
-                <option value="">Seleccioná un área…</option>
-                {areas.map((a) => (
-                  <option key={a._id} value={a._id}>
-                    {a.nombre}
-                  </option>
-                ))}
-              </select>
-              <FieldError name="scopeId" />
-              {areas.length === 0 && (
-                <p className="mt-1 text-xs text-amber-700">
-                  No hay áreas disponibles. Verificá permisos o carga inicial.
-                </p>
-              )}
-            </div>
-          )}
-
-          {scopeType === "sector" && (
-            <div>
-              <label className="text-xs">Sector</label>
-              <select
-                className={inputCls}
-                value={scopeId}
-                onChange={(e) => setScopeId(e.target.value)}
-                aria-invalid={!!fieldErrors.scopeId}
-                required
-              >
-                <option value="">Seleccioná un sector…</option>
-                {sectores.map((s) => (
-                  <option key={s._id} value={s._id}>
-                    {s.nombre}
-                  </option>
-                ))}
-              </select>
-              <FieldError name="scopeId" />
-              {sectores.length === 0 && (
-                <p className="mt-1 text-xs text-amber-700">
-                  No hay sectores disponibles para seleccionar.
-                </p>
-              )}
-            </div>
-          )}
-
-          {scopeType === "empleado" && (
-            <div ref={empBoxRef}>
-              <label className="text-xs">Empleado</label>
-
-              {selectedEmpleado ? (
-                <div className="flex items-center justify-between rounded-md border px-3 py-2 mt-1">
-                  <div className="text-sm">
-                    {selectedEmpleado.apellido}, {selectedEmpleado.nombre}
-                    {selectedEmpleado.apodo ? (
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        ({selectedEmpleado.apodo})
-                      </span>
-                    ) : null}
-                  </div>
-                  <button
-                    type="button"
-                    className="text-xs text-blue-600 hover:underline"
-                    onClick={() => {
-                      setScopeId("");
-                      setEmpQuery("");
-                      setEmpOpen(true);
-                    }}
-                  >
-                    Cambiar
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="relative mt-1">
-                    <input
-                      className={inputCls}
-                      placeholder="Buscar por apellido, nombre o apodo…"
-                      value={empQuery}
-                      onChange={(e) => {
-                        setEmpQuery(e.target.value);
+                {selectedEmpleado ? (
+                  <div className="flex items-center justify-between rounded-md border px-3 py-2 mt-1">
+                    <div className="text-sm">
+                      {selectedEmpleado.apellido}, {selectedEmpleado.nombre}
+                      {selectedEmpleado.apodo ? (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          ({selectedEmpleado.apodo})
+                        </span>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      className="text-xs text-blue-600 hover:underline"
+                      onClick={() => {
+                        setScopeId("");
+                        setEmpQuery("");
                         setEmpOpen(true);
                       }}
-                      onFocus={() => setEmpOpen(true)}
-                      aria-invalid={!!fieldErrors.scopeId}
-                    />
-                    {empOpen && (
-                      <div className="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-md border bg-popover text-popover-foreground shadow">
-                        {empleadosFiltrados.length === 0 && (
-                          <div className="px-3 py-2 text-sm text-muted-foreground">
-                            Sin resultados
-                          </div>
-                        )}
-                        {empleadosFiltrados.map((e) => (
-                          <button
-                            key={e._id}
-                            type="button"
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
-                            onClick={() => {
-                              setScopeId(String(e._id ?? e.id));
-                              setEmpOpen(false);
-                            }}
-                          >
-                            {e.apellido}, {e.nombre}
-                            {e.apodo ? (
-                              <span className="ml-2 text-xs text-muted-foreground">
-                                ({e.apodo})
-                              </span>
-                            ) : null}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    >
+                      Cambiar
+                    </button>
                   </div>
-                  <FieldError name="scopeId" />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Escribí para buscar y seleccioná al empleado.
-                  </p>
-                  {empleados.length === 0 && (
-                    <p className="mt-1 text-xs text-amber-700">
-                      No hay empleados cargados/visibles para tu usuario.
+                ) : (
+                  <>
+                    <div className="relative mt-1">
+                      <input
+                        className={inputCls}
+                        placeholder="Buscar por apellido, nombre o apodo…"
+                        value={empQuery}
+                        onChange={(e) => {
+                          setEmpQuery(e.target.value);
+                          setEmpOpen(true);
+                        }}
+                        onFocus={() => setEmpOpen(true)}
+                        aria-invalid={!!fieldErrors.scopeId}
+                      />
+                      {empOpen && (
+                        <div className="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-md border bg-popover text-popover-foreground shadow">
+                          {empleadosFiltrados.length === 0 && (
+                            <div className="px-3 py-2 text-sm text-muted-foreground">
+                              Sin resultados
+                            </div>
+                          )}
+                          {empleadosFiltrados.map((e) => (
+                            <button
+                              key={e._id}
+                              type="button"
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
+                              onClick={() => {
+                                setScopeId(String(e._id ?? e.id));
+                                setEmpOpen(false);
+                              }}
+                            >
+                              {e.apellido}, {e.nombre}
+                              {e.apodo ? (
+                                <span className="ml-2 text-xs text-muted-foreground">
+                                  ({e.apodo})
+                                </span>
+                              ) : null}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <FieldError name="scopeId" />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Escribí para buscar y seleccioná al empleado.
                     </p>
-                  )}
-                </>
-              )}
-            </div>
-          )}
+                    {empleados.length === 0 && (
+                      <p className="mt-1 text-xs text-amber-700">
+                        No hay empleados cargados/visibles para tu usuario.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
 
-          <div>
-            <label className="text-xs">Año</label>
-            <input
-              type="number"
-              className={inputCls}
-              value={year}
-              onChange={(e) => setYear(Number(e.target.value))}
-              min={currentYear - 5}
-              max={currentYear + 5}
-              aria-invalid={!!fieldErrors.year}
-            />
-            <FieldError name="year" />
+            <div>
+              <label className="text-xs">Año</label>
+              <input
+                type="number"
+                className={inputCls}
+                value={year}
+                onChange={(e) => setYear(Number(e.target.value))}
+                min={currentYear - 5}
+                max={currentYear + 5}
+                aria-invalid={!!fieldErrors.year}
+              />
+              <FieldError name="year" />
+            </div>
+          </div>
+        </div>
+
+        {/* Descripción */}
+        <div>
+          <label className="text-xs">Descripción</label>
+          <textarea
+            className="w-full min-h-24 rounded-md border px-3 py-2 text-sm"
+            value={descripcion}
+            onChange={(e) => setDescripcion(e.target.value)}
+            aria-invalid={!!fieldErrors.descripcion}
+          />
+          <FieldError name="descripcion" />
+        </div>
+
+        {/* Nota informativa — escala 1–5 linda */}
+        <div className="rounded-xl border ring-1 ring-border/60 bg-white px-4 py-4">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="h-6 w-6 rounded-full flex items-center justify-center border">
+              <span className="text-xs font-semibold">i</span>
+            </div>
+            <p className="text-base">
+              Las <strong>aptitudes</strong> se evalúan en <em>Seguimiento</em> con una{" "}
+              <strong>escala 1–5</strong>:
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+            <div className="flex items-center gap-2 justify-center sm:justify-start">
+              <span className="inline-block h-3 w-3 rounded-sm bg-red-500 ring-1 ring-red-300" />
+              <div className="leading-tight">
+                <div className="text-sm font-bold">1</div>
+                <div className="text-[12px] text-slate-600">Insatisfactorio</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 justify-center sm:justify-start">
+              <span className="inline-block h-3 w-3 rounded-sm bg-red-400 ring-1 ring-red-300" />
+              <div className="leading-tight">
+                <div className="text-sm font-bold">2</div>
+                <div className="text-[12px] text-slate-600">Necesita mejorar</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 justify-center sm:justify-start">
+              <span className="inline-block h-3 w-3 rounded-sm bg-yellow-400 ring-1 ring-yellow-300" />
+              <div className="leading-tight">
+                <div className="text-sm font-bold">3</div>
+                <div className="text-[12px] text-slate-600">Cumple</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 justify-center sm:justify-start">
+              <span className="inline-block h-3 w-3 rounded-sm bg-green-400 ring-1 ring-green-300" />
+              <div className="leading-tight">
+                <div className="text-sm font-bold">4</div>
+                <div className="text-[12px] text-slate-600">Supera</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 justify-center sm:justify-start">
+              <span className="inline-block h-3 w-3 rounded-sm bg-green-500 ring-1 ring-green-300" />
+              <div className="leading-tight">
+                <div className="text-sm font-bold">5</div>
+                <div className="text-[12px] text-slate-600">Sobresaliente</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Descripción */}
-      <div>
-        <label className="text-xs">Descripción</label>
-        <textarea
-          className="w-full min-h-24 rounded-md border px-3 py-2 text-sm"
-          value={descripcion}
-          onChange={(e) => setDescripcion(e.target.value)}
-          aria-invalid={!!fieldErrors.descripcion}
-        />
-        <FieldError name="descripcion" />
-      </div>
-
-      {/* Nota informativa — escala 1–5 linda */}
-      <div className="rounded-xl border ring-1 ring-border/60 bg-white px-4 py-4">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="h-6 w-6 rounded-full flex items-center justify-center border">
-            <span className="text-xs font-semibold">i</span>
-          </div>
-          <p className="text-base">
-            Las <strong>aptitudes</strong> se evalúan en <em>Seguimiento</em> con una{" "}
-            <strong>escala 1–5</strong>:
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
-          <div className="flex items-center gap-2 justify-center sm:justify-start">
-            <span className="inline-block h-3 w-3 rounded-sm bg-red-500 ring-1 ring-red-300" />
-            <div className="leading-tight">
-              <div className="text-sm font-bold">1</div>
-              <div className="text-[12px] text-slate-600">Insatisfactorio</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 justify-center sm:justify-start">
-            <span className="inline-block h-3 w-3 rounded-sm bg-red-400 ring-1 ring-red-300" />
-            <div className="leading-tight">
-              <div className="text-sm font-bold">2</div>
-              <div className="text-[12px] text-slate-600">Necesita mejorar</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 justify-center sm:justify-start">
-            <span className="inline-block h-3 w-3 rounded-sm bg-yellow-400 ring-1 ring-yellow-300" />
-            <div className="leading-tight">
-              <div className="text-sm font-bold">3</div>
-              <div className="text-[12px] text-slate-600">Cumple</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 justify-center sm:justify-start">
-            <span className="inline-block h-3 w-3 rounded-sm bg-green-400 ring-1 ring-green-300" />
-            <div className="leading-tight">
-              <div className="text-sm font-bold">4</div>
-              <div className="text-[12px] text-slate-600">Supera</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 justify-center sm:justify-start">
-            <span className="inline-block h-3 w-3 rounded-sm bg-green-500 ring-1 ring-green-300" />
-            <div className="leading-tight">
-              <div className="text-sm font-bold">5</div>
-              <div className="text-[12px] text-slate-600">Sobresaliente</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Botones */}
-      <div className="flex justify-end gap-2 border-t pt-3">
+      {/* Botones (Sticky Footer) */}
+      <div className="flex-none p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-2 z-10">
         <Button type="button" variant="outline" onClick={onCancelar} disabled={isSubmitting}>
           Cancelar
         </Button>

@@ -28,9 +28,9 @@ async function fetchAll(path, { pageSize = 200 } = {}) {
 
     const chunk =
       Array.isArray(data) ? data
-      : Array.isArray(data?.items) ? data.items
-      : Array.isArray(data?.docs) ? data.docs
-      : [];
+        : Array.isArray(data?.items) ? data.items
+          : Array.isArray(data?.docs) ? data.docs
+            : [];
 
     if (chunk.length) out.push(...chunk);
 
@@ -99,40 +99,40 @@ function GestionEstructura() {
   // Carga inicial (re-run cuando cambia user)
   useEffect(() => {
     (async () => {
-    try {
-      // ⚠️ Esperá a tener user definido para evitar filtrar con user null
-      if (user === undefined) return;
+      try {
+        // ⚠️ Esperá a tener user definido para evitar filtrar con user null
+        if (user === undefined) return;
 
-    // Trae TODO (no solo primera página)
+        // Trae TODO (no solo primera página)
         const [dataAreas, dataSectores, dataEmpleados] = await Promise.all([
           fetchAll("/areas"),
           fetchAll("/sectores"),
           fetchAll("/empleados"),
         ]);
 
-      // ✅ Normalizadores consistentes
-      const allAreas = dataAreas;
-       const allSectores = dataSectores;
+        // ✅ Normalizadores consistentes
+        const allAreas = dataAreas;
+        const allSectores = dataSectores;
         const allEmps = dataEmpleados;
 
-      // ✅ Privilegiados: rol o flags
-      const isPrivileged =
-        ['superadmin','rrhh','directivo'].includes(String(user?.rol || '').toLowerCase()) ||
-        user?.isSuper === true || user?.isRRHH === true || user?.isDirectivo === true;
+        // ✅ Privilegiados: rol o flags
+        const isPrivileged =
+          ['superadmin', 'rrhh', 'directivo'].includes(String(user?.rol || '').toLowerCase()) ||
+          user?.isSuper === true || user?.isRRHH === true || user?.isDirectivo === true;
 
-      if (isPrivileged) {
-        setAreas(allAreas);
-        setSectores(allSectores);
-        setEmpleados(allEmps);
-        return;
-     }
+        if (isPrivileged) {
+          setAreas(allAreas);
+          setSectores(allSectores);
+          setEmpleados(allEmps);
+          return;
+        }
 
         // Caso restringido
         const referenteAreas = new Set((user?.referenteAreas || []).map(String));
         const referenteSectors = new Set((user?.referenteSectors || []).map(String));
         const userAreaId = user?.areaId ? String(user.areaId) : null;
 
-       const visibleSectores = (allSectores || []).filter((s) => {
+        const visibleSectores = (allSectores || []).filter((s) => {
           const sId = String(s._id);
           const sAreaId = String(s.areaId?._id || s.areaId);
           if (user?.isJefeArea && userAreaId && userAreaId === sAreaId) return true;
@@ -141,7 +141,7 @@ function GestionEstructura() {
           return false;
         });
 
-         const visibleAreas = (allAreas || []).filter((a) => {
+        const visibleAreas = (allAreas || []).filter((a) => {
           const aId = String(a._id);
           if (referenteAreas.has(aId)) return true;
           if (user?.isJefeArea && userAreaId && userAreaId === aId) return true;
@@ -232,7 +232,7 @@ function GestionEstructura() {
 
       // 1) Crear/editar empleado (sin foto)
       const empleadoGuardado = await api(path, {
-          method: isEdit ? "PATCH" : "POST",
+        method: isEdit ? "PATCH" : "POST",
         body: resto,
       });
 
@@ -269,19 +269,19 @@ function GestionEstructura() {
 
       toast.success("¡Empleado guardado con éxito!");
       handleCloseModal();
-  } catch (err) {
-  console.error('guardar empleado', err);
-  const status = err?.status || err?.response?.status;
-  const data = err?.data || err?.response?.data;
-  if (status === 409) {
-    // conflictos típicos: DNI / email duplicado
-    toast.error(data?.message || "Conflicto: DNI o Email ya registrado.");
-  } else if (status === 400) {
-    toast.error(data?.message || "Validación: revisá los campos requeridos.");
-  } else {
-    toast.error(data?.message || err?.message || "Error al guardar el empleado.");
-  }
-}
+    } catch (err) {
+      console.error('guardar empleado', err);
+      const status = err?.status || err?.response?.status;
+      const data = err?.data || err?.response?.data;
+      if (status === 409) {
+        // conflictos típicos: DNI / email duplicado
+        toast.error(data?.message || "Conflicto: DNI o Email ya registrado.");
+      } else if (status === 400) {
+        toast.error(data?.message || "Validación: revisá los campos requeridos.");
+      } else {
+        toast.error(data?.message || err?.message || "Error al guardar el empleado.");
+      }
+    }
   };
 
   const handleEliminar = async (id, tipo) => {
@@ -342,105 +342,115 @@ function GestionEstructura() {
         {/* Dos paneles con scroll independiente */}
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6 flex-1 overflow-hidden">
           {/* Sidebar filtros: su propio scroll */}
-          <aside className="space-y-3 overflow-y-auto pr-2">
-            {/* Bloque 'ver todos' (sticky relativo a este aside) */}
-            <div className="sticky top-0 z-30">
-              <div className="rounded-xl bg-card shadow-sm ring-1 ring-border/60 p-3">
+          <aside className="space-y-4 overflow-y-auto pr-2">
+
+            {/* Listado de áreas/sectores */}
+            <div className="rounded-xl bg-white shadow-sm border border-slate-200 overflow-hidden pb-2">
+              <div className="p-3 border-b border-slate-100 bg-slate-50/50">
                 <button
-                  className="w-full text-left text-sm rounded-lg px-3 py-2 border bg-background/30 border-border shadow-sm hover:bg-accent hover:text-foreground hover:shadow-md transition-all focus-visible:ring-2 focus-visible:ring-primary/30"
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${filtro.tipo === "todos"
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                      : "text-slate-600 hover:bg-white hover:text-blue-600 border border-transparent hover:border-slate-200"
+                    }`}
                   onClick={() => setFiltro({ tipo: "todos", id: null, nombre: "Todos" })}
-                  title="Ver todos"
                 >
-                  Ver todos los empleados
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="7" height="7" x="3" y="3" rx="1" /><rect width="7" height="7" x="14" y="3" rx="1" /><rect width="7" height="7" x="14" y="14" rx="1" /><rect width="7" height="7" x="3" y="14" rx="1" /></svg>
+                  Ver Toda la Nómina
                 </button>
               </div>
-            </div>
 
-            {/* Listado de áreas/sectores (scrollea con el aside) */}
-            <div className="rounded-xl bg-card shadow-sm ring-1 ring-border/60 p-3">
-              <ul className="space-y-2">
-                {areas.map((area) => (
-                  <li key={area._id} className="rounded-lg ring-1 ring-border/60 bg-background">
-                    <div className="flex items-center justify-between px-3 py-2">
-                      <button
-                        className={`w-full text-left font-medium rounded-md px-2 py-1 transition-all ${
-                          isActive("area", area._id) ? "bg-primary/10 text-primary" : "hover:bg-muted/60"
-                        } hover:ring-1 hover:ring-primary/20`}
-                        onClick={() => setFiltro({ tipo: "area", id: area._id, nombre: area.nombre })}
-                        title="Filtrar por esta área"
-                      >
-                        {area.nombre}
-                      </button>
-                    </div>
+              <div className="px-3 pt-4 pb-2">
+                <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-2">Áreas & Sectores</h3>
+                <ul className="space-y-1">
+                  {areas.map((area) => (
+                    <li key={area._id} className="group/area">
+                      <div className="relative">
+                        <button
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-all ${isActive("area", area._id)
+                              ? "bg-blue-50 text-blue-700 font-semibold"
+                              : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                            }`}
+                          onClick={() => setFiltro({ tipo: "area", id: area._id, nombre: area.nombre })}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            {/* Icono Area (Edificio) */}
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isActive("area", area._id) ? "text-blue-600" : "text-slate-400"}><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" /><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" /><path d="M10 6h4" /><path d="M10 10h4" /><path d="M10 14h4" /><path d="M10 18h4" /></svg>
+                            {area.nombre}
+                          </div>
+                        </button>
+                      </div>
 
-                    <ul className="px-2 pb-2 space-y-1.5">
-                      {sectores
-                        .filter((s) => (s?.areaId?._id ?? s?.areaId) === area._id)
-                        .map((sector) => (
-                          <li key={sector._id} className="rounded-md">
-                            <div className="flex items-center justify-between gap-1">
+                      {/* Sectores */}
+                      <ul className="pl-9 pr-2 space-y-0.5 mt-1 border-l border-slate-100 ml-4">
+                        {sectores
+                          .filter((s) => (s?.areaId?._id ?? s?.areaId) === area._id)
+                          .map((sector) => (
+                            <li key={sector._id}>
                               <button
-                                className={`w-full text-left text-sm rounded-md px-3 py-1.5 transition-all ${
-                                  isActive("sector", sector._id)
-                                    ? "bg-primary/10 text-primary"
-                                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                                } hover:ring-1 hover:ring-primary/20`}
+                                className={`w-full text-left text-xs rounded-md px-2.5 py-1.5 transition-all flex items-center gap-2 ${isActive("sector", sector._id)
+                                    ? "bg-blue-50/50 text-blue-700 font-medium"
+                                    : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+                                  }`}
                                 onClick={() =>
                                   setFiltro({ tipo: "sector", id: sector._id, nombre: sector.nombre })
                                 }
-                                title="Filtrar por este sector"
                               >
+                                <span className={`w-1.5 h-1.5 rounded-full ${isActive("sector", sector._id) ? "bg-blue-500" : "bg-slate-300"}`}></span>
                                 {sector.nombre}
                               </button>
-                            </div>
-                          </li>
-                        ))}
-                    </ul>
-                  </li>
-                ))}
-              </ul>
+                            </li>
+                          ))}
+                      </ul>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
           </aside>
 
           {/* Main: Nómina (su propio scroll) */}
-          <main className="overflow-y-auto pl-1">
+          <main className="overflow-y-auto pl-2 pr-2">
             {/* Barra de controles - sticky dentro del MAIN */}
-            <div className="sticky top-0 z-40">
-              <div className="rounded-xl bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 text-card-foreground shadow-md ring-1 ring-border/60 p-4 mb-5">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-base font-semibold">
-                    Nómina de Empleados <span className="text-muted-foreground">({filtro.nombre})</span>
-                  </h2>
+            <div className="sticky top-0 z-40 pb-4">
+              <div className="rounded-xl bg-white/80 backdrop-blur-md shadow-sm border border-slate-200/60 p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-800">
+                      Nómina de Empleados
+                    </h2>
+                    <p className="text-xs text-slate-500 font-medium">
+                      Mostrando: <span className="text-blue-600">{filtro.nombre}</span>
+                    </p>
+                  </div>
                   <Button
-                    className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-0"
+                    className="bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 shadow-sm transition-all"
                     variant="outline"
                     onClick={() => handleOpenModal("crear_empleado")}
                   >
-                    + Nuevo Empleado
+                    + Nuevo Colaborador
                   </Button>
                 </div>
 
                 {/* Fila de controles */}
-                <div className="mt-3 flex flex-wrap items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   {/* Buscador grande */}
-                  <div className="relative flex-1 min-w-[220px] sm:min-w-[320px] md:min-w-[420px]">
+                  <div className="relative flex-1 min-w-[220px]">
                     <label className="sr-only">Buscar</label>
                     <input
                       value={terminoBusqueda}
                       onChange={(e) => setTerminoBusqueda(e.target.value)}
-                      placeholder="Nombre, apellido, apodo o DNI…"
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 pr-8 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      placeholder="Buscar por nombre, puesto o legajo..."
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-4 py-2.5 pl-10 text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 transition-all"
                     />
-                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground">
-                      ⌕
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
                     </span>
                   </div>
 
                   {/* Ordenar por */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Ordenar:</span>
+                  <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-lg border border-slate-200">
                     <select
-                      className="rounded-md border border-input bg-background px-2 py-2 text-sm"
+                      className="bg-transparent text-sm text-slate-600 font-medium outline-none px-2 py-1.5 cursor-pointer"
                       value={sortBy}
                       onChange={(e) => setSortBy(e.target.value)}
                     >
@@ -449,22 +459,21 @@ function GestionEstructura() {
                       <option value="puesto">Puesto</option>
                     </select>
 
+                    <div className="w-px h-4 bg-slate-300 mx-1"></div>
+
                     {/* Asc/Desc */}
                     <button
                       type="button"
                       onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
-                      className="rounded-md border border-input bg-background px-2 py-2 text-sm hover:bg-accent"
+                      className="p-1.5 rounded-md hover:bg-white hover:shadow-sm text-slate-500 transition-all"
                       title={sortDir === "asc" ? "Ascendente" : "Descendente"}
                     >
-                      {sortDir === "asc" ? "⬆︎" : "⬇︎"}
+                      {sortDir === "asc" ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 16 4 4 4-4" /><path d="M7 20V4" /><path d="M11 4h4" /><path d="M11 8h7" /><path d="M11 12h10" /></svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 8 4-4 4 4" /><path d="M7 4v16" /><path d="M11 12h10" /><path d="M11 8h7" /><path d="M11 4h4" /></svg>
+                      )}
                     </button>
-                  </div>
-
-                  {/* Contador a la derecha */}
-                  <div className="ml-auto">
-                    <span className="inline-flex items-center justify-center px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-sm font-semibold">
-                      {empleadosFiltrados.length}
-                    </span>
                   </div>
                 </div>
               </div>
@@ -472,9 +481,8 @@ function GestionEstructura() {
 
             {/* Grid de Cards (con fade) */}
             <div
-              className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 transition-opacity duration-200 ${
-                gridVisible ? "opacity-100" : "opacity-0"
-              }`}
+              className={`grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 pb-20 transition-all duration-300 ${gridVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+                }`}
             >
               {empleadosFiltrados.map((emp) => (
                 <EmpleadoCard
@@ -485,7 +493,13 @@ function GestionEstructura() {
                 />
               ))}
               {empleadosFiltrados.length === 0 && (
-                <p className="text-sm text-muted-foreground col-span-full">No se encontraron empleados.</p>
+                <div className="col-span-full flex flex-col items-center justify-center py-20 text-center">
+                  <div className="h-16 w-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+                  </div>
+                  <h3 className="text-lg font-medium text-slate-900">No se encontraron empleados</h3>
+                  <p className="text-slate-500">Intenta ajustar los filtros o la búsqueda.</p>
+                </div>
               )}
             </div>
           </main>

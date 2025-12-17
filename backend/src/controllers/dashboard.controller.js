@@ -3,6 +3,7 @@ import Empleado from '../models/Empleado.model.js';
 import Plantilla from '../models/Plantilla.model.js';
 import OverrideObjetivo from '../models/OverrideObjetivo.model.js';
 import Sector from '../models/Sector.model.js';
+import Area from '../models/Area.model.js';
 import Evaluacion from "../models/Evaluacion.model.js";
 import { generarHitos } from "../utils/generarHitos.js";
 
@@ -223,15 +224,26 @@ export async function computeForEmployees(empleadoIds, anio) {
       weightedProgressSum = objetivosArr.reduce((acc, curr) => acc + (curr.progreso * curr.peso), 0);
       weightedAptScoreSum = aptitudesArr.reduce((acc, curr) => acc + (curr.puntuacion * curr.peso), 0);
 
-      let scoreObj = sumPesoObj > 0 ? weightedProgressSum / sumPesoObj : 0;
-      let scoreApt = sumPesoApt > 0 ? weightedAptScoreSum / sumPesoApt : 0;
-      let scoreFinal = Math.round((0.7 * scoreObj + 0.3 * scoreApt) * 10) / 10;
-      let bono = (objetivosArr.length > 0 || aptitudesArr.length > 0) ? `${scoreFinal}%` : null;
+      // Default to 0 (Strict Mode: Only Show Result if Feedback Exists)
+      let scoreObj = 0;
+      let scoreApt = 0;
+      let scoreFinal = 0;
+      let bono = null;
+
+      /* 
+       * LEGACY/PARTIAL CALCULATION (Disabled per user request: "Solo el de resultados de el ultimo feedback evaluado")
+       * If we wanted partials, we would uncomment this:
+       * 
+       * scoreObj = sumPesoObj > 0 ? weightedProgressSum / sumPesoObj : 0;
+       * scoreApt = sumPesoApt > 0 ? weightedAptScoreSum / sumPesoApt : 0;
+       * scoreFinal = Math.round((0.7 * scoreObj + 0.3 * scoreApt) * 10) / 10;
+       * bono = (objetivosArr.length > 0 || aptitudesArr.length > 0) ? `${scoreFinal}%` : null;
+       */
 
       // START OVERRIDE CHECK (If snapshot exists, it wins over our recalc)
       if (latestFeedback && latestFeedback.scores?.global != null) {
-        scoreObj = latestFeedback.scores.obj ?? scoreObj;
-        scoreApt = latestFeedback.scores.comp ?? scoreApt;
+        scoreObj = latestFeedback.scores.obj ?? 0;
+        scoreApt = latestFeedback.scores.comp ?? 0;
         scoreFinal = latestFeedback.scores.global;
         bono = `${scoreFinal}%`;
       }
@@ -554,12 +566,189 @@ export const dashByEmpleado = async (req, res, next) => {
       },
       objetivos: { count: objetivosArr.length, sumPeso: sumPesoObj, items: objetivosArr },
       aptitudes: { count: aptitudesArr.length, sumPeso: sumPesoApt, items: aptitudesArr },
-      // Estricto: Solo mostrar feedback si hay Objetivos (ignorando Competencias/Aptitudes globales)
-      feedbacks: (objetivosArr.length > 0) ? empFeedbacks : [],
+      // Mostrar feedback siempre, sin depender de objetivos
+      feedbacks: empFeedbacks,
       scoreObj, scoreApt, scoreFinal, bono,
     });
   } catch (err) {
     console.error("dashByEmpleado error:", err);
     next(err);
+  }
+};
+
+export const getExecutiveData = async (req, res, next) => {
+  try {
+    const { anio } = req.query;
+    const year = Number(anio || new Date().getFullYear());
+
+    // 1. Fetch ALL Areas with Referentes (populated)
+    const areasDocs = await Area.find({}, { nombre: 1, referentes: 1 })
+      .populate("referentes", "nombre apellido fotoUrl")
+      .lean();
+
+    const areaMap = new Map(); // AreaId -> { doc, employees: [], totalBudget: 0, ... }
+
+    // Initialize map
+    for (const a of areasDocs) {
+      areaMap.set(String(a._id), {
+        id: a._id,
+        nombre: a.nombre,
+        referentes: a.referentes || [],
+        employees: [],
+        totalBudget: 0,
+        totalScoreSum: 0,
+        countEvaluated: 0,
+        countApproved: 0,
+        countDisagreement: 0,
+        countAgreement: 0
+      });
+    }
+
+    // 2. Fetch Employees & Compute
+    const allEmployees = await Empleado.find({ estadoLaboral: { $ne: "DESVINCULADO" } }, { _id: 1, sueldoBase: 1, area: 1, sector: 1 })
+      .populate("area", "nombre")
+      .populate("sector", "nombre")
+      .lean();
+
+    const ids = allEmployees.map(e => e._id);
+    const computedData = await computeForEmployees(ids, year);
+
+    // 3. Bucket & Aggregate
+    let globalHeadcount = allEmployees.length;
+    let globalEvaluated = 0;
+    let globalApproved = 0;
+    let globalBudget = 0;
+    const globalPerformers = [];
+
+    // Temporary budget by sector tracker
+    const budgetBySector = {};
+
+    for (const item of computedData) {
+      if (!item) continue;
+      const { scoreFinal, empleado, feedbacks } = item;
+      const sueldo = empleado.sueldoBase?.monto || 0;
+      const estimatedBonus = (sueldo * (scoreFinal || 0)) / 100;
+      const f = feedbacks[0]; // Latest
+
+      // Global Stats
+      globalBudget += estimatedBonus;
+      if (scoreFinal > 0) globalEvaluated++;
+      if (scoreFinal >= 70) globalApproved++;
+
+      // Sector Budget
+      const sectName = empleado.sector?.nombre || "Sin Sector";
+      if (!budgetBySector[sectName]) budgetBySector[sectName] = 0;
+      budgetBySector[sectName] += estimatedBonus;
+
+      // Performer Obj
+      const pObj = {
+        id: empleado._id,
+        nombre: `${empleado.nombre} ${empleado.apellido}`,
+        foto: empleado.fotoUrl,
+        area: empleado.area?.nombre,
+        sector: empleado.sector?.nombre,
+        score: scoreFinal || 0,
+        disagreement: f?.empleadoAck?.estado === "CONTEST",
+        feedbackStatus: f?.estado || "PENDING"
+      };
+      globalPerformers.push(pObj);
+
+      // Add to Area Group
+      if (empleado.area && empleado.area._id) {
+        const aId = String(empleado.area._id);
+        if (areaMap.has(aId)) {
+          const group = areaMap.get(aId);
+          group.employees.push(pObj);
+          group.totalBudget += estimatedBonus;
+          if (scoreFinal > 0) {
+            group.totalScoreSum += scoreFinal;
+            group.countEvaluated++;
+          }
+          if (scoreFinal >= 70) group.countApproved++;
+
+          if (f?.empleadoAck?.estado === "CONTEST") group.countDisagreement++;
+          // Using strict check to avoid confusion.
+          if (["ACK", "CONFIRMADO", "SIGNED"].includes(f?.empleadoAck?.estado)) group.countAgreement++;
+        }
+      }
+    }
+
+    // 4. Finalize Area Data
+    const areasResult = [];
+    for (const group of areaMap.values()) {
+      const headcount = group.employees.length;
+      if (headcount === 0) continue;
+
+      const avgScore = group.countEvaluated > 0
+        ? Math.round(group.totalScoreSum / group.countEvaluated)
+        : 0;
+
+      const countPending = Math.max(0, headcount - group.countEvaluated);
+      const pendingPct = Math.round((countPending / headcount) * 100);
+
+      // Top 5 Area
+      const top5 = [...group.employees].sort((a, b) => b.score - a.score).slice(0, 5);
+
+      // Critical Area
+      const critical = [...group.employees]
+        .filter(p => p.disagreement || p.score < 50)
+        .sort((a, b) => (b.disagreement === a.disagreement) ? (a.score - b.score) : (b.disagreement ? 1 : -1))
+        .slice(0, 5);
+
+      areasResult.push({
+        id: group.id,
+        nombre: group.nombre,
+        referentes: group.referentes,
+        headcount,
+        avgScore,
+        countEvaluated: group.countEvaluated,
+        countPending,
+        pendingPct,
+        countApproved: group.countApproved,
+        countDisagreement: group.countDisagreement,
+        countAgreement: group.countAgreement,
+        totalBudget: Math.round(group.totalBudget),
+        topPerformers: top5,
+        criticalCases: critical
+      });
+    }
+
+    // Sort Areas (e.g. by Name)
+    areasResult.sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+    // Global Top Lists
+    const globalTop = [...globalPerformers].sort((a, b) => b.score - a.score).slice(0, 5);
+    const globalCritical = [...globalPerformers]
+      .filter(p => p.disagreement || p.score < 50)
+      .sort((a, b) => (b.disagreement === a.disagreement) ? (a.score - b.score) : (b.disagreement ? 1 : -1))
+      .slice(0, 5);
+
+    // Global Charts
+    const topSectorsBudget = Object.entries(budgetBySector)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+
+    res.json({
+      metrics: {
+        headcount: globalHeadcount,
+        departments: areasResult.length,
+        evaluatedPct: globalHeadcount ? Math.round((globalEvaluated / globalHeadcount) * 100) : 0,
+        averageScore: globalEvaluated ? Math.round(globalPerformers.reduce((a, b) => a + b.score, 0) / globalEvaluated) : 0,
+        totalBudgetEstimated: Math.round(globalBudget),
+        approvedPct: globalEvaluated ? Math.round((globalApproved / globalEvaluated) * 100) : 0
+      },
+      charts: {
+        budgetBySector: topSectorsBudget,
+      },
+      lists: {
+        topPerformers: globalTop,
+        criticalCases: globalCritical
+      },
+      areas: areasResult // New field
+    });
+
+  } catch (e) {
+    console.error(e);
+    next(e);
   }
 };

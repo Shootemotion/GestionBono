@@ -135,16 +135,15 @@ export const createEmpleado = async (req, res, next) => {
 
 export const updateEmpleado = async (req, res, next) => {
   try {
-    const { id } = req.params;          // /api/empleados/:id
-    let updates = req.body;           // parcial o total
+    const { id } = req.params;
+    let updates = req.body;
 
     // Restricción para empleados editando su propio perfil
     const u = req.user;
     const isRRHH = u.isSuper || u.isRRHH || u.permisos?.includes("nomina:editar");
 
     if (!isRRHH) {
-      // Si no es RRHH, solo permitimos editar email y celular
-      // (Foto se sube por otro endpoint)
+      // Si no es RRHH, solo permitimos editar email, celular y apodo
       const allowed = ["email", "celular", "apodo"];
       const filtered = {};
       Object.keys(updates).forEach(k => {
@@ -156,7 +155,12 @@ export const updateEmpleado = async (req, res, next) => {
     const empleado = await Empleado.findByIdAndUpdate(id, updates, {
       new: true,
       runValidators: true,
-    }).populate('area').populate('sector');
+    })
+      .populate({
+        path: 'area',
+        populate: { path: 'referentes', select: 'nombre apellido email celular' }
+      })
+      .populate('sector', 'nombre');
 
     if (!empleado) {
       return res.status(404).json({ message: 'Empleado no encontrado' });

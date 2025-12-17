@@ -11,7 +11,10 @@ import {
   UserCircle2,
   FileText,
   Briefcase,
-  LayoutDashboard
+  LayoutDashboard,
+  CheckCircle,
+  DollarSign,
+  Building2
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import useCan, { useHasRole } from "@/hooks/useCan";
@@ -108,94 +111,175 @@ export default function Home() {
 
   const puesto = user?.empleado?.puesto || "—";
 
-  const CARDS = [
+  const GROUPS = [
     {
-      key: "mi-desempeno",
-      title: "Mi Desempeño",
-      desc: "Visualizá tus objetivos, feedback y evolución.",
-      icon: UserCircle2,
-      to: "/mi-desempeno",
-      allow: !!user,
-      gradient: "from-blue-600 to-indigo-600",
-      textColor: "text-blue-50",
+      title: "Mi Espacio",
+      items: [
+        {
+          key: "mi-desempeno",
+          title: "Mi Desempeño",
+          desc: "Visualizá tus objetivos, feedback y evolución.",
+          icon: UserCircle2,
+          to: "/mi-desempeno",
+          allow: !!user,
+          color: "text-blue-600",
+          bg: "bg-blue-50"
+        },
+        {
+          key: "mi-legajo",
+          title: "Mi Legajo",
+          desc: "Consultá tu información personal y laboral.",
+          icon: FileText,
+          to: user?.empleado?._id ? `/nomina/legajo/${user.empleado._id}` : "#",
+          allow: !!user?.empleado?._id,
+          color: "text-emerald-600",
+          bg: "bg-emerald-50"
+        }
+      ]
     },
     {
-      key: "mi-legajo",
-      title: "Mi Legajo",
-      desc: "Consultá tu información personal y laboral.",
-      icon: FileText,
-      to: user?.empleado?._id ? `/nomina/legajo/${user.empleado._id}` : "#",
-      allow: !!user?.empleado?._id,
-      gradient: "from-emerald-600 to-teal-600",
-      textColor: "text-emerald-50",
+      title: "Gestión & Seguimiento",
+      items: [
+        {
+          key: "objetivos",
+          title: "Gestión de Objetivos",
+          desc: "Administrar plantillas y asignaciones.",
+          icon: Target,
+          to: "/plantillas",
+          allow: hasRoleRRHH || hasRoleDirectivo,
+          color: "text-slate-700",
+          bg: "bg-slate-100"
+        },
+        {
+          key: "seguimiento",
+          title: "Seguimiento",
+          desc: "Monitoreo de avance por áreas y sectores.",
+          icon: TrendingUp,
+          to: "/seguimiento",
+          allow: hasRoleRRHH || hasRoleDirectivo || canViewNomina || hasReferente,
+          color: "text-orange-500",
+          bg: "bg-orange-50"
+        },
+        {
+          key: "cierres",
+          title: "Cierres de Evaluación",
+          desc: "Gestión de cierres y estados.",
+          icon: CheckCircle,
+          to: "/rrhh-evaluaciones",
+          allow: hasRoleRRHH || hasRoleDirectivo,
+          color: "text-emerald-600",
+          bg: "bg-emerald-50"
+        },
+        {
+          key: "asignaciones",
+          title: "Editor de Asignaciones",
+          desc: "Ajuste de pesos y exclusiones.",
+          icon: Users,
+          to: "/asignaciones",
+          allow: hasRoleRRHH || hasRoleDirectivo,
+          color: "text-indigo-600",
+          bg: "bg-indigo-50"
+        }
+      ]
     },
     {
-      key: "simulador",
-      title: "Simulador de Objetivos",
-      desc: "Proyectá el cumplimiento de metas y bonos.",
-      icon: Calculator,
-      to: "/simulador",
-      allow: hasRoleRRHH || hasRoleDirectivo || user?.isJefeArea || user?.isJefeSector,
-      gradient: "from-violet-600 to-purple-600",
-      textColor: "text-violet-50",
+      title: "Estructura & Organización",
+      items: [
+        {
+          key: "estructura",
+          title: "Gestión de Equipo",
+          desc: "Nómina, estructura y organigrama.",
+          icon: Users,
+          to: "/gestion-estructura",
+          allow: canViewEstructura && (hasRoleRRHH || hasRoleDirectivo || user?.isJefeArea || user?.isJefeSector),
+          color: "text-blue-600",
+          bg: "bg-blue-50"
+        },
+        {
+          key: "departamentos",
+          title: "Gestión Departamentos",
+          desc: "Administración de departamentos.",
+          icon: Building2,
+          to: "/gestion-departamentos",
+          allow: canViewEstructura && (hasRoleRRHH || hasRoleDirectivo || user?.isJefeArea || user?.isJefeSector), // Using same logic roughly
+          color: "text-indigo-600",
+          bg: "bg-indigo-50"
+        },
+        {
+          key: "usuarios", // Only for SuperAdmin usually
+          title: "Usuarios",
+          desc: "Administración de usuarios y roles.",
+          icon: Users,
+          to: "/usuarios",
+          allow: user?.isSuper || user?.rol === 'superadmin',
+          color: "text-slate-600",
+          bg: "bg-slate-100"
+        }
+      ]
     },
     {
-      key: "objetivos",
-      title: "Gestión de Objetivos",
-      desc: "Administrar plantillas y asignaciones.",
-      icon: Target,
-      to: "/plantillas",
-      allow: hasRoleRRHH || hasRoleDirectivo,
-      gradient: "from-slate-700 to-slate-800",
-      textColor: "text-slate-50",
-    },
-    {
-      key: "seguimiento",
-      title: "Seguimiento",
-      desc: "Monitoreo de avance por áreas y sectores.",
-      icon: TrendingUp,
-      to: "/seguimiento",
-      allow: hasRoleRRHH || hasRoleDirectivo || canViewNomina || hasReferente,
-      gradient: "from-orange-500 to-red-500",
-      textColor: "text-orange-50",
-    },
-    {
-      key: "estructura",
-      title: "Gestión de Equipo",
-      desc: "Nómina, estructura y organigrama.",
-      icon: Users,
-      to: "/gestion-estructura",
-      allow: canViewEstructura && (hasRoleRRHH || hasRoleDirectivo || user?.isJefeArea || user?.isJefeSector),
-      gradient: "from-cyan-600 to-blue-600",
-      textColor: "text-cyan-50",
-    },
-    {
-      key: "seguimiento-ejecutivo",
-      title: "Tablero Ejecutivo",
-      desc: "Indicadores clave de alto nivel.",
-      icon: LayoutDashboard,
-      to: "/seguimiento-ejecutivo",
-      allow: canViewEjecutivo && (hasRoleRRHH || hasRoleDirectivo),
-      gradient: "from-pink-600 to-rose-600",
-      textColor: "text-pink-50",
-    },
+      title: "Resultados & Estrategia",
+      items: [
+        {
+          key: "seguimiento-ejecutivo",
+          title: "Tablero Ejecutivo",
+          desc: "Indicadores clave de alto nivel.",
+          icon: LayoutDashboard,
+          to: "/seguimiento-ejecutivo",
+          allow: canViewEjecutivo && (hasRoleRRHH || hasRoleDirectivo),
+          color: "text-pink-600",
+          bg: "bg-pink-50"
+        },
+        {
+          key: "config-bono",
+          title: "Configuración Bono",
+          desc: "Ajustes y parámetros de bonos.",
+          icon: DollarSign,
+          to: "/configuracion-bono",
+          allow: hasRoleRRHH || hasRoleDirectivo,
+          color: "text-amber-500",
+          bg: "bg-amber-50"
+        },
+        {
+          key: "resultados",
+          title: "Resultados",
+          desc: "Visualización de resultados finales.",
+          icon: BarChart3,
+          to: "/resultados-bono",
+          allow: hasRoleRRHH || hasRoleDirectivo,
+          color: "text-violet-600",
+          bg: "bg-violet-50"
+        },
+        {
+          key: "simulador",
+          title: "Simulador Objetivos",
+          desc: "Proyección de cumplimiento.",
+          icon: Calculator,
+          to: "/simulador",
+          allow: hasRoleRRHH || hasRoleDirectivo || user?.isJefeArea || user?.isJefeSector,
+          color: "text-cyan-600",
+          bg: "bg-cyan-50"
+        }
+      ]
+    }
   ];
 
   return (
     <div className="min-h-screen bg-[#f8fafc]">
-      {/* Hero Section with Gradient */}
-      <div className="relative bg-gradient-to-br from-[#0f172a] via-[#1e293b] to-[#334155] text-white pb-32 pt-12 px-6 lg:px-8 overflow-hidden">
-        {/* Abstract Background Shapes */}
-        <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none opacity-20">
-          <div className="absolute -top-24 -left-24 w-96 h-96 bg-blue-500 rounded-full blur-3xl mix-blend-screen animate-pulse"></div>
-          <div className="absolute top-1/2 right-0 w-64 h-64 bg-purple-500 rounded-full blur-3xl mix-blend-screen opacity-60"></div>
+      {/* Hero Section */}
+      <div className="relative bg-[#0f172a] text-white pb-32 pt-10 px-6 lg:px-8 overflow-hidden">
+        {/* Background Gradients */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full max-w-7xl pointer-events-none">
+          <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-blue-600/20 rounded-full blur-3xl mix-blend-screen" />
+          <div className="absolute top-[10%] right-[-5%] w-[400px] h-[400px] bg-purple-600/20 rounded-full blur-3xl mix-blend-screen" />
         </div>
 
-        <div className="relative max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8">
+        <div className="relative max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8 z-10">
           <div className="flex items-center gap-6">
+            {/* Avatar with Gradient Ring */}
             <div className="relative group">
-              <div className="absolute -inset-0.5 bg-gradient-to-r from-pink-600 to-purple-600 rounded-full opacity-75 group-hover:opacity-100 transition duration-1000 group-hover:duration-200 blur"></div>
-              <div className="relative h-24 w-24 rounded-full overflow-hidden border-4 border-[#1e293b] bg-[#1e293b] shadow-2xl">
+              <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full opacity-75 blur group-hover:opacity-100 transition duration-1000 group-hover:duration-200"></div>
+              <div className="relative h-24 w-24 rounded-full overflow-hidden border-4 border-[#1e293b] bg-[#1e293b]">
                 {avatarSrc ? (
                   <img
                     src={avatarSrc}
@@ -211,80 +295,96 @@ export default function Home() {
             </div>
 
             <div>
-              <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-white mb-2">
+              <h1 className="text-4xl font-bold tracking-tight text-white mb-2">
                 Hola, <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
-                  {user?.empleado?.apodo ? user.empleado.apodo : (user?.empleado?.nombre || user?.nombre || (displayName.includes(",") ? displayName.split(",")[1].trim() : displayName.split(" ")[0]))}!
+                  {user?.empleado?.apodo ? user.empleado.apodo : (user?.empleado?.nombre || user?.nombre || displayName.split(" ")[0])}!
                 </span>
               </h1>
+
               <div className="flex flex-wrap items-center gap-3 text-sm text-slate-300">
-                <span className="flex items-center gap-1.5 bg-white/10 px-3 py-1 rounded-full backdrop-blur-sm border border-white/10">
-                  <Shield className="h-3.5 w-3.5 text-emerald-400" />
+                <span className="flex items-center gap-1.5 bg-slate-800/80 px-3 py-1 rounded-full border border-slate-700/50 backdrop-blur-sm">
+                  <Shield className="h-3.5 w-3.5 text-blue-400" />
                   {prettyRol}
                 </span>
-                <span className="hidden md:inline text-slate-500">•</span>
-                <span className="flex items-center gap-1.5 bg-white/10 px-3 py-1 rounded-full backdrop-blur-sm border border-white/10">
-                  <Briefcase className="h-3.5 w-3.5 text-blue-400" />
+                <span className="hidden md:inline text-slate-600">•</span>
+                <span className="flex items-center gap-1.5 bg-slate-800/80 px-3 py-1 rounded-full border border-slate-700/50 backdrop-blur-sm">
+                  <Briefcase className="h-3.5 w-3.5 text-purple-400" />
                   {puesto}
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-col items-end gap-2">
-            <div className="flex items-center gap-2 bg-white/5 backdrop-blur-md border border-white/10 px-4 py-3 rounded-2xl shadow-xl">
-              <div className="p-2 bg-blue-500/20 rounded-lg">
-                <CalendarDays className="h-5 w-5 text-blue-400" />
-              </div>
-              <div>
-                <div className="text-xs text-slate-400 font-medium uppercase tracking-wider">Período Actual</div>
-                <div className="text-lg font-bold text-white tracking-tight">{periodo}</div>
-              </div>
+          <div className="flex items-center gap-4 bg-slate-800/40 p-4 rounded-2xl border border-slate-700/50 backdrop-blur-md">
+            <div className="p-2.5 bg-blue-500/20 rounded-xl">
+              <CalendarDays className="h-6 w-6 text-blue-400" />
+            </div>
+            <div>
+              <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Período Actual</div>
+              <div className="text-xl font-bold text-white tracking-tight">{periodo}</div>
             </div>
           </div>
         </div>
+
+        {/* Panel de Navegación Subtitle */}
+        <div className="max-w-7xl mx-auto mt-10 border-t border-slate-700/50 pt-6 flex items-center gap-3">
+          <div className="p-2 bg-blue-500/10 rounded-lg">
+            <LayoutDashboard className="h-5 w-5 text-blue-400" />
+          </div>
+          <h2 className="text-lg font-semibold text-slate-200">
+            Panel de Navegación
+          </h2>
+        </div>
       </div>
 
-      {/* Main Content - Cards Grid */}
-      <div className="max-w-7xl mx-auto px-6 lg:px-8 -mt-24 relative z-10 pb-12">
-        <h2 className="text-lg font-semibold text-white/90 mb-6 flex items-center gap-2">
-          <LayoutDashboard className="h-5 w-5" />
-          Panel de Navegación
-        </h2>
+      {/* Main Content - Grouped Grids */}
+      <div className="max-w-7xl mx-auto px-6 lg:px-8 -mt-20 pb-20 space-y-12 relative z-20">
+        {GROUPS.map((group) => {
+          // Filter items based on permission
+          const visibleItems = group.items.filter(item => item.allow);
+          if (visibleItems.length === 0) return null;
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {CARDS.map(({ key, title, desc, icon: Icon, to, allow, gradient, textColor }) => {
-            if (!allow) return null;
+          // Determine styling based on group
+          const isFirstGroup = group.title === "Mi Espacio";
+          const titleColor = isFirstGroup ? "text-white" : "text-slate-800";
+          const dividerColor = isFirstGroup ? "from-slate-500/50" : "from-slate-200";
 
-            return (
-              <Link
-                to={to}
-                key={key}
-                className="group relative bg-white rounded-2xl p-6 shadow-lg shadow-slate-200/50 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 border border-slate-100 overflow-hidden"
-              >
-                <div className={`absolute top-0 right-0 p-24 bg-gradient-to-br ${gradient} opacity-[0.03] rounded-bl-full group-hover:scale-110 transition-transform duration-500`}></div>
+          return (
+            <div key={group.title}>
+              <div className="flex items-center gap-4 mb-6">
+                <h2 className={`text-xl font-bold ${titleColor}`}>
+                  {group.title}
+                </h2>
+                <div className={`h-px flex-1 bg-gradient-to-r ${dividerColor} to-transparent`}></div>
+              </div>
 
-                <div className="relative z-10">
-                  <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 transition-transform duration-300`}>
-                    <Icon className={`h-6 w-6 text-white`} />
-                  </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
 
-                  <h3 className="text-lg font-bold text-slate-800 mb-2 group-hover:text-blue-600 transition-colors">
-                    {title}
-                  </h3>
-                  <p className="text-sm text-slate-500 leading-relaxed">
-                    {desc}
-                  </p>
-                </div>
+                {visibleItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      to={item.to}
+                      key={item.key}
+                      className="group bg-white rounded-xl p-6 shadow-sm border border-slate-200 hover:shadow-md hover:border-blue-200 hover:-translate-y-1 transition-all duration-200"
+                    >
+                      <div className={`h-12 w-12 rounded-lg ${item.bg} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
+                        <Icon className={`h-6 w-6 ${item.color}`} />
+                      </div>
 
-                <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 transform translate-x-2 group-hover:translate-x-0">
-                  <div className={`p-2 rounded-full bg-slate-50 text-slate-400`}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
-                  </div>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
+                      <h3 className="text-base font-bold text-slate-800 mb-1 group-hover:text-blue-600 transition-colors">
+                        {item.title}
+                      </h3>
+                      <p className="text-sm text-slate-500 leading-snug">
+                        {item.desc}
+                      </p>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

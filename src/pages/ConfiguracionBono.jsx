@@ -75,6 +75,7 @@ export default function ConfiguracionBono() {
                     // pesos: { objetivos: 70, competencias: 30 }, // Removed
                     escala: { tipo: "lineal", minPct: 0, maxPct: 1.0, umbral: 60, tramos: [] },
                     bonoTarget: 1.0,
+                    overrides: []
                 });
             }
         } catch (err) {
@@ -464,7 +465,7 @@ export default function ConfiguracionBono() {
                             </div>
 
                             <div className="space-y-4">
-                                {config.overrides.length === 0 && (
+                                {(!config.overrides || config.overrides.length === 0) && (
                                     <div className="py-16 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50/50">
                                         <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
                                             <GitMerge size={24} />
@@ -473,7 +474,7 @@ export default function ConfiguracionBono() {
                                         <p className="text-sm text-slate-400 mt-1">Todas las personas usan la Regla Global.</p>
                                     </div>
                                 )}
-                                {config.overrides.map((ov, idx) => (
+                                {(config.overrides || []).map((ov, idx) => (
                                     <div key={idx} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between group hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:-translate-y-1 transition-all duration-300">
                                         <div className="flex items-center gap-5">
                                             <div className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center font-bold text-xs border-2 shadow-sm ${ov.type === 'area' ? 'bg-indigo-50 border-indigo-100 text-indigo-600' : 'bg-emerald-50 border-emerald-100 text-emerald-600'}`}>

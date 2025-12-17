@@ -217,11 +217,10 @@ export default function SeguimientoReferente() {
           const results = await Promise.all(promises);
           rawResponses = results.flat();
         } else if (esDirector) {
-          const [allAreas, allSectores] = await Promise.all([
-            dashArea(null, anio),
-            dashSector(null, anio),
-          ]);
-          rawResponses = [...allAreas, ...allSectores];
+          // Director/RRHH: Traer TODO de una sola vez
+          // dashArea(null) en el backend ya está optimizado para traer todos los empleados
+          const allData = await dashArea(null, anio);
+          rawResponses = Array.isArray(allData) ? allData : [];
         } else if (esVisor && user?.empleado?._id) {
           const resp = await api(
             `/dashboard/empleado/${user.empleado._id}?year=${anio}`
@@ -273,9 +272,12 @@ export default function SeguimientoReferente() {
           const dashObj = flatRows.find(r => r.empleado && String(r.empleado._id) === String(emp._id));
           const empFeedbacks = dashObj?.feedbacks || [];
 
-          // CORREGIDO: Solo inyectar fila de feedback si el backend realmente devolvió items de feedback.
-          // Esto respeta la lógica del backend donde feedbacks vacíos = no hay flujo de feedback.
-          if (empFeedbacks.length > 0) {
+          // CORREGIDO: Inyectar fila de feedback SOLO si tiene Objetivos asignados o ya tiene feedback histórico
+          // (Si no tiene objetivos, no debería iniciar feedback este año)
+          const hasObjectives = getItemsArray(dashObj?.objetivos).length > 0;
+          const hasHistory = empFeedbacks.length > 0;
+
+          if (hasObjectives || hasHistory) {
             feedbackItems.push({
               _id: `feedback-global`, // ID especial
               _tipo: "feedback",
@@ -294,7 +296,7 @@ export default function SeguimientoReferente() {
                 const fb = empFeedbacks.find(f => f.periodo === h.periodo);
                 return {
                   ...h,
-                  estado: fb ? fb.estado : "DRAFT", // This fallback is fine only if fb exists for other periods, but here we require at least one fb to enter
+                  estado: fb ? fb.estado : "DRAFT", // fallback a DRAFT
                   feedbackId: fb?._id,
                   actual: fb ? (fb.estado === "CLOSED" ? 100 : null) : null
                 };

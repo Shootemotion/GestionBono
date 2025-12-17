@@ -12,6 +12,7 @@ import {
 import { requireCap, requireCapOrSelf } from '../auth/auth.middleware.js';
 import { listCarrera, createCarrera, updateCarrera, deleteCarrera, getCarreraResumen } from "../controllers/carrera.controller.js";
 import { listCapacitaciones, createCapacitacion, updateCapacitacion, deleteCapacitacion, getCapacitacionesResumen } from "../controllers/capacitacion.controller.js";
+import { listDocumentos, createDocumento, deleteDocumento } from "../controllers/documento.controller.js";
 import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
@@ -218,5 +219,40 @@ router.delete("/:id/capacitaciones/:itemId",
 
 router.get("/:id/capacitaciones/resumen",
   requireCapOrSelf("nomina:ver"), assertObjectId, preloadEmpleado, getCapacitacionesResumen);
+
+/* ========== DOCUMENTOS ========== */
+const storageDoc = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const emp = req.empleado;
+    const legible = `${slugify(emp.apellido)}-${slugify(emp.nombre)}-${emp._id}`;
+    const dir = path.join(process.cwd(), "uploads", "empleados", legible, "documentos");
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    // Mantener extensión original o sanear nombre
+    const ext = path.extname(file.originalname || ".pdf").toLowerCase();
+    cb(null, `doc-${Date.now()}${ext}`);
+  }
+});
+const uploadDoc = multer({
+  storage: storageDoc,
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
+  fileFilter: (req, file, cb) => {
+    // Permitir varios
+    const ok = /\.(pdf|doc|docx|xls|xlsx|jpg|jpeg|png)$/i.test(file.originalname || "");
+    if (!ok) return cb(new Error("Formato no permitido"));
+    cb(null, true);
+  }
+});
+
+router.get("/:id/documentos",
+  requireCapOrSelf("nomina:ver"), assertObjectId, listDocumentos);
+
+router.post("/:id/documentos",
+  requireCapOrSelf("nomina:editar"), assertObjectId, preloadEmpleado, uploadDoc.single("archivo"), createDocumento);
+
+router.delete("/:id/documentos/:docId",
+  requireCapOrSelf("nomina:editar"), assertObjectId, deleteDocumento);
 
 export default router;

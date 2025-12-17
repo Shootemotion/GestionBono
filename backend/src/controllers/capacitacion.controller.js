@@ -58,7 +58,8 @@ export async function getCapacitacionesResumen(req, res, next) {
     const { id } = req.params;
     const items = await Capacitacion.find({ empleado: id }).lean();
 
-    const total = items.reduce((acc, c) => acc + (Number(c.horas) || 0), 0);
+    // TOTAL = CANTIDAD DE CURSOS (Pedido por usuario)
+    const total = items.length;
 
     // Vencen en 30 días
     const today = new Date();

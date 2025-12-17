@@ -15,7 +15,10 @@ import {
   Target,
   Lightbulb,
   ChevronDown,
+
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   LayoutDashboard,
   ListChecks,
   FileSignature,
@@ -263,6 +266,12 @@ export default function MiDesempeno() {
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [viewPeriod, setViewPeriod] = useState(null); // For chart interaction
 
+  // Year Selection Logic
+  const [selectedYear, setSelectedYear] = useState(() => {
+    const now = new Date();
+    return now.getMonth() >= 10 ? now.getFullYear() + 1 : now.getFullYear();
+  });
+
 
 
   // 1. Cargar Dashboard (Objetivos/Aptitudes)
@@ -270,8 +279,7 @@ export default function MiDesempeno() {
     if (!empleadoId) return;
     try {
       setLoading(true);
-      const currentYear = new Date().getFullYear();
-      const res = await dashEmpleado(empleadoId, currentYear);
+      const res = await dashEmpleado(empleadoId, selectedYear);
       if (res) {
         const normalized = { ...res };
         if (normalized.objetivos?.items && !Array.isArray(normalized.objetivos)) {
@@ -288,7 +296,7 @@ export default function MiDesempeno() {
     } finally {
       setLoading(false);
     }
-  }, [empleadoId]);
+  }, [empleadoId, selectedYear]);
 
   // 2. Cargar Feedbacks
   const fetchFeedbacks = useCallback(async () => {
@@ -297,8 +305,9 @@ export default function MiDesempeno() {
       const res = await api(`/feedbacks/empleado/${empleadoId}`);
       const fetched = Array.isArray(res) ? res : [];
 
+
+
       // Generar lista completa de 4 periodos para asegurar que siempre se vean
-      const currentYear = new Date().getFullYear();
       const periods = ["Q1", "Q2", "Q3", "FINAL"];
 
       const fullList = periods.map(p => {
@@ -308,8 +317,9 @@ export default function MiDesempeno() {
         // Si no existe, crear placeholder
         return {
           _id: `placeholder-${p}`,
+
           periodo: p,
-          year: currentYear,
+          year: selectedYear,
           estado: "PENDIENTE",
           comentario: "",
           isPlaceholder: true
@@ -327,7 +337,7 @@ export default function MiDesempeno() {
     } catch (err) {
       console.error("Error fetching feedbacks:", err);
     }
-  }, [empleadoId, selectedFeedback]);
+  }, [empleadoId, selectedFeedback, selectedYear]);
 
   useEffect(() => {
     fetchDash();
@@ -610,6 +620,10 @@ export default function MiDesempeno() {
       // Determine if this is the currently viewed period (or part of the active range)
       const isSelected = activeMonths.some(m => p === m || p.endsWith(m));
 
+      // Check visibility relative to the specific period's feedback
+      const periodFeedback = feedbacks.find(f => f.periodo === p);
+      const isVisible = periodFeedback && ["SENT", "PENDING_HR", "CLOSED", "ACKNOWLEDGED"].includes(periodFeedback.estado);
+
       // Calculate Weighted Score for Objectives, Raw Score for Competencies
       const rawScore = h?.actual ?? 0;
       const weightedScore = activeTab === 'obj'
@@ -618,12 +632,18 @@ export default function MiDesempeno() {
 
       return {
         name: p,
-        score: weightedScore,
-        rawScore: rawScore, // Keep raw for tooltip if needed
+        score: isVisible ? weightedScore : 0,
+        rawScore: isVisible ? rawScore : 0, // Keep raw for tooltip if needed
         meta: maxScore,
-        isCurrent: isSelected
+        isCurrent: isSelected,
+        isVisible
       };
     });
+
+
+
+    // Check global visibility inside renderDetailView
+    const showScores = ["SENT", "PENDING_HR", "CLOSED", "ACKNOWLEDGED"].includes(selectedFeedback?.estado);
 
     const metaLabel = activeTab === 'obj' ? `Meta: ${maxScore}%` : `Meta: ${maxScore}%`;
 
@@ -662,10 +682,12 @@ export default function MiDesempeno() {
               <Tooltip
                 cursor={{ fill: 'transparent' }}
                 contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                formatter={(value, name, props) => [
-                  `${Math.round(value)}%`, // Show weighted score
-                  name === 'score' ? 'Resultado Ponderado' : metaLabel
-                ]}
+                formatter={(value, name, entry) => {
+                  return [
+                    entry.payload.isVisible ? `${Math.round(value)}%` : '--',
+                    name === 'score' ? 'Resultado Ponderado' : metaLabel
+                  ];
+                }}
                 labelFormatter={(label) => `Periodo: ${label}`}
               />
               <ReferenceLine
@@ -700,7 +722,7 @@ export default function MiDesempeno() {
               Detalle {displayPeriod}
             </h4>
             <div className="text-2xl font-black text-slate-800">
-              {displayHito?.actual ?? "—"}%
+              {showScores ? (displayHito?.actual ?? "—") : "--"}%
             </div>
           </div>
 
@@ -753,7 +775,7 @@ export default function MiDesempeno() {
                         <div className="font-bold text-slate-400 uppercase text-[10px]">Resultado</div>
                         <div className={`p-2 rounded border flex flex-col items-center justify-center text-center h-full ${valorEvaluado >= meta.esperado ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-amber-50 border-amber-100 text-amber-700'}`}>
                           <div className="text-lg font-bold">
-                            {valorEvaluado ?? "—"}
+                            {showScores ? (valorEvaluado ?? "—") : "--"}
                           </div>
                           <div className="text-[10px] opacity-70">Obtenido</div>
                         </div>
@@ -789,13 +811,12 @@ export default function MiDesempeno() {
 
   if (!user) return <div className="p-6 text-center">Iniciá sesión.</div>;
 
-  const currentYear = new Date().getFullYear();
-  const timelineItems = [
+  const timelineItems = useMemo(() => [
     {
       id: "Q1",
       label: "Noviembre",
       sub: "Inicio",
-      date: `${currentYear - 1}-11-01`,
+      date: `${selectedYear - 1}-11-01`,
       actionMonth: "Diciembre",
       deadlines: { manager: "1-10", employee: "10-20", hr: "20-30" }
     },
@@ -803,7 +824,7 @@ export default function MiDesempeno() {
       id: "Q2",
       label: "Febrero",
       sub: "Seguimiento",
-      date: `${currentYear}-02-01`,
+      date: `${selectedYear}-02-01`,
       actionMonth: "Marzo",
       deadlines: { manager: "1-10", employee: "10-20", hr: "20-30" }
     },
@@ -811,7 +832,7 @@ export default function MiDesempeno() {
       id: "Q3",
       label: "Mayo",
       sub: "Seguimiento",
-      date: `${currentYear}-05-01`,
+      date: `${selectedYear}-05-01`,
       actionMonth: "Junio",
       deadlines: { manager: "1-10", employee: "10-20", hr: "20-30" }
     },
@@ -819,11 +840,11 @@ export default function MiDesempeno() {
       id: "FINAL",
       label: "Agosto",
       sub: "Cierre Anual",
-      date: `${currentYear}-08-30`,
+      date: `${selectedYear}-08-30`,
       actionMonth: "Septiembre",
       deadlines: { manager: "1-10", employee: "10-20", hr: "20-30" }
     }
-  ];
+  ], [selectedYear]);
 
   const evaluatorName = (() => {
     const creator = selectedFeedback?.creadoPor;
@@ -857,8 +878,24 @@ export default function MiDesempeno() {
               <p className="text-slate-400 text-lg">Seguimiento de evaluaciones y feedback continuo</p>
             </div>
             <div className="hidden md:block text-right">
-              <div className="text-sm text-slate-400 uppercase tracking-wider font-medium mb-1">Año en curso</div>
-              <div className="text-2xl font-bold">{currentYear}</div>
+              <div className="text-sm text-slate-400 uppercase tracking-wider font-medium mb-1">Año de Desempeño</div>
+              <div className="flex items-center justify-end gap-3 text-white">
+                <button
+                  onClick={() => setSelectedYear(y => y - 1)}
+                  className="p-1 hover:bg-white/10 rounded-full transition-colors"
+                  title="Año anterior"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+                <div className="text-3xl font-black">{selectedYear}</div>
+                <button
+                  onClick={() => setSelectedYear(y => y + 1)}
+                  className="p-1 hover:bg-white/10 rounded-full transition-colors"
+                  title="Siguiente año"
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -944,10 +981,10 @@ export default function MiDesempeno() {
                           {/* Hover Tooltip for Deadlines */}
                           <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 bg-slate-800 text-white text-xs rounded-lg p-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
                             <div className="font-bold mb-1 border-b border-slate-600 pb-1">Plazos {p.actionMonth}</div>
-                            <div className="grid grid-cols-[1fr_auto] gap-x-2 gap-y-1 text-[10px]">
-                              <span className="text-slate-300">Jefe:</span> <span>{p.deadlines.manager}</span>
-                              <span className="text-slate-300">Empleado:</span> <span>{p.deadlines.employee}</span>
-                              <span className="text-slate-300">RRHH:</span> <span>{p.deadlines.hr}</span>
+                            <div className="grid grid-cols-1 gap-1 text-[10px]">
+                              <div className="flex justify-between"><span className="text-slate-300">Líder:</span> <span>Hasta el {p.deadlines.manager.split('-')[1]}</span></div>
+                              <div className="flex justify-between"><span className="text-slate-300">Empleado:</span> <span>Hasta el {p.deadlines.employee.split('-')[1]}</span></div>
+                              <div className="flex justify-between"><span className="text-slate-300">RRHH:</span> <span>Hasta el {p.deadlines.hr.split('-')[1]}</span></div>
                             </div>
                             <div className="absolute bottom-[-4px] left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-800 rotate-45"></div>
                           </div>
@@ -983,14 +1020,25 @@ export default function MiDesempeno() {
                         </div>
                       </div>
                       <StatusBadge status={(() => {
-                        if (selectedFeedback.estado !== "DRAFT" && selectedFeedback.estado !== "PENDIENTE") return selectedFeedback.estado;
-                        // Check if Vencido
+                        // 1. If definitive status (not draft/pending/placeholder), show it
+                        if (selectedFeedback.estado !== "DRAFT" && selectedFeedback.estado !== "PENDIENTE" && !selectedFeedback.isPlaceholder) {
+                          return selectedFeedback.estado;
+                        }
+
+                        // 2. Date-based logic for Draft/Pending/Placeholder
                         const item = timelineItems.find(t => t.id === selectedFeedback.periodo);
-                        if (!item) return selectedFeedback.estado;
-                        const deadline = new Date(item.date);
-                        // Asumimos vencimiento 30 días después de la fecha indicada
-                        deadline.setDate(deadline.getDate() + 30);
-                        return new Date() > deadline ? "VENCIDO" : selectedFeedback.estado;
+                        if (!item) return "PENDIENTE";
+
+                        const now = new Date();
+                        const startDate = new Date(item.date);
+                        // Approximate deadline: start + 2 months (e.g., Nov 1 -> Jan 1) to cover the action month
+                        const deadline = new Date(startDate);
+                        deadline.setMonth(deadline.getMonth() + 2);
+
+                        if (now > deadline) return "VENCIDO";
+                        if (now < startDate) return "FUTURO";
+
+                        return "PENDIENTE";
                       })()} />
                     </div>
 
@@ -1007,20 +1055,34 @@ export default function MiDesempeno() {
                   </div>
 
                   {/* Summary Scores */}
-                  {!selectedFeedback.isPlaceholder && (
+                  {selectedFeedback && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center">
-                        <div className="text-sm text-slate-500 font-medium mb-1">Score Objetivos</div>
-                        <div className="text-3xl font-black text-blue-600">{Math.round(periodResults.scores.obj)}%</div>
-                      </div>
-                      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center">
-                        <div className="text-sm text-slate-500 font-medium mb-1">Score Competencias</div>
-                        <div className="text-3xl font-black text-amber-500">{Math.round(periodResults.scores.comp)}%</div>
-                      </div>
-                      <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-6 rounded-2xl shadow-lg shadow-blue-600/20 flex flex-col items-center justify-center text-white">
-                        <div className="text-sm text-blue-100 font-medium mb-1">Score Global</div>
-                        <div className="text-3xl font-black">{Math.round(periodResults.scores.global)}%</div>
-                      </div>
+                      {(() => {
+                        const showScores = ["SENT", "PENDING_HR", "CLOSED", "ACKNOWLEDGED"].includes(selectedFeedback.estado);
+
+                        return (
+                          <>
+                            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center">
+                              <div className="text-sm text-slate-500 font-medium mb-1">Score Objetivos</div>
+                              <div className={`text-3xl font-black ${showScores ? "text-blue-600" : "text-slate-300"}`}>
+                                {showScores ? `${Math.round(periodResults.scores.obj)}%` : "--"}
+                              </div>
+                            </div>
+                            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center">
+                              <div className="text-sm text-slate-500 font-medium mb-1">Score Competencias</div>
+                              <div className={`text-3xl font-black ${showScores ? "text-amber-500" : "text-slate-300"}`}>
+                                {showScores ? `${Math.round(periodResults.scores.comp)}%` : "--"}
+                              </div>
+                            </div>
+                            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-6 rounded-2xl shadow-lg shadow-blue-600/20 flex flex-col items-center justify-center text-white">
+                              <div className="text-sm text-blue-100 font-medium mb-1">Score Global</div>
+                              <div className="text-3xl font-black">
+                                {showScores ? `${Math.round(periodResults.scores.global)}%` : "--"}
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
@@ -1033,7 +1095,7 @@ export default function MiDesempeno() {
 
             {/* SECTION 2: DETAILED VIEW (Redesigned) */}
             <div ref={sectionDetailsRef} className="scroll-mt-32">
-              {!selectedFeedback || selectedFeedback.isPlaceholder ? (
+              {!selectedFeedback ? (
                 <div className="p-12 text-center text-slate-400 bg-white rounded-2xl border border-dashed">
                   No hay detalles disponibles para este periodo.
                 </div>
@@ -1071,9 +1133,13 @@ export default function MiDesempeno() {
                                 <Badge variant="outline" className="bg-slate-50 text-slate-500 border-slate-200 text-[10px]">
                                   {obj.peso}% Peso
                                 </Badge>
-                                <span className={`text-sm font-bold ${obj.scorePeriodo > 0 ? 'text-blue-600' : 'text-slate-300'}`}>
-                                  {Math.round((obj.scorePeriodo * obj.peso) / 100)}%
-                                </span>
+                                {["SENT", "PENDING_HR", "CLOSED", "ACKNOWLEDGED"].includes(selectedFeedback?.estado) ? (
+                                  <span className={`text-sm font-bold ${obj.scorePeriodo > 0 ? 'text-blue-600' : 'text-slate-300'}`}>
+                                    {Math.round((obj.scorePeriodo * obj.peso) / 100)}%
+                                  </span>
+                                ) : (
+                                  <span className="text-sm font-bold text-slate-300">--</span>
+                                )}
                               </div>
                               <div className="text-sm font-bold text-slate-800 line-clamp-2">{obj.nombre}</div>
                             </button>
@@ -1093,9 +1159,13 @@ export default function MiDesempeno() {
                                 <Badge variant="outline" className="bg-slate-50 text-slate-500 border-slate-200 text-[10px]">
                                   Competencia
                                 </Badge>
-                                <span className={`text-sm font-bold ${apt.scorePeriodo > 0 ? 'text-amber-600' : 'text-slate-300'}`}>
-                                  {Math.round(apt.scorePeriodo)}%
-                                </span>
+                                {["SENT", "PENDING_HR", "CLOSED", "ACKNOWLEDGED"].includes(selectedFeedback?.estado) ? (
+                                  <span className={`text-sm font-bold ${apt.scorePeriodo > 0 ? 'text-amber-600' : 'text-slate-300'}`}>
+                                    {Math.round(apt.scorePeriodo)}%
+                                  </span>
+                                ) : (
+                                  <span className="text-sm font-bold text-slate-300">--</span>
+                                )}
                               </div>
                               <div className="text-sm font-bold text-slate-800 line-clamp-2">{apt.nombre}</div>
                             </button>
