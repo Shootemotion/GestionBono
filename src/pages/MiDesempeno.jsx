@@ -1054,7 +1054,7 @@ export default function MiDesempeno() {
             <div className="hidden md:block text-right">
 
               {/* REPORT BUTTON */}
-              {(feedbacks.some(f => f.periodo === "FINAL") || data?.evaluaciones?.some(e => e.periodo === "FINAL")) && (
+              {(feedbacks.some(f => f.periodo === "FINAL" && !f.isPlaceholder) || data?.evaluaciones?.some(e => e.periodo === "FINAL")) && (
                 <div className="mb-4">
                   <Button
                     size="sm"
@@ -1067,7 +1067,7 @@ export default function MiDesempeno() {
                 </div>
               )}
 
-              <div className="text-sm text-slate-400 uppercase tracking-wider font-medium mb-1">Año de Desempeño</div>
+              <div className="text-sm text-slate-400 uppercase tracking-wider font-medium mb-1">AÑO</div>
               <div className="flex items-center justify-end gap-3 text-white">
                 <button
                   onClick={() => setSelectedYear(y => y - 1)}

@@ -7,7 +7,8 @@ import { useNavigate } from "react-router-dom";
 
 import FilterBar from "@/components/seguimiento/FilterBar";
 import GanttView from "@/components/seguimiento/GanttView";
-import CalendarView from "@/components/seguimiento/CalendarView";
+
+
 import { Button } from "@/components/ui/button";
 import { BarChart3, Calendar, RefreshCw } from "lucide-react";
 
@@ -183,10 +184,10 @@ export default function SeguimientoReferente() {
 
   const [mainTab, setMainTab] = useState("objetivos"); // "objetivos" | "feedback"
   const [tipoFiltro, setTipoFiltro] = useState("todos");
-  const [view, setView] = useState("gantt");
-  const [zoom, setZoom] = useState("mes");
+  // const [view, setView] = useState("gantt"); // Always Gantt
+  // const [zoom, setZoom] = useState("mes"); // Always Mes
   const [dueOnly, setDueOnly] = useState(false);
-  const [sortDir, setSortDir] = useState("asc");
+  // const [sortDir, setSortDir] = useState("asc"); // Always Asc
   const [ganttGrouping, setGanttGrouping] = useState("sector_estado"); // "sector_estado" | "estado_sector"
   const [groupBy, setGroupBy] = useState("empleado");
 
@@ -434,44 +435,12 @@ export default function SeguimientoReferente() {
   // agrupación seleccionada + orden
   const grouped = useMemo(() => {
     const base = groupItems(flatItems, groupBy);
-    if (sortDir === "desc") return [...base].reverse();
+    // Orden fijo ascendente
     return base;
-  }, [flatItems, groupBy, sortDir]);
+  }, [flatItems, groupBy]);
 
 
-  // agenda (vista calendario) – una entrada POR EMPLEADO, igual que el Gantt
-  const agendaList = useMemo(() => {
-    if (view !== "agenda") return [];
-    const entries = [];
-
-    flatItems.forEach((it, idx) => {
-      const empleados = Array.isArray(it.empleados) ? it.empleados : [];
-
-      (it.hitos || []).forEach((h, j) => {
-        empleados.forEach((emp, k) => {
-          if (!emp || !emp._id) return;
-
-          const key = `${emp._id}-${it._id}-${h.periodo}-${idx}-${j}-${k}`;
-
-          entries.push({
-            key,
-            empleado: emp,          // 👈 empleado individual
-            item: it.rawItem || it, // por las dudas
-            periodo: h.periodo,
-            fecha: h.fecha || null, // si no hay fecha, el calendario usa periodo
-          });
-        });
-      });
-    });
-
-    return entries.sort((a, b) => {
-      const fa = a.fecha ? new Date(a.fecha) : new Date(2100, 0, 1);
-      const fb = b.fecha ? new Date(b.fecha) : new Date(2100, 0, 1);
-      return fa - fb;
-    });
-  }, [flatItems, view]);
-
-
+  // agenda (vista calendario) – ELIMINADO
 
   // ID del empleado seleccionado (usado para resaltar en el Gantt)
   const selectedEmpleadoId = empSelectedId ? String(empSelectedId) : null;
@@ -506,9 +475,16 @@ export default function SeguimientoReferente() {
 
   return (
     <div className="bg-slate-50 min-h-screen py-6">
-      <div className="max-w-7xl mx-auto space-y-6 px-4">
-        {/* Filtros originales */}
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
+      <div className="max-w-[1500px] mx-auto space-y-6 px-6 lg:px-8">
+
+        {/* Header simple */}
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight text-slate-900">Seguimiento de Evaluaciones</h1>
+          <p className="text-sm text-slate-500">Visualiza el avance de objetivos y feedbacks de tu equipo.</p>
+        </div>
+
+        {/* Filtros rediseñados */}
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5">
           <FilterBar
             {...{
               anio,
@@ -526,108 +502,49 @@ export default function SeguimientoReferente() {
               empHints,
               showEmpHints,
               setShowEmpHints,
-              mainTab,
-              setMainTab,
+              empHints,
+              showEmpHints,
+              setShowEmpHints,
               hideAreaFilter: !isJefeArea && !esDirector && !esSuperAdmin && !esVisor
             }}
           />
         </div>
 
-        {/* LEYENDA DE COLORES */}
-        <div className="flex flex-wrap gap-4 px-2">
-          <div className="flex items-center gap-2 text-xs">
-            <span className="w-3 h-3 rounded-full bg-slate-400"></span>
-            <span className="text-slate-600">Borrador</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
-            <span className="w-3 h-3 rounded-full bg-blue-500"></span>
-            <span className="text-slate-600">Enviado al Empleado</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
-            <span className="w-3 h-3 rounded-full bg-purple-500"></span>
-            <span className="text-slate-600">Enviado a RRHH</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
-            <span className="w-3 h-3 rounded-full bg-emerald-600"></span>
-            <span className="text-slate-600">Finalizado</span>
-          </div>
-          <div className="w-px h-4 bg-slate-300 mx-2"></div>
-          <div className="flex items-center gap-2 text-xs">
-            <span className="w-3 h-3 rounded-full bg-emerald-400"></span>
-            <span className="text-slate-600">Obj. Completado</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
-            <span className="w-3 h-3 rounded-full bg-rose-500"></span>
-            <span className="text-slate-600">Vencido</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
-            <span className="w-3 h-3 rounded-full bg-amber-500"></span>
-            <span className="text-slate-600">Por Vencer</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
-            <span className="w-3 h-3 rounded-full bg-cyan-500"></span>
-            <span className="text-slate-600">Futuro</span>
-          </div>
-        </div>
 
-        {/* Controles superiores */}
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex gap-2">
-            <div className="flex bg-slate-100 p-1 rounded-lg">
-              <button
-                onClick={() => setView("gantt")}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${view === "gantt"
-                  ? "bg-white text-blue-700 shadow-sm"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200"
-                  }`}
-              >
-                <BarChart3 className="w-3.5 h-3.5" />
-                Gantt
-              </button>
-              <button
-                onClick={() => setView("calendar")}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${view === "calendar"
-                  ? "bg-white text-blue-700 shadow-sm"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200"
-                  }`}
-              >
-                <Calendar className="w-3.5 h-3.5" />
-                Calendario
-              </button>
-            </div>
-          </div>
 
+        {/* Controles simplificados (SOLO Agrupar + Vencimientos) */}
+        <div className="flex flex-wrap items-center justify-between gap-3 px-1">
           <div className="flex items-center gap-3">
             {/* Filtros de estado rápidos */}
-            <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-lg border border-slate-100">
-              <span className="text-[10px] font-medium text-slate-400 px-2 uppercase tracking-wider">Vencimientos</span>
+            <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-slate-200 shadow-sm">
+              <span className="text-[10px] font-bold text-slate-400 px-2 uppercase tracking-wider">Ver</span>
               <button
                 onClick={() => setDueOnly(false)}
-                className={`px-2 py-1 text-[10px] font-medium rounded transition-colors ${!dueOnly
-                  ? "bg-white text-slate-700 shadow-sm ring-1 ring-slate-200"
-                  : "text-slate-500 hover:text-slate-700"
+                className={`px-3 py-1.5 text-[11px] font-medium rounded-md transition-all ${!dueOnly
+                  ? "bg-slate-100 text-slate-900 font-semibold"
+                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
                   }`}
               >
-                Todos
+                Todo
               </button>
               <button
                 onClick={() => setDueOnly(true)}
-                className={`px-2 py-1 text-[10px] font-medium rounded transition-colors ${dueOnly
-                  ? "bg-rose-50 text-rose-700 ring-1 ring-rose-200"
-                  : "text-slate-500 hover:text-rose-600"
+                className={`px-3 py-1.5 text-[11px] font-medium rounded-md transition-all ${dueOnly
+                  ? "bg-rose-50 text-rose-700 font-semibold ring-1 ring-rose-200"
+                  : "text-slate-500 hover:text-rose-600 hover:bg-rose-50"
                   }`}
               >
-                Vencidos/Por Vencer
+                Atención Requerida
               </button>
             </div>
 
-            <div className="h-4 w-px bg-slate-200 mx-1" />
+            <div className="h-4 w-px bg-slate-300 mx-1" />
 
             {/* Selector de Agrupación */}
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Agrupar</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Agrupar por</span>
               <select
-                className="rounded-lg border border-slate-200 bg-slate-50 text-[10px] font-medium px-2 py-1 outline-none focus:ring-2 focus:ring-blue-100"
+                className="rounded-lg border border-slate-200 bg-white text-xs font-medium px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-blue-100 shadow-sm"
                 value={ganttGrouping}
                 onChange={(e) => setGanttGrouping(e.target.value)}
               >
@@ -635,109 +552,109 @@ export default function SeguimientoReferente() {
                 <option value="estado_sector">Estado &gt; Sector</option>
               </select>
             </div>
+          </div>
 
-            <div className="h-4 w-px bg-slate-200 mx-1" />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={limpiarSeleccion}
+            disabled={!selectedEmpleadoId}
+            className="h-8 text-xs text-slate-500 hover:text-blue-600 bg-white border border-transparent hover:border-slate-200 shadow-sm hover:shadow"
+          >
+            <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+            Limpiar selección de empleado
+          </Button>
+        </div>
 
+        {/* Contenido: Gantt chart siempre */}
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col min-h-[600px] overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50/30">
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Orden</span>
-              <div className="flex bg-slate-100 p-0.5 rounded-lg">
-                <button
-                  onClick={() => setSortDir("asc")}
-                  className={`px-2 py-1 text-[10px] font-medium rounded transition-all ${sortDir === "asc"
-                    ? "bg-white text-slate-700 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
-                    }`}
-                >
-                  ↑ Asc
-                </button>
-                <button
-                  onClick={() => setSortDir("desc")}
-                  className={`px-2 py-1 text-[10px] font-medium rounded transition-all ${sortDir === "desc"
-                    ? "bg-white text-slate-700 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
-                    }`}
-                >
-                  ↓ Desc
-                </button>
+              <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                <BarChart3 className="w-4 h-4" />
+              </div>
+              <div className="text-sm font-semibold text-slate-900">
+                Cronograma General
               </div>
             </div>
 
-            {view === "gantt" && (
-              <>
-                <div className="h-4 w-px bg-slate-200 mx-1" />
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Meses</span>
-                  <div className="flex bg-slate-100 p-0.5 rounded-lg">
-                    <button
-                      onClick={() => setZoom("mes")}
-                      className={`px-2 py-1 text-[10px] font-medium rounded transition-all ${zoom === "mes"
-                        ? "bg-white text-slate-700 shadow-sm"
-                        : "text-slate-500 hover:text-slate-700"
-                        }`}
-                    >
-                      Meses
-                    </button>
-                    <button
-                      onClick={() => setZoom("trimestre")}
-                      className={`px-2 py-1 text-[10px] font-medium rounded transition-all ${zoom === "trimestre"
-                        ? "bg-white text-slate-700 shadow-sm"
-                        : "text-slate-500 hover:text-slate-700"
-                        }`}
-                    >
-                      Trimestres
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-
-            <div className="h-4 w-px bg-slate-200 mx-1" />
-
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={limpiarSeleccion}
-              disabled={!selectedEmpleadoId}
-              className="h-7 text-[10px] text-slate-500 hover:text-slate-700"
-            >
-              <RefreshCw className="w-3 h-3 mr-1.5" />
-              Limpiar selección
-            </Button>
-          </div>
-        </div>
-
-        {/* Contenido: layout 1 columna (full-width Gantt) */}
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col min-h-[520px] overflow-hidden">
-          <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100">
-            <div className="text-sm font-semibold text-slate-900">
-              {view === "gantt"
-                ? "Agenda de evaluaciones (Gantt)"
-                : "Agenda de evaluaciones (Calendario)"}
+            {/* CENTRO: Toggle Objetivos / Feedback */}
+            <div className="flex-1 flex justify-center">
+              <div className="inline-flex bg-slate-100/80 p-1 rounded-lg border border-slate-200/60 shadow-inner">
+                <button
+                  onClick={() => setMainTab("objetivos")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all duration-200 ${mainTab === "objetivos"
+                    ? "bg-white text-blue-700 shadow-sm ring-1 ring-black/5"
+                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
+                    }`}
+                >
+                  <span className={mainTab === "objetivos" ? "text-blue-500" : "text-slate-400"}>🎯</span>
+                  Objetivos
+                </button>
+                <button
+                  onClick={() => setMainTab("feedback")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all duration-200 ${mainTab === "feedback"
+                    ? "bg-white text-purple-700 shadow-sm ring-1 ring-black/5"
+                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
+                    }`}
+                >
+                  <span className={mainTab === "feedback" ? "text-purple-500" : "text-slate-400"}>💬</span>
+                  Feedback
+                </button>
+              </div>
             </div>
-            {loading && (
-              <div className="text-[11px] text-slate-500">Cargando…</div>
-            )}
+            {/* DERECHA: Leyenda + Loading */}
+            <div className="flex items-center gap-4">
+              {/* Leyenda Compacta */}
+              <div className="hidden xl:flex items-center gap-3">
+                <div className="flex items-center gap-1.5 text-[10px]">
+                  <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+                  <span className="text-slate-500">Borrador</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-[10px]">
+                  <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                  <span className="text-slate-500">Enviado</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-[10px]">
+                  <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                  <span className="text-slate-500">RRHH</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-[10px]">
+                  <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                  <span className="text-slate-500">Finalizado</span>
+                </div>
+                <div className="w-px h-3 bg-slate-300"></div>
+                <div className="flex items-center gap-1.5 text-[10px]">
+                  <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                  <span className="text-slate-500">Vencido</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-[10px]">
+                  <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                  <span className="text-slate-500">Por Vencer</span>
+                </div>
+              </div>
+
+              {loading && (
+                <div className="text-[11px] font-medium text-slate-500 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                  Cargando...
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="flex-1 overflow-auto">
-            {view === "agenda" ? (
-              <CalendarView
-                agendaList={agendaList}
-                openHitoModal={openHitoPage}
-              />
-            ) : (
-              <GanttView
-                grouped={flatItems}
-                anio={anio}
-                zoom={zoom}
-                openHitoModal={openHitoPage}
-                dueOnly={dueOnly}
-                sortDir={sortDir}
-                selectedEmpleadoId={selectedEmpleadoId}
-                hideAreaGroup={!isJefeArea && !esDirector && !esSuperAdmin && !esVisor}
-                ganttGrouping={ganttGrouping}
-              />
-            )}
+          <div className="flex-1 overflow-auto bg-white">
+            <GanttView
+              grouped={flatItems}
+              anio={anio}
+              zoom="mes"
+              openHitoModal={openHitoPage}
+              dueOnly={dueOnly}
+              sortDir="asc"
+              selectedEmpleadoId={selectedEmpleadoId}
+              hideAreaGroup={!isJefeArea && !esDirector && !esSuperAdmin && !esVisor}
+              ganttGrouping={ganttGrouping}
+            />
           </div>
         </div>
       </div>

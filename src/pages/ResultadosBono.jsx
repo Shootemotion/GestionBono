@@ -306,7 +306,7 @@ export default function ResultadosBono() {
                                                                     {/* 4. Financial Receipt */}
                                                                     <div className="p-5 bg-slate-50/80 border-t md:border-t-0 md:border-l border-slate-200/60 backdrop-blur-sm flex flex-col justify-center">
                                                                         <div className="flex justify-between items-center text-xs text-slate-400 mb-1">
-                                                                            <span>Bono Base</span>
+                                                                            <span>Sueldo Base</span>
                                                                             <span>{formatCurrency(emp.bonoBase)}</span>
                                                                         </div>
                                                                         <div className="flex justify-between items-center text-xs text-slate-500 font-semibold mb-2">

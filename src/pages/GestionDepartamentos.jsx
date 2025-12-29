@@ -430,6 +430,11 @@ export default function GestionDepartamentos() {
                           <span className="shrink-0 text-slate-400">Líder:</span>
                           <span className="font-medium text-slate-700">{refs || "—"}</span>
                         </div>
+                        {/* Líder Heredado del Área */}
+                        <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 truncate mt-0.5">
+                          <span className="shrink-0 text-slate-400">Líder Área:</span>
+                          <span className="font-medium text-slate-600">{nombresReferentes(areas.find(a => String(a._id) === aId)?.referentes) || "—"}</span>
+                        </div>
                       </div>
 
                       {/* Métricas */}

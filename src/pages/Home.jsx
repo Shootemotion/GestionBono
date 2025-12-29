@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useMemo } from "react";
+import { toast } from "react-toastify";
 import {
   Target,
   BarChart3,
@@ -337,49 +338,75 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Main Content - Grouped Columns */}
+      {/* Main Content - Centered Flex Layout */}
       <div className="max-w-7xl mx-auto px-6 lg:px-8 mt-4 pb-12 relative z-20">
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 items-start">
+        <div className="flex flex-wrap justify-center gap-6 items-start">
           {GROUPS.map((group) => {
-            // Filter items based on permission
-            const visibleItems = group.items.filter(item => item.allow);
+            // Show ALL items, handled visibly by permissions later
+            const allItems = group.items;
 
-            if (visibleItems.length === 0) return null;
+            if (allItems.length === 0) return null;
 
             return (
-              <div key={group.title} className="flex flex-col gap-3">
+              <div key={group.title} className="flex flex-col gap-3 w-full sm:w-[280px]">
                 {/* Column Header - Fixed height for alignment */}
-                <div className="flex items-center gap-3 mb-1 px-1 border-b border-slate-200 pb-1.5 min-h-[2.5rem]">
-                  <h2 className="text-base font-bold text-slate-800 uppercase tracking-wide leading-tight">
+                <div className="flex items-center justify-center gap-3 mb-1 px-1 border-b border-slate-200 pb-1.5 min-h-[2.5rem]">
+                  <h2 className="text-base font-bold text-slate-800 uppercase tracking-wide leading-tight text-center">
                     {group.title}
                   </h2>
                 </div>
 
                 {/* Vertical Stack of Cards */}
                 <div className="flex flex-col gap-3">
-                  {visibleItems.map((item) => {
+                  {allItems.map((item) => {
                     const Icon = item.icon;
-                    return (
-                      <Link
-                        to={item.to}
-                        key={item.key}
-                        className="group bg-white rounded-xl p-3 shadow-sm border border-slate-200 hover:shadow-lg hover:border-blue-300 hover:-translate-y-1 transition-all duration-200 flex flex-col items-center text-center gap-2 min-h-[135px] justify-center"
-                      >
-                        <div className={`h-10 w-10 shrink-0 rounded-lg ${item.bg} flex items-center justify-center group-hover:scale-110 transition-transform mb-0.5`}>
-                          <Icon className={`h-5 w-5 ${item.color}`} />
-                        </div>
+                    const isAllowed = item.allow;
 
-                        <div className="w-full px-2">
-                          <h3 className="text-base font-bold text-slate-800 mb-2 group-hover:text-blue-600 transition-colors">
-                            {item.title}
-                          </h3>
-                          <p className="text-sm text-slate-500 leading-relaxed">
-                            {item.desc}
-                          </p>
+                    if (isAllowed) {
+                      return (
+                        <Link
+                          to={item.to}
+                          key={item.key}
+                          className="group bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-lg hover:border-blue-300 hover:-translate-y-1 transition-all duration-200 flex flex-col items-center text-center justify-between h-[160px]"
+                        >
+                          <div className={`h-11 w-11 shrink-0 rounded-lg ${item.bg} flex items-center justify-center group-hover:scale-110 transition-transform`}>
+                            <Icon className={`h-6 w-6 ${item.color}`} />
+                          </div>
+
+                          <div className="w-full px-1 flex flex-col items-center gap-1">
+                            <h3 className="text-sm font-bold text-slate-800 group-hover:text-blue-600 transition-colors line-clamp-1" title={item.title}>
+                              {item.title}
+                            </h3>
+                            <p className="text-xs text-slate-500 leading-relaxed line-clamp-2 h-[2.5em]" title={item.desc}>
+                              {item.desc}
+                            </p>
+                          </div>
+                        </Link>
+                      );
+                    } else {
+                      // Restricted Item
+                      return (
+                        <div
+                          key={item.key}
+                          onClick={() => toast.info("Debe solicitar acceso al área de sistemas")}
+                          className="bg-slate-50 rounded-xl p-4 border border-slate-200 flex flex-col items-center text-center justify-between h-[160px] cursor-not-allowed opacity-60 grayscale transition-all"
+                        >
+                          <div className="h-11 w-11 shrink-0 rounded-lg bg-slate-200 flex items-center justify-center">
+                            <Icon className="h-6 w-6 text-slate-400" />
+                          </div>
+
+                          <div className="w-full px-1 flex flex-col items-center gap-1">
+                            <h3 className="text-sm font-bold text-slate-500 line-clamp-1" title={item.title}>
+                              {item.title}
+                            </h3>
+                            <p className="text-xs text-slate-400 leading-relaxed line-clamp-2 h-[2.5em]" title={item.desc}>
+                              {item.desc}
+                            </p>
+                          </div>
                         </div>
-                      </Link>
-                    );
+                      );
+                    }
                   })}
                 </div>
               </div>

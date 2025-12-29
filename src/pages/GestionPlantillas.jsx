@@ -94,7 +94,7 @@ export default function GestionPlantillasPage() {
   // Alcance: "area" | "sector" (o vacío para todos)
   const [scopeType, setScopeType] = useState("");
   const [scopeId, setScopeId] = useState("");
-  const [tipoFiltro, setTipoFiltro] = useState("todos"); // todos | activas
+  const [tipoFiltro, setTipoFiltro] = useState("activas"); // activas | inactivas | todos
   // dentro del componente
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -615,6 +615,8 @@ export default function GestionPlantillasPage() {
     try {
       await api(`/templates/${tpl._id}`, { method: "DELETE" });
       removeLocal(tpl._id);
+
+      toast.success(`${tpl.tipo === 'objetivo' ? 'Objetivo' : 'Plantilla'} eliminado correctamente`);
 
       setRefreshKey((k) => k + 1);
       reload();

@@ -199,9 +199,9 @@ export default function FormularioEmpleado({
   }, [sectores, areaId]);
 
   // reset de sector si cambia el área
-  useEffect(() => {
-    setSectorId(""); // ⬅ resetea siempre para evitar “desincronización”
-  }, [areaId]);
+  // useEffect(() => {
+  //   setSectorId(""); // ⬅ resetea siempre para evitar “desincronización”
+  // }, [areaId]);
 
   // ---------- Validación ----------
   const validate = () => {
@@ -555,7 +555,7 @@ export default function FormularioEmpleado({
             <option value="@gmail.com">@gmail.com</option>
             <option value="@hotmail.com">@hotmail.com</option>
           </select>
-          
+
         </div>
         {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
       </div>
@@ -568,7 +568,10 @@ export default function FormularioEmpleado({
             ref={refs.areaId}
             className={inputCls(!!errors.areaId)}
             value={areaId}
-            onChange={(e) => setAreaId(e.target.value)}
+            onChange={(e) => {
+              setAreaId(e.target.value);
+              setSectorId(""); // ⬅ Reseteamos manualmente al cambiar área
+            }}
             required
             aria-invalid={!!errors.areaId}
           >
