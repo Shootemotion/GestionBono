@@ -27,7 +27,7 @@ const BonoConfigSchema = new mongoose.Schema(
         // Bono Target: Multiplicador del sueldo (ej: 1.0 = 1 sueldo, 1.5 = 1.5 sueldos)
         // Esto se usa como base antes de aplicar el % de desempeño.
         // Si el desempeño es 100%, cobra bonoTarget * Sueldo.
-        bonoTarget: { type: Number, default: 1.0 },
+        bonoTarget: { type: Number, default: 0 },
 
         fechas: {
             calculo: { type: Date },

@@ -139,6 +139,28 @@ export default function ResultadosBono() {
                     </div>
                 </div>
 
+                {/* --- LEGEND --- */}
+                <div className="flex flex-wrap gap-4 text-xs items-center bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm w-fit mb-4">
+                    <span className="font-bold text-slate-400 uppercase tracking-widest mr-2">Referencias:</span>
+                    <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                        <span className="text-slate-600 font-medium">Alcanza Objetivo (Score &ge; Umbral)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-rose-500"></div>
+                        <span className="text-slate-600 font-medium">No Alcanza (Score &lt; Umbral)</span>
+                    </div>
+                    <div className="w-px h-4 bg-slate-200 mx-2"></div>
+                    <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-slate-200 text-amber-600 bg-amber-50">Preliminar</Badge>
+                        <span className="text-slate-400">Calculado hoy</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-slate-200 text-emerald-600 bg-emerald-50">Final</Badge>
+                        <span className="text-slate-400">Cerrado</span>
+                    </div>
+                </div>
+
                 {/* --- Content Grid --- */}
                 {loading ? (
                     <div className="flex flex-col items-center justify-center py-32 opacity-50 space-y-4">
@@ -183,113 +205,126 @@ export default function ResultadosBono() {
                                                 <div className="grid grid-cols-1 gap-4">
                                                     {employees.map(emp => {
                                                         const globalScore = Math.round(emp.resultado?.total || 0);
-                                                        const scoreColor = globalScore >= 80 ? "text-emerald-500" : globalScore >= 50 ? "text-amber-500" : "text-rose-500";
+                                                        // Dynamic Color Logic based on Threshold (Umbral)
+                                                        const umbral = emp.bonusConfig?.umbral || 0;
+                                                        const meetsThreshold = globalScore >= umbral;
+                                                        const scoreColor = meetsThreshold ? "text-emerald-500" : "text-rose-500";
+                                                        const stripColor = meetsThreshold ? 'bg-emerald-400' : 'bg-rose-400';
+                                                        const badgeColor = meetsThreshold ? 'bg-emerald-500' : 'bg-rose-500';
+
                                                         const isPrelim = emp.estado === "calculado";
 
                                                         return (
-                                                            <div key={emp._id} className="group bg-white rounded-2xl p-5 border border-slate-100 shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] hover:border-blue-100 transition-all duration-300 flex flex-col md:flex-row gap-6 relative overflow-hidden">
+                                                            <div key={emp._id} className="group bg-white rounded-2xl p-0 border border-slate-100 shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] hover:border-blue-100 transition-all duration-300 relative overflow-hidden">
 
                                                                 {/* Status Stripe */}
-                                                                <div className={`absolute top-0 left-0 w-1.5 h-full ${globalScore >= 50 ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                                                                <div className={`absolute top-0 left-0 w-1.5 h-full z-10 ${stripColor}`} />
 
-                                                                {/* 1. Bio Section */}
-                                                                <div className="flex items-center gap-4 min-w-[240px]">
-                                                                    <div className="relative">
-                                                                        <div className="w-16 h-16 rounded-2xl bg-slate-100 overflow-hidden shadow-inner ring-4 ring-white">
-                                                                            {emp.empleado?.fotoUrl ? (
-                                                                                <img src={emp.empleado.fotoUrl} alt="" className="w-full h-full object-cover" />
-                                                                            ) : (
-                                                                                <div className="w-full h-full flex items-center justify-center text-slate-300">
-                                                                                    <UserCircle2 size={32} />
-                                                                                </div>
-                                                                            )}
+                                                                {/* GRID LAYOUT: Strict alignment */}
+                                                                <div className="grid grid-cols-1 md:grid-cols-[3fr_3fr_2fr_2fr] lg:grid-cols-[280px_1fr_200px_220px] items-stretch">
+
+                                                                    {/* 1. Bio Section */}
+                                                                    <div className="p-5 pl-7 flex items-center gap-4 relative">
+                                                                        <div className="relative shrink-0">
+                                                                            <div className="w-14 h-14 rounded-2xl bg-slate-100 overflow-hidden shadow-inner ring-4 ring-white">
+                                                                                {emp.empleado?.fotoUrl ? (
+                                                                                    <img src={emp.empleado.fotoUrl} alt="" className="w-full h-full object-cover" />
+                                                                                ) : (
+                                                                                    <div className="w-full h-full flex items-center justify-center text-slate-300">
+                                                                                        <UserCircle2 size={28} />
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                            <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center ${badgeColor}`}>
+                                                                                {meetsThreshold ? <Award size={10} className="text-white" /> : <ChevronDown size={12} className="text-white" />}
+                                                                            </div>
                                                                         </div>
-                                                                        <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center ${globalScore >= 50 ? 'bg-emerald-500' : 'bg-rose-500'}`}>
-                                                                            {globalScore >= 50 ? <Award size={10} className="text-white" /> : <ChevronDown size={12} className="text-white" />}
+                                                                        <div className="min-w-0">
+                                                                            <h3 className="font-bold text-slate-800 text-lg leading-tight group-hover:text-blue-600 transition-colors truncate">
+                                                                                {emp.empleado?.nombre} {emp.empleado?.apellido}
+                                                                            </h3>
+                                                                            <p className="text-sm text-slate-500 font-medium truncate">{emp.snapshot?.puesto}</p>
+                                                                            <div className="flex items-center gap-2 mt-1">
+                                                                                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-5 border-slate-200 ${isPrelim ? 'text-amber-600 bg-amber-50' : 'text-emerald-600 bg-emerald-50'}`}>
+                                                                                    {isPrelim ? "Preliminar" : "Final"}
+                                                                                </Badge>
+                                                                            </div>
                                                                         </div>
                                                                     </div>
-                                                                    <div>
-                                                                        <h3 className="font-bold text-slate-800 text-lg leading-tight group-hover:text-blue-600 transition-colors">
-                                                                            {emp.empleado?.nombre} {emp.empleado?.apellido}
-                                                                        </h3>
-                                                                        <p className="text-sm text-slate-500 font-medium">{emp.snapshot?.puesto}</p>
-                                                                        <div className="flex items-center gap-2 mt-1">
-                                                                            <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-5 border-slate-200 ${isPrelim ? 'text-amber-600 bg-amber-50' : 'text-emerald-600 bg-emerald-50'}`}>
-                                                                                {isPrelim ? "Preliminar" : "Final"}
-                                                                            </Badge>
+
+                                                                    {/* 2. Performance Metrics */}
+                                                                    <div className="p-5 flex items-center gap-5 border-t md:border-t-0 md:border-l border-slate-100 border-dashed bg-slate-50/30">
+                                                                        <div className="shrink-0">
+                                                                            <CircularScore score={globalScore} size={64} strokeWidth={6} color={scoreColor} />
+                                                                        </div>
+                                                                        <div className="space-y-2 flex-1 min-w-0">
+                                                                            <div className="flex justify-between items-center text-xs">
+                                                                                <span className="text-slate-500 font-medium flex items-center gap-1"><TargetIcon className="w-3 h-3" /> Obj.</span>
+                                                                                <span className="font-bold text-slate-700">{Math.round(emp.resultado?.objetivos || 0)}%</span>
+                                                                            </div>
+                                                                            <div className="w-full h-1 bg-slate-200 rounded-full overflow-hidden">
+                                                                                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${emp.resultado?.objetivos || 0}%` }} />
+                                                                            </div>
+
+                                                                            <div className="flex justify-between items-center text-xs pt-1">
+                                                                                <span className="text-slate-500 font-medium flex items-center gap-1"><StarIcon className="w-3 h-3" /> Comp.</span>
+                                                                                <span className="font-bold text-slate-700">{Math.round(emp.resultado?.competencias || 0)}%</span>
+                                                                            </div>
+                                                                            <div className="w-full h-1 bg-slate-200 rounded-full overflow-hidden">
+                                                                                <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${emp.resultado?.competencias || 0}%` }} />
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* 3. Configuration */}
+                                                                    <div className="p-5 flex flex-col justify-center gap-2 border-t md:border-t-0 md:border-l border-slate-100 border-dashed">
+                                                                        <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Configuración</span>
+
+                                                                        <div className="flex items-center gap-2 text-slate-700 font-medium text-xs truncate">
+                                                                            <Wallet size={14} className="text-blue-500 shrink-0" />
+                                                                            <span>Target: {emp.bonusConfig?.target || 0} Sueldos</span>
+                                                                        </div>
+
+                                                                        <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-slate-500">
+                                                                            <div className="flex items-center gap-1 truncate" title="Umbral Mínimo">
+                                                                                <div className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" />
+                                                                                <span>Umb: {emp.bonusConfig?.umbral}%</span>
+                                                                            </div>
+                                                                            <div className="flex items-center gap-1 truncate" title="Pago Mínimo">
+                                                                                <div className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" />
+                                                                                <span>Min: {emp.bonusConfig?.min}%</span>
+                                                                            </div>
+                                                                            <div className="flex items-center gap-1 col-span-2 truncate" title="Tope Máximo">
+                                                                                <div className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" />
+                                                                                <span>Max: {emp.bonusConfig?.max}%</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+
+
+
+                                                                    {/* 4. Financial Receipt */}
+                                                                    <div className="p-5 bg-slate-50/80 border-t md:border-t-0 md:border-l border-slate-200/60 backdrop-blur-sm flex flex-col justify-center">
+                                                                        <div className="flex justify-between items-center text-xs text-slate-400 mb-1">
+                                                                            <span>Sueldo Base</span>
+                                                                            <span>{formatCurrency(emp.bonoBase)}</span>
+                                                                        </div>
+                                                                        <div className="flex justify-between items-center text-xs text-slate-500 font-semibold mb-2">
+                                                                            <span>Multiplicador</span>
+                                                                            <span className={scoreColor}>x {emp.bonoBase ? Math.round((emp.bonoFinal / emp.bonoBase) * 100) : 0}%</span>
+                                                                        </div>
+                                                                        <div className="h-px bg-slate-200 mb-2" />
+
+                                                                        <div className="flex flex-col items-end">
+                                                                            <span className="text-[10px] font-bold uppercase text-slate-400">Total a Pagar</span>
+                                                                            <span className="text-2xl font-black text-slate-800 tracking-tight">
+                                                                                {formatCurrency(emp.bonoFinal)}
+                                                                            </span>
                                                                         </div>
                                                                     </div>
                                                                 </div>
-
-                                                                {/* 2. Performance Metrics */}
-                                                                <div className="flex-1 flex items-center gap-6 border-l border-slate-100 pl-6 border-dashed">
-                                                                    {/* Gauge */}
-                                                                    <CircularScore score={globalScore} color={scoreColor} />
-
-                                                                    {/* Details */}
-                                                                    <div className="space-y-2 flex-1 min-w-[120px]">
-                                                                        <div className="flex justify-between items-center text-sm">
-                                                                            <span className="text-slate-500 font-medium flex items-center gap-1"><TargetIcon className="w-3 h-3" /> Obj.</span>
-                                                                            <span className="font-bold text-slate-700">{Math.round(emp.resultado?.objetivos || 0)}%</span>
-                                                                        </div>
-                                                                        <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
-                                                                            <div className="h-full bg-blue-500 rounded-full" style={{ width: `${emp.resultado?.objetivos || 0}%` }} />
-                                                                        </div>
-
-                                                                        <div className="flex justify-between items-center text-sm mt-3">
-                                                                            <span className="text-slate-500 font-medium flex items-center gap-1"><StarIcon className="w-3 h-3" /> Comp.</span>
-                                                                            <span className="font-bold text-slate-700">{Math.round(emp.resultado?.competencias || 0)}%</span>
-                                                                        </div>
-                                                                        <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
-                                                                            <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${emp.resultado?.competencias || 0}%` }} />
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-
-                                                                <div className="flex flex-col justify-center gap-2 px-4 border-l border-slate-100 border-dashed min-w-[160px]">
-                                                                    <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Configuración</span>
-
-                                                                    <div className="flex items-center gap-2 text-slate-700 font-medium text-xs">
-                                                                        <Wallet size={14} className="text-blue-500" />
-                                                                        <span>Target: {emp.bonusConfig?.target || 1} Sueldos</span>
-                                                                    </div>
-
-                                                                    <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-slate-500">
-                                                                        <div className="flex items-center gap-1" title="Umbral Mínimo">
-                                                                            <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                                                                            <span>Umbral: {emp.bonusConfig?.umbral}%</span>
-                                                                        </div>
-                                                                        <div className="flex items-center gap-1" title="Pago Mínimo">
-                                                                            <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                                                                            <span>Mín: {emp.bonusConfig?.min}%</span>
-                                                                        </div>
-                                                                        <div className="flex items-center gap-1 col-span-2" title="Tope Máximo">
-                                                                            <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                                                                            <span>Máx: {emp.bonusConfig?.max}%</span>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-
-                                                                {/* 3. Financial Receipt */}
-                                                                <div className="min-w-[200px] bg-slate-50/80 rounded-xl p-4 border border-slate-200/60 backdrop-blur-sm flex flex-col justify-center relative">
-                                                                    <div className="flex justify-between items-center text-xs text-slate-400 mb-1">
-                                                                        <span>Bono Base</span>
-                                                                        <span>{formatCurrency(emp.bonoBase)}</span>
-                                                                    </div>
-                                                                    <div className="flex justify-between items-center text-xs text-slate-500 font-semibold mb-2">
-                                                                        <span>Desempeño</span>
-                                                                        <span className={scoreColor}>x {Math.round((emp.bonoFinal / (emp.bonoBase || 1)) * 100)}%</span>
-                                                                    </div>
-                                                                    <div className="h-px bg-slate-200 mb-2" />
-
-                                                                    <div className="flex flex-col items-end">
-                                                                        <span className="text-[10px] font-bold uppercase text-slate-400">Total a Pagar</span>
-                                                                        <span className="text-2xl font-black text-slate-800 tracking-tight">
-                                                                            {formatCurrency(emp.bonoFinal)}
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
-
+                                                                {/* Actions (Absolute Top Right of Card) */}
+                                                                {/* Actions (Absolute Top Right of Card) - Removed Button */}
                                                             </div>
                                                         );
                                                     })}
@@ -304,6 +339,7 @@ export default function ResultadosBono() {
                 )}
             </div>
         </div>
+
     );
 }
 

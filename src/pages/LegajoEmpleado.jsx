@@ -211,17 +211,18 @@ export default function LegajoEmpleado() {
   }, [id]);
 
   // Traer puestos si hay endpoint (no rompe si 404)
-  useEffect(() => {
-    (async () => {
-      try {
-        const p = await api(`/puestos`).catch(() => null);
-        if (Array.isArray(p) && p.length) {
-          const nombres = p.map((x) => x?.nombre).filter(Boolean);
-          if (nombres.length) setPuestos(nombres);
-        }
-      } catch {/* noop */ }
-    })();
-  }, []);
+  // Comentado para evitar errores 404 en consola
+  // useEffect(() => {
+  //   (async () => {
+  //     try {
+  //       const p = await api(`/puestos`).catch(() => null);
+  //       if (Array.isArray(p) && p.length) {
+  //         const nombres = p.map((x) => x?.nombre).filter(Boolean);
+  //         if (nombres.length) setPuestos(nombres);
+  //       }
+  //     } catch {/* noop */ }
+  //   })();
+  // }, []);
 
   // Resúmenes opcionales
   useEffect(() => {
@@ -304,6 +305,10 @@ export default function LegajoEmpleado() {
       }
       if (payload.area && payload.area._id) payload.area = payload.area._id;
       if (payload.sector && payload.sector._id) payload.sector = payload.sector._id;
+
+      // Sanitize empty strings
+      if (payload.sector === "") payload.sector = null;
+      if (payload.area === "") payload.area = null;
 
       const resp = await api(`/empleados/${id}`, { method: "PATCH", body: payload });
       const upd = resp?.empleado || resp;
@@ -829,7 +834,7 @@ export default function LegajoEmpleado() {
                       >
                         onChange={(e) => setBasicForm(s => ({ ...s, sector: e.target.value }))}
                         disabled={!isRRHH || !basicForm.area || sectoresFiltrados.length === 0}
-                      >
+
                         <option value="">
                           {!basicForm.area ? "Elegí un área primero" : (sectoresFiltrados.length ? "Seleccione un sector" : "Sin sectores")}
                         </option>
@@ -1022,7 +1027,28 @@ export default function LegajoEmpleado() {
                   <h3 className="text-sm font-semibold mb-2">Desarrollo Profesional</h3>
                   <div className="overflow-x-auto">
                     <div className="min-w-0">
-                      <CarreraTable empleadoId={id} canEdit={isRRHH} />
+                      <CarreraTable
+                        empleadoId={id}
+                        canEdit={isRRHH}
+                        areas={areas}
+                        sectores={sectores}
+                        autoOpen={searchParams.get("action") === "new-position"}
+                        initialData={{
+                          puesto: searchParams.get("puesto"),
+                          area: searchParams.get("area"),
+                          sector: searchParams.get("sector")
+                        }}
+                        onAutoOpenComplete={() => {
+                          setSearchParams(prev => {
+                            const p = new URLSearchParams(prev);
+                            p.delete("action");
+                            p.delete("puesto");
+                            p.delete("area");
+                            p.delete("sector");
+                            return p;
+                          }, { replace: true });
+                        }}
+                      />
                     </div>
                   </div>
                 </div>

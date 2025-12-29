@@ -135,6 +135,7 @@ export default function FormularioAptitudes({
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [proceso, setProceso] = useState("");
+  const [estado, setEstado] = useState("");
   const [year, setYear] = useState(initialYear || currentYear);
   const [scopeType, setScopeType] = useState(initialScopeType || "area");
   const [scopeId, setScopeId] = useState(initialScopeId || "");
@@ -221,6 +222,7 @@ export default function FormularioAptitudes({
     setNombre(d?.nombre || "");
     setDescripcion(d?.descripcion || "");
     setProceso(d?.proceso || "");
+    setEstado(d?.activo ? "Activo" : "Inactivo");
     setYear(d?.year || fallbackYear);
 
     const apiScope = d?.scopeType || initialScopeType || "area";
@@ -318,7 +320,7 @@ export default function FormularioAptitudes({
       proceso,
       frecuencia,
       pesoBase: Number(peso === "" ? 0 : peso),
-      activo: true,
+      activo: estado === "Activo",
     };
 
     if (usarFechaCierreCustom && fechaCierre) {
@@ -431,6 +433,19 @@ export default function FormularioAptitudes({
                 ))}
               </select>
               <FieldError name="proceso" />
+            </div>
+
+            <div>
+              <label className="text-xs">Estado</label>
+              <select
+                className={inputCls}
+                value={estado}
+                onChange={(e) => setEstado(e.target.value)}
+              >
+                <option value="">Selecciona un estado…</option>
+                <option value="Activo">Activo</option>
+                <option value="Inactivo">Inactivo</option>
+              </select>
             </div>
 
             <div className="grid grid-cols-2 gap-3">

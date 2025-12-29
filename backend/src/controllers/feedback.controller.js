@@ -153,3 +153,17 @@ export const closeFeedbacksBulk = async (req, res) => {
         res.status(500).json({ message: "Error al cerrar feedbacks" });
     }
 };
+// testing
+export const deleteFeedback = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const deleted = await Feedback.findByIdAndDelete(id);
+        if (!deleted) {
+            return res.status(404).json({ message: "Feedback no encontrado" });
+        }
+        res.json({ message: "Feedback eliminado", id });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Error al eliminar feedback" });
+    }
+};

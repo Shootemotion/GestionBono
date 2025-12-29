@@ -21,7 +21,8 @@ export async function computeForEmployees(empleadoIds, anio) {
     .populate("sector")
     .lean();
 
-  const plantillas = await Plantilla.find({ year: Number(anio), activo: true }).lean();
+  // Fetch ALL templates for the year (Active & Inactive) to support "Sticky" logic
+  const plantillas = await Plantilla.find({ year: Number(anio) }).lean();
 
   // overrides
   const overridesArr = await OverrideObjetivo.find({
@@ -50,16 +51,42 @@ export async function computeForEmployees(empleadoIds, anio) {
   }).lean();
 
   return await Promise.all(
-    empleados.map(async (e) => {
+    empleados.map(async (e, idx) => {
       const empIdStr = String(e._id);
       const areaIdStr = e.area ? String(e.area._id ?? e.area) : null;
       const sectorIdStr = e.sector ? String(e.sector._id ?? e.sector) : null;
 
+      // Check if Referente
+      const isAreaReferent = e.area?.referentes?.some(r => String(r) === empIdStr);
+      const isSectorReferent = e.sector?.referentes?.some(r => String(r) === empIdStr);
+
       const aplicables = plantillas.filter((p) => {
+        const tplIdStr = String(p._id);
+
+        // 1. Sticky Logic: If employee has evaluations for this template, KEEP IT (History)
+        const hasHistory = evals.some(ev =>
+          String(ev.empleado) === empIdStr && String(ev.plantillaId) === tplIdStr
+        );
+        if (hasHistory) return true;
+
+        // 2. If not sticky, it MUST be Active
+        if (!p.activo) return false;
+
+        // 3. Standard Scope Matching
         if (!p.scopeType || !p.scopeId) return false;
         const scopeIdStr = String(p.scopeId);
-        if (p.scopeType === "area" && areaIdStr && scopeIdStr === areaIdStr) return true;
-        if (p.scopeType === "sector" && sectorIdStr && scopeIdStr === sectorIdStr) return true;
+
+        // Exclude inheritance if Referente
+        if (p.scopeType === "area") {
+          if (isAreaReferent) return false; // Don't inherit area goals
+          if (areaIdStr && scopeIdStr === areaIdStr) return true;
+        }
+
+        if (p.scopeType === "sector") {
+          if (isSectorReferent) return false; // Don't inherit sector goals
+          if (sectorIdStr && scopeIdStr === sectorIdStr) return true;
+        }
+
         if (p.scopeType === "empleado" && scopeIdStr === empIdStr) return true;
         return false;
       });
@@ -102,6 +129,11 @@ export async function computeForEmployees(empleadoIds, anio) {
                 nombre: m.nombre || m.descripcion || "Meta",
                 esperado: m.esperado ?? m.target ?? null,
                 unidad: m.unidad ?? "",
+                reglaCierre: m.reglaCierre || "promedio",
+                umbralPeriodos: m.umbralPeriodos || 0,
+                permiteOver: m.permiteOver || false,
+                modoAcumulacion: m.modoAcumulacion || (m.acumulativa ? "acumulativo" : "periodo"),
+                reconoceEsfuerzo: m.reconoceEsfuerzo || false,
                 resultado: evaluada?.resultado ?? null,
                 cumple: evaluada?.cumple ?? false,
               };
@@ -130,6 +162,8 @@ export async function computeForEmployees(empleadoIds, anio) {
             _id: p._id,
             nombre: p.nombre,
             descripcion: p.descripcion || "",
+            frecuencia: p.frecuencia,
+            proceso: p.proceso,
             metodo: p.metodo,
             target: p.target,
             unidad: p.unidad,
@@ -305,12 +339,17 @@ export async function dashByArea(req, res) {
       return res.status(403).json({ message: "No autorizado para esta área" });
     }
 
+    // 🔹 Exclude Referentes from the list (Prevent self-evaluation in team view)
+    const areaDoc = await Area.findById(areaId, "referentes").lean();
+    const referentesIds = areaDoc?.referentes || [];
+
     const sectores = await Sector.find({ areaId: asObjectId(areaId) }, "_id").lean();
     const sectorIds = sectores.map((s) => s._id);
 
     const empleadosDocs = await Empleado.find(
       {
         $or: [{ area: asObjectId(areaId) }, { sector: { $in: sectorIds } }],
+        _id: { $nin: referentesIds } // Exclude referentes
       },
       { _id: 1 }
     ).lean();
@@ -342,8 +381,14 @@ export const dashBySector = async (req, res) => {
 
     }
 
+    const sectorDoc = await Sector.findById(sectorId, "referentes").lean();
+    const referentesIds = sectorDoc?.referentes || [];
+
     const empleadosDocs = await Empleado.find(
-      { sector: asObjectId(sectorId) },
+      {
+        sector: asObjectId(sectorId),
+        _id: { $nin: referentesIds } // Exclude referentes
+      },
       { _id: 1 }
     ).lean();
 
@@ -360,7 +405,7 @@ export const dashBySector = async (req, res) => {
 export const dashByEmpleado = async (req, res, next) => {
   try {
     const { empleadoId } = req.params;
-    const year = Number(req.params.year || req.query.year || new Date().getFullYear());
+    const year = Number(req.params.year || req.query.anio || req.query.year || new Date().getFullYear());
 
     const empleado = await Empleado.findById(empleadoId)
       .populate("area")
@@ -374,16 +419,10 @@ export const dashByEmpleado = async (req, res, next) => {
     const areaId = empleado.area ? (empleado.area._id ?? empleado.area) : null;
     const sectorId = empleado.sector ? (empleado.sector._id ?? empleado.sector) : null;
 
-    // 🔹 Traer plantillas del año para: área, sector y empleado
-    const or = [];
-    if (areaId) or.push({ scopeType: "area", scopeId: areaId });
-    if (sectorId) or.push({ scopeType: "sector", scopeId: sectorId });
-    or.push({ scopeType: "empleado", scopeId: empleado._id });
-
+    // 🔹 Traer TODAS las plantillas del año (Active & Inactive) para filtrar en memoria con Sticky Logic
     const plantillas = await Plantilla.find({
       year: year,
-      activo: true,
-      $or: or
+      // Removemos filtro estricto de scope/activo aquí, filtramos abajo
     }).lean();
 
     // 🔹 Overrides del empleado para ese año
@@ -406,6 +445,11 @@ export const dashByEmpleado = async (req, res, next) => {
     }).lean();
 
     const empIdStr = String(empleado._id);
+
+    // 🔹 Check Referent Status
+    const isAreaReferent = empleado.area?.referentes?.some((r) => String(r) === empIdStr);
+    const isSectorReferent = empleado.sector?.referentes?.some((r) => String(r) === empIdStr);
+
     const objetivosArr = [];
     const aptitudesArr = [];
     let sumPesoObj = 0, weightedProgressSum = 0;
@@ -413,6 +457,30 @@ export const dashByEmpleado = async (req, res, next) => {
 
     for (const p of plantillas) {
       const tplIdStr = String(p._id);
+
+      // --- LOGIC: Sticky vs Scope vs Active ---
+      // 1. Sticky: Has evaluations?
+      const hasHistory = evals.some(ev => String(ev.plantillaId) === tplIdStr);
+
+      // 2. If NOT sticky, apply strict filters
+      if (!hasHistory) {
+        if (!p.activo) continue; // Must be active
+
+        // Scope Matching
+        let matchesScope = false;
+        if (p.scopeType === "empleado" && String(p.scopeId) === String(empleado._id)) matchesScope = true;
+        else if (p.scopeType === "area" && areaId && String(p.scopeId) === String(areaId)) matchesScope = true;
+        else if (p.scopeType === "sector" && sectorId && String(p.scopeId) === String(sectorId)) matchesScope = true;
+
+        if (!matchesScope) continue;
+
+        // Referente Exclusion (only if inheriting via scope)
+        if (p.scopeType === "area" && isAreaReferent) continue;
+        if (p.scopeType === "sector" && isSectorReferent) continue;
+      }
+      // If Sticky (hasHistory), we SKIP scope/active checks and INCLUDE it.
+      // ----------------------------------------
+
       const ov = ovByTpl.get(tplIdStr);
       if (ov?.excluido) continue;
 
@@ -594,6 +662,8 @@ export const getExecutiveData = async (req, res, next) => {
         id: a._id,
         nombre: a.nombre,
         referentes: a.referentes || [],
+        // Create a Set of Referente IDs for easy lookup (filtering them out from metrics)
+        referentesSet: new Set((a.referentes || []).map(r => String(r._id || r))),
         employees: [],
         totalBudget: 0,
         totalScoreSum: 0,
@@ -618,6 +688,8 @@ export const getExecutiveData = async (req, res, next) => {
     let globalEvaluated = 0;
     let globalApproved = 0;
     let globalBudget = 0;
+    let globalAgreement = 0;
+    let globalDisagreement = 0;
     const globalPerformers = [];
 
     // Temporary budget by sector tracker
@@ -628,12 +700,26 @@ export const getExecutiveData = async (req, res, next) => {
       const { scoreFinal, empleado, feedbacks } = item;
       const sueldo = empleado.sueldoBase?.monto || 0;
       const estimatedBonus = (sueldo * (scoreFinal || 0)) / 100;
-      const f = feedbacks[0]; // Latest
+
+      // Identify Feedbacks
+      const closingF = feedbacks.find(f => f.periodo === 'FINAL' && f.estado !== 'DRAFT');
+      const prelimF = feedbacks
+        .filter(f => f.periodo !== 'FINAL' && f.estado !== 'DRAFT')
+        .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))[0]; // Latest prelim
+
+      const scoreClosing = closingF?.scores?.global ?? null;
+      const scorePrelim = prelimF?.scores?.global ?? null;
+
+      // Flags
+      const hasDisagreement = closingF?.empleadoAck?.estado === "CONTEST" || prelimF?.empleadoAck?.estado === "CONTEST";
+      const hasAgreement = [closingF, prelimF].some(f => ["ACK", "CONFIRMADO", "SIGNED"].includes(f?.empleadoAck?.estado));
 
       // Global Stats
       globalBudget += estimatedBonus;
       if (scoreFinal > 0) globalEvaluated++;
       if (scoreFinal >= 70) globalApproved++;
+      if (hasDisagreement) globalDisagreement++;
+      if (hasAgreement) globalAgreement++;
 
       // Sector Budget
       const sectName = empleado.sector?.nombre || "Sin Sector";
@@ -645,11 +731,14 @@ export const getExecutiveData = async (req, res, next) => {
         id: empleado._id,
         nombre: `${empleado.nombre} ${empleado.apellido}`,
         foto: empleado.fotoUrl,
+        puesto: empleado.puesto, // Added
         area: empleado.area?.nombre,
         sector: empleado.sector?.nombre,
         score: scoreFinal || 0,
-        disagreement: f?.empleadoAck?.estado === "CONTEST",
-        feedbackStatus: f?.estado || "PENDING"
+        scoreClosing,
+        scorePrelim,
+        disagreement: hasDisagreement,
+        feedbackStatus: (closingF || prelimF)?.estado || "PENDING"
       };
       globalPerformers.push(pObj);
 
@@ -658,6 +747,13 @@ export const getExecutiveData = async (req, res, next) => {
         const aId = String(empleado.area._id);
         if (areaMap.has(aId)) {
           const group = areaMap.get(aId);
+
+          // 🔹 EXCLUDE SCOPE REFERENTS from the aggregated list
+          // Bosses shouldn't dilute the team's average or appear as "Critical Cases" within their own team view
+          if (group.referentesSet.has(String(empleado._id))) {
+            continue;
+          }
+
           group.employees.push(pObj);
           group.totalBudget += estimatedBonus;
           if (scoreFinal > 0) {
@@ -666,9 +762,8 @@ export const getExecutiveData = async (req, res, next) => {
           }
           if (scoreFinal >= 70) group.countApproved++;
 
-          if (f?.empleadoAck?.estado === "CONTEST") group.countDisagreement++;
-          // Using strict check to avoid confusion.
-          if (["ACK", "CONFIRMADO", "SIGNED"].includes(f?.empleadoAck?.estado)) group.countAgreement++;
+          if (hasDisagreement) group.countDisagreement++;
+          if (hasAgreement) group.countAgreement++;
         }
       }
     }
@@ -685,6 +780,9 @@ export const getExecutiveData = async (req, res, next) => {
 
       const countPending = Math.max(0, headcount - group.countEvaluated);
       const pendingPct = Math.round((countPending / headcount) * 100);
+
+      // Full list sorted by name for "View All"
+      const allEmps = [...group.employees].sort((a, b) => a.nombre.localeCompare(b.nombre));
 
       // Top 5 Area
       const top5 = [...group.employees].sort((a, b) => b.score - a.score).slice(0, 5);
@@ -708,6 +806,7 @@ export const getExecutiveData = async (req, res, next) => {
         countDisagreement: group.countDisagreement,
         countAgreement: group.countAgreement,
         totalBudget: Math.round(group.totalBudget),
+        employees: allEmps, // Full list included
         topPerformers: top5,
         criticalCases: critical
       });
@@ -735,16 +834,17 @@ export const getExecutiveData = async (req, res, next) => {
         evaluatedPct: globalHeadcount ? Math.round((globalEvaluated / globalHeadcount) * 100) : 0,
         averageScore: globalEvaluated ? Math.round(globalPerformers.reduce((a, b) => a + b.score, 0) / globalEvaluated) : 0,
         totalBudgetEstimated: Math.round(globalBudget),
-        approvedPct: globalEvaluated ? Math.round((globalApproved / globalEvaluated) * 100) : 0
+        approvedPct: globalEvaluated ? Math.round((globalApproved / globalEvaluated) * 100) : 0,
+        // Added metrics
+        agreementCount: globalAgreement,
+        disagreementCount: globalDisagreement
       },
       charts: {
         budgetBySector: topSectorsBudget,
       },
-      lists: {
-        topPerformers: globalTop,
-        criticalCases: globalCritical
-      },
-      areas: areasResult // New field
+      areas: areasResult, // New field
+      globalTop,
+      globalCritical
     });
 
   } catch (e) {

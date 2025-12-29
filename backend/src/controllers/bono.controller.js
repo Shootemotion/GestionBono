@@ -38,6 +38,7 @@ export const saveConfig = async (req, res, next) => {
 export const calculateAll = async (req, res, next) => {
     try {
         const { year } = req.params;
+        const { targetId, type } = req.query; // Support targeted recalc
         const anio = Number(year);
 
         // 1. Get Config
@@ -45,11 +46,20 @@ export const calculateAll = async (req, res, next) => {
         if (!config) return res.status(400).json({ message: "No hay configuración para este año." });
 
         // 2. Get Active Employees
-        const empleados = await Empleado.find({
-            // Podríamos filtrar por fecha de ingreso o estado activo si tuviéramos campo 'activo'
-        }).populate("area").populate("sector");
+        const filter = {};
+        // If targetId is provided, filter query
+        if (targetId) {
+            if (type === 'empleado') {
+                filter._id = targetId;
+            } else if (type === 'area') {
+                filter.area = targetId;
+            }
+        }
+
+        const empleados = await Empleado.find(filter).populate("area").populate("sector");
 
         const results = [];
+        const debugs = []; // Store simplified debug info for response
 
         for (const emp of empleados) {
             // 3. Get FINAL Feedback
@@ -61,7 +71,10 @@ export const calculateAll = async (req, res, next) => {
             });
 
             // Si no hay feedback final, no calculamos (o calculamos 0)
-            if (!feedback) continue;
+            if (!feedback) {
+                if (targetId) debugs.push(`${emp.apellido}: Sin Feedback FINAL`);
+                continue;
+            }
 
             // 4. Calculate Scores
             // Usamos la lógica centralizada del dashboard
@@ -74,6 +87,7 @@ export const calculateAll = async (req, res, next) => {
             // 5. Apply Rules (With Overrides)
             // Priority: Empleado > Area > Global
             let activeConfig = { ...config.toObject() }; // Default global
+            let configSource = "GLOBAL";
 
             // Check overrides
             if (config.overrides && config.overrides.length > 0) {
@@ -84,31 +98,41 @@ export const calculateAll = async (req, res, next) => {
                     activeConfig.escala = { ...activeConfig.escala, ...empOverride.escala };
                     if (empOverride.success) activeConfig.escala = empOverride.escala; // Fallback helper
                     if (empOverride.bonoTarget !== undefined) activeConfig.bonoTarget = empOverride.bonoTarget;
+                    configSource = "OVERRIDE_EMP";
                 } else {
                     // Area override?
                     const areaOverride = config.overrides.find(o => o.type === "area" && String(o.targetId) === String(emp.area?._id));
                     if (areaOverride) {
                         activeConfig.escala = { ...activeConfig.escala, ...areaOverride.escala };
                         if (areaOverride.bonoTarget !== undefined) activeConfig.bonoTarget = areaOverride.bonoTarget;
+                        configSource = "OVERRIDE_AREA";
                     }
                 }
             }
 
             const globalScore = metrics?.scoreFinal || 0;
 
+            console.log(`[DEBUG_BONO_CALC] Emp: ${emp.nombre} ${emp.apellido}, Global: ${globalScore}, Source: ${configSource}, Umbral: ${activeConfig.escala.umbral}`);
+
             let bonoPct = 0;
+            let calcMeta = "";
+
             if (activeConfig.escala.tipo === "lineal") {
-                bonoPct = bonoLineal({
+                const lin = bonoLineal({
                     global: globalScore,
                     minPct: activeConfig.escala.minPct,
                     maxPct: activeConfig.escala.maxPct,
                     umbral: activeConfig.escala.umbral
-                }).pct;
+                });
+                bonoPct = lin.pct;
+                calcMeta = lin.meta;
             } else {
-                bonoPct = bonoTramos({
+                const tr = bonoTramos({
                     global: globalScore,
                     tramos: activeConfig.escala.tramos
-                }).pct;
+                });
+                bonoPct = tr.pct;
+                calcMeta = "tramos";
             }
 
             // Re-assign used target for calculation
@@ -117,8 +141,13 @@ export const calculateAll = async (req, res, next) => {
             // 6. Calculate Amount
             // Bono Base = Sueldo * BonoTarget (ej: 1.5 sueldos)
             const sueldo = emp.sueldoBase?.monto || 0;
-            const bonoBase = sueldo * (activeConfig.bonoTarget || 1);
+            const bonoBase = sueldo * (activeConfig.bonoTarget || 0);
             const bonoFinal = bonoBase * bonoPct; // % del bono target ganado según desempeño
+
+            // Determine debugging info
+            if (targetId) {
+                debugs.push(`${emp.apellido}: Score=${globalScore} -> BonoPct=${bonoPct} (${calcMeta}) [Cfg: ${configSource}]`);
+            }
 
             // 7. Save BonoAnual
             const bono = await BonoAnual.findOneAndUpdate(
@@ -127,15 +156,22 @@ export const calculateAll = async (req, res, next) => {
                     estado: "borrador",
                     snapshot: {
                         puesto: emp.puesto,
-                        fechaCierre: feedback.updatedAt
-                    }
+                        fechaCierre: feedback.updatedAt,
+                        areaNombre: emp.area?.nombre
+                    },
+                    bonoBase,
+                    bonoFinal
                 },
                 { new: true, upsert: true }
             );
             results.push(bono);
         }
 
-        res.json({ count: results.length, message: "Cálculo finalizado" });
+        res.json({
+            count: results.length,
+            message: "Cálculo finalizado",
+            debugs: debugs.slice(0, 10) // Return first 10 logs if targeted
+        });
     } catch (err) {
         next(err);
     }
@@ -208,7 +244,7 @@ export const getResults = async (req, res, next) => {
             // Calculate Amounts
             // Calculate Amounts
             const sueldo = emp.sueldoBase?.monto || 0;
-            const bonoBase = sueldo * (activeConfig.bonoTarget || 1);
+            const bonoBase = sueldo * (activeConfig.bonoTarget || 0);
             const bonoFinal = bonoBase * bonoPct;
 
             // Get Feedback Comment (Defensive & Correct field)
@@ -245,7 +281,7 @@ export const getResults = async (req, res, next) => {
                 bonoBase,
                 bonoFinal,
                 bonusConfig: {
-                    target: activeConfig.bonoTarget || 1,
+                    target: activeConfig.bonoTarget || 0,
                     type: activeConfig.escala?.tipo || "N/A",
                     umbral: activeConfig.escala?.umbral || 0,
                     min: activeConfig.escala?.minPct || 0,

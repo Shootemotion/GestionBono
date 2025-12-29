@@ -230,6 +230,10 @@ function GestionEstructura() {
     try {
       const { foto, ...resto } = nuevosDatos;
 
+      // Sanitize empty strings for ObjectIds
+      if (resto.sector === "") resto.sector = null;
+      if (resto.area === "") resto.area = null;
+
       // 1) Crear/editar empleado (sin foto)
       const empleadoGuardado = await api(path, {
         method: isEdit ? "PATCH" : "POST",
@@ -349,8 +353,8 @@ function GestionEstructura() {
               <div className="p-3 border-b border-slate-100 bg-slate-50/50">
                 <button
                   className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${filtro.tipo === "todos"
-                      ? "bg-blue-600 text-white shadow-md shadow-blue-200"
-                      : "text-slate-600 hover:bg-white hover:text-blue-600 border border-transparent hover:border-slate-200"
+                    ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                    : "text-slate-600 hover:bg-white hover:text-blue-600 border border-transparent hover:border-slate-200"
                     }`}
                   onClick={() => setFiltro({ tipo: "todos", id: null, nombre: "Todos" })}
                 >
@@ -367,8 +371,8 @@ function GestionEstructura() {
                       <div className="relative">
                         <button
                           className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-all ${isActive("area", area._id)
-                              ? "bg-blue-50 text-blue-700 font-semibold"
-                              : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                            ? "bg-blue-50 text-blue-700 font-semibold"
+                            : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                             }`}
                           onClick={() => setFiltro({ tipo: "area", id: area._id, nombre: area.nombre })}
                         >
@@ -388,8 +392,8 @@ function GestionEstructura() {
                             <li key={sector._id}>
                               <button
                                 className={`w-full text-left text-xs rounded-md px-2.5 py-1.5 transition-all flex items-center gap-2 ${isActive("sector", sector._id)
-                                    ? "bg-blue-50/50 text-blue-700 font-medium"
-                                    : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+                                  ? "bg-blue-50/50 text-blue-700 font-medium"
+                                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
                                   }`}
                                 onClick={() =>
                                   setFiltro({ tipo: "sector", id: sector._id, nombre: sector.nombre })

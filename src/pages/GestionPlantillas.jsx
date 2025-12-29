@@ -10,6 +10,8 @@ import useCan from "@/hooks/useCan";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import { XCircle } from "lucide-react";
+
 
 // helper de paginación robusto
 async function fetchAll(path, { pageSize = 200, params = {} } = {}) {
@@ -92,7 +94,7 @@ export default function GestionPlantillasPage() {
   // Alcance: "area" | "sector" (o vacío para todos)
   const [scopeType, setScopeType] = useState("");
   const [scopeId, setScopeId] = useState("");
-  const [tipoFiltro, setTipoFiltro] = useState("todos"); // todos | activas
+  const [tipoFiltro, setTipoFiltro] = useState("activas"); // activas | inactivas | todos
   // dentro del componente
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -477,7 +479,7 @@ export default function GestionPlantillasPage() {
         setAllPlantillas("loading");
         const base = {
           year,
-          ...(tipoFiltro === "activas" ? { activo: true } : {}),
+          tipoFiltro, // Backend now requires explicit 'todos' or 'inactivas' to show others
         };
         const [byArea, bySector, byEmpleado] = await Promise.all([
           api(`/templates?${qsFromObj({ ...base, scopeType: "area" })}`),
@@ -614,11 +616,48 @@ export default function GestionPlantillasPage() {
       await api(`/templates/${tpl._id}`, { method: "DELETE" });
       removeLocal(tpl._id);
 
+      toast.success(`${tpl.tipo === 'objetivo' ? 'Objetivo' : 'Plantilla'} eliminado correctamente`);
+
       setRefreshKey((k) => k + 1);
       reload();
-      // 👆 el toast de éxito lo dejás en PlantillasList si querés uno solo
     } catch {
       toast.error("No se pudo eliminar");
+    }
+  };
+
+  const handleToggleActive = async (tpl) => {
+    // Definir estado actual seguro (default true)
+    const isCurrentlyActive = tpl.activo !== false;
+    const nuevoEstado = !isCurrentlyActive;
+    const newItem = { ...tpl, activo: nuevoEstado };
+
+    try {
+      // Optimistic update en todos los estados posibles
+      if (allPlantillas && Array.isArray(allPlantillas)) {
+        setAllPlantillas(prev => prev.map(p => p._id === tpl._id ? newItem : p));
+      }
+      if (plantillasSector && Array.isArray(plantillasSector)) {
+        setPlantillasSector(prev => prev.map(p => p._id === tpl._id ? newItem : p));
+      }
+      if (plantillasByEmpRaw && Array.isArray(plantillasByEmpRaw)) {
+        setPlantillasByEmpRaw(prev => prev.map(p => p._id === tpl._id ? newItem : p));
+      }
+
+      // También actualizamos el hook
+      updateLocal(newItem);
+
+      await api(`/templates/${tpl._id}`, {
+        method: "PUT",
+        body: { activo: nuevoEstado },
+      });
+      // Comentamos para evitar duplicados si ya hay uno por ID, o usamos toastId
+      toast.success(nuevoEstado ? "Activada" : "Desactivada", { toastId: `toggle-${tpl._id}` });
+    } catch (e) {
+      console.error(e);
+      toast.error("Error al cambiar estado");
+      // Revertir: forzar recarga
+      setRefreshKey(k => k + 1);
+      reload();
     }
   };
   const clearAlcance = () => {
@@ -690,51 +729,29 @@ export default function GestionPlantillasPage() {
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6 flex-1 overflow-hidden">
           {/* Sidebar filtros: su propio scroll */}
           <aside className="space-y-3 overflow-y-auto pr-2">
-            {/* Ver todos */}
-            <div className="sticky top-0 z-30">
-              <div className="rounded-xl bg-card shadow-sm ring-1 ring-border/60 p-3">
-                <button
-                  className="w-full text-left text-sm rounded-lg px-3 py-2 border bg-background/30 border-border shadow-sm hover:bg-accent hover:text-foreground hover:shadow-md transition-all"
-                  onClick={clearAlcance}
-                  title="Ver todas las plantillas"
-                >
-                  Ver todas las plantillas
-                </button>
-              </div>
-            </div>
-
-            {/* Buscador de empleado (sidebar) */}
-            <div
-              className="rounded-xl bg-card shadow-sm ring-1 ring-border/60 p-3"
-              ref={empBoxSidebarRef}
-            >
-              <h3 className="text-sm font-semibold mb-2">
+            {/* Buscador de empleado (sidebar) - Styled to match Nomina Sidebar Card */}
+            <div className="rounded-xl bg-white shadow-sm border border-slate-200 overflow-hidden p-3 mb-4">
+              <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-1">
                 Filtro por empleado
               </h3>
               {selectedEmpleado ? (
-                <div className="flex items-center gap-2 rounded-md border px-3 py-2 bg-background">
-                  <span className="text-sm">
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2">
+                  <span className="text-sm font-medium text-slate-700 truncate">
                     {selectedEmpleado.apellido}, {selectedEmpleado.nombre}
-                    {selectedEmpleado.apodo ? (
-                      <span className="text-xs text-muted-foreground">
-                        {" "}
-                        ({selectedEmpleado.apodo})
-                      </span>
-                    ) : null}
                   </span>
                   <button
-                    className="text-xs text-blue-600 hover:underline"
+                    className="text-slate-400 hover:text-red-500 transition-colors"
                     onClick={clearAlcance}
                     title="Limpiar"
                   >
-                    ✕
+                    <XCircle className="w-4 h-4" />
                   </button>
                 </div>
               ) : (
-                <>
+                <div className="relative">
                   <input
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                    placeholder="Buscar empleado…"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 transition-all placeholder:text-slate-400"
+                    placeholder="Buscar empleado..."
                     value={empQuerySidebar}
                     onChange={(e) => {
                       setEmpQuerySidebar(e.target.value);
@@ -743,9 +760,9 @@ export default function GestionPlantillasPage() {
                     onFocus={() => setEmpOpenSidebar(true)}
                   />
                   {empOpenSidebar && (
-                    <div className="mt-1 z-20 max-h-64 w-full overflow-auto rounded-md border bg-popover text-popover-foreground shadow">
+                    <div className="absolute top-full left-0 right-0 mt-1 z-20 max-h-60 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg">
                       {empleadosFiltradosSidebar.length === 0 && (
-                        <div className="px-3 py-2 text-sm text-muted-foreground">
+                        <div className="px-3 py-2 text-xs text-slate-500">
                           Sin resultados
                         </div>
                       )}
@@ -753,71 +770,82 @@ export default function GestionPlantillasPage() {
                         <button
                           key={e._id}
                           type="button"
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 text-slate-700 transition-colors border-b border-slate-50 last:border-0"
                           onClick={() => {
                             setEmpleadoId(String(e._id));
                             setEmpOpenSidebar(false);
                             setEmpQuerySidebar("");
-                            // al filtrar por empleado, limpiamos alcances
-                            setScopeType("");
-                            setScopeId("");
+                            setScopeType("empleado"); // Ensure scope type is set!
+                            setScopeId(String(e._id));
                           }}
                         >
-                          {e.apellido}, {e.nombre}
-                          {e.apodo ? (
-                            <span className="ml-1 text-xs text-muted-foreground">
-                              ({e.apodo})
-                            </span>
-                          ) : null}
+                          <span className="font-medium">{e.apellido}</span>, {e.nombre}
                         </button>
                       ))}
                     </div>
                   )}
-                </>
+                </div>
               )}
             </div>
 
-            {/* Listado de áreas/sectores (sidebar) */}
-            <div className="rounded-xl bg-card shadow-sm ring-1 ring-border/60 p-3">
-              <ul className="space-y-2">
-                {areas.map((area) => (
-                  <li
-                    key={area._id}
-                    className="rounded-lg ring-1 ring-border/60 bg-background"
-                  >
-                    <div className="flex items-center justify-between px-3 py-2">
-                      <button
-                        className={`w-full text-left font-medium rounded-md px-2 py-1 transition-all ${isActiveScope("area", area._id)
-                          ? "bg-primary/10 text-primary"
-                          : "hover:bg-muted/60"
-                          } hover:ring-1 hover:ring-primary/20`}
-                        onClick={() => {
-                          setScopeType("area");
-                          setScopeId(area._id);
-                          setEmpleadoId("");
-                          setEmpQueryHeader("");
-                          setEmpQuerySidebar("");
-                        }}
-                        title="Filtrar por esta área"
-                      >
-                        {area.nombre}
-                      </button>
-                    </div>
+            {/* Listado de áreas/sectores (sidebar) - Nomina Style */}
+            <div className="rounded-xl bg-white shadow-sm border border-slate-200 overflow-hidden pb-2">
+              <div className="p-3 border-b border-slate-100 bg-slate-50/50">
+                <button
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${scopeType === "" && !selectedEmpleado
+                    ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                    : "text-slate-600 hover:bg-white hover:text-blue-600 border border-transparent hover:border-slate-200"
+                    }`}
+                  onClick={() => {
+                    clearAlcance();
+                    // Also ensure employee filter is cleared if it wasn't
+                    setEmpleadoId("");
+                    setEmpQuerySidebar("");
+                  }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="7" height="7" x="3" y="3" rx="1" /><rect width="7" height="7" x="14" y="3" rx="1" /><rect width="7" height="7" x="14" y="14" rx="1" /><rect width="7" height="7" x="3" y="14" rx="1" /></svg>
+                  Ver Todas
+                </button>
+              </div>
 
-                    <ul className="px-2 pb-2 space-y-1.5">
-                      {sectores
-                        .filter(
-                          (s) =>
-                            (s?.areaId?._id ?? s?.areaId) === area._id
-                        )
-                        .map((sector) => (
-                          <li key={sector._id} className="rounded-md">
-                            <div className="flex items-center justify-between gap-1">
+              <div className="px-3 pt-4 pb-2">
+                <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-2">Áreas & Dependencias</h3>
+                <ul className="space-y-1">
+                  {areas.map((area) => (
+                    <li key={area._id} className="group/area">
+                      <div className="relative">
+                        <button
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-all ${isActiveScope("area", area._id)
+                            ? "bg-blue-50 text-blue-700 font-semibold"
+                            : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                            }`}
+                          onClick={() => {
+                            setScopeType("area");
+                            setScopeId(area._id);
+                            setEmpleadoId("");
+                            setEmpQueryHeader("");
+                            setEmpQuerySidebar("");
+                          }}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            {/* Icono Area */}
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isActiveScope("area", area._id) ? "text-blue-600" : "text-slate-400"}><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" /><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" /><path d="M10 6h4" /><path d="M10 10h4" /><path d="M10 14h4" /><path d="M10 18h4" /></svg>
+                            {area.nombre}
+                          </div>
+                        </button>
+                      </div>
+
+                      {/* Sectores Nested */}
+                      <ul className="pl-9 pr-2 space-y-0.5 mt-1 border-l border-slate-100 ml-4">
+                        {sectores
+                          .filter((s) => (s?.areaId?._id ?? s?.areaId) === area._id)
+                          .map((sector) => (
+                            <li key={sector._id}>
                               <button
-                                className={`w-full text-left text-sm rounded-md px-3 py-1.5 transition-all ${isActiveScope("sector", sector._id)
-                                  ? "bg-primary/10 text-primary"
-                                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                                  } hover:ring-1 hover:ring-primary/20`}
+                                className={`w-full text-left text-xs rounded-md px-2.5 py-1.5 transition-all flex items-center gap-2 ${isActiveScope("sector", sector._id)
+                                  ? "bg-blue-50/50 text-blue-700 font-medium"
+                                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+                                  }`}
                                 onClick={() => {
                                   setScopeType("sector");
                                   setScopeId(sector._id);
@@ -825,17 +853,17 @@ export default function GestionPlantillasPage() {
                                   setEmpQueryHeader("");
                                   setEmpQuerySidebar("");
                                 }}
-                                title="Filtrar por este sector"
                               >
+                                <span className={`w-1.5 h-1.5 rounded-full ${isActiveScope("sector", sector._id) ? "bg-blue-500" : "bg-slate-300"}`}></span>
                                 {sector.nombre}
                               </button>
-                            </div>
-                          </li>
-                        ))}
-                    </ul>
-                  </li>
-                ))}
-              </ul>
+                            </li>
+                          ))}
+                      </ul>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
           </aside>
 
@@ -1036,7 +1064,11 @@ export default function GestionPlantillasPage() {
                     onEdit={openEdit}
                     onClone={openClone}
                     onDelete={handleDelete}
+                    onToggleActive={handleToggleActive}
                     permisos={permisos}
+                    areas={areas}
+                    sectores={sectores}
+                    empleados={empleados}
                   />
                 )}
               </div>
@@ -1069,7 +1101,11 @@ export default function GestionPlantillasPage() {
                     onEdit={openEdit}
                     onClone={openClone}
                     onDelete={handleDelete}
+                    onToggleActive={handleToggleActive}
                     permisos={permisos}
+                    areas={areas}
+                    sectores={sectores}
+                    empleados={empleados}
                   />
                 )}
               </div>

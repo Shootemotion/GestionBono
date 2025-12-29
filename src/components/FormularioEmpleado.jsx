@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { API_ORIGIN } from "@/lib/api";
-import { Pencil } from "lucide-react";
+import { Pencil, AlertTriangle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 /* ===================== Helpers ===================== */
 const resolveUrl = (u) => {
@@ -24,7 +25,7 @@ const fieldLabel = {
   fechaIngreso: "Fecha de ingreso",
   puesto: "Puesto",
   areaId: "Área",
-  sectorId: "Sector",
+  sectorId: "Dependencias",
   domicilio: "Domicilio",
 };
 
@@ -39,6 +40,8 @@ export default function FormularioEmpleado({
   opcionesPuesto = [],
   opcionesCategoria = ["Staff", "Profesional", "Jefatura", "Gerencia", "Dirección"],
 }) {
+  const navigate = useNavigate();
+
   // ---------- Estado de datos ----------
   const [nombre, setNombre] = useState("");
   const [apellido, setApellido] = useState("");
@@ -79,6 +82,10 @@ export default function FormularioEmpleado({
   const [editApellido, setEditApellido] = useState(isNew);
   const [editPuesto, setEditPuesto] = useState(isNew);
   const [editCategoria, setEditCategoria] = useState(isNew);
+
+  // ---------- Modal de Confirmación de Cambio ----------
+  const [showChangeModal, setShowChangeModal] = useState(false);
+  const [pendingData, setPendingData] = useState(null);
 
   // ---------- Foto / preview ----------
   const fotoExistente = useMemo(
@@ -192,9 +199,9 @@ export default function FormularioEmpleado({
   }, [sectores, areaId]);
 
   // reset de sector si cambia el área
-  useEffect(() => {
-    setSectorId(""); // ⬅ resetea siempre para evitar “desincronización”
-  }, [areaId]);
+  // useEffect(() => {
+  //   setSectorId(""); // ⬅ resetea siempre para evitar “desincronización”
+  // }, [areaId]);
 
   // ---------- Validación ----------
   const validate = () => {
@@ -216,7 +223,7 @@ export default function FormularioEmpleado({
     if (isEmpty(fechaIngreso)) next.fechaIngreso = "Seleccioná la fecha de ingreso.";
     if (isEmpty(puesto)) next.puesto = "Seleccioná el puesto.";
     if (isEmpty(areaId)) next.areaId = "Seleccioná el área.";
-    if (isEmpty(sectorId)) next.sectorId = "Seleccioná el sector.";
+    // if (isEmpty(sectorId)) next.sectorId = "Seleccioná el sector."; // Optional now
     if (isEmpty(domicilio)) next.domicilio = "Ingresá el domicilio.";
 
     setErrors(next);
@@ -242,7 +249,7 @@ export default function FormularioEmpleado({
     const issues = validate();
     if (Object.keys(issues).length) return;
 
-    onGuardar({
+    const data = {
       nombre,
       apellido,
       apodo,
@@ -259,7 +266,52 @@ export default function FormularioEmpleado({
       area: areaId,
       sector: sectorId,
       foto, // si hay archivo, el padre hará POST /:id/foto
-    });
+    };
+
+    // Detect Structural Change (Only Edit Mode)
+    if (empleadoInicial && !isNew) {
+      const oldArea = String(empleadoInicial.area?._id || empleadoInicial.area || "");
+      const oldSector = String(empleadoInicial.sector?._id || empleadoInicial.sector || "");
+
+      const newArea = String(areaId || "");
+      const newSector = String(sectorId || "");
+
+      if (oldArea !== newArea || oldSector !== newSector) {
+        setPendingData(data);
+        setShowChangeModal(true);
+        return;
+      }
+    }
+
+    onGuardar(data);
+  };
+
+  const confirmarCorreccion = () => {
+    if (pendingData) onGuardar(pendingData);
+    setShowChangeModal(false);
+  };
+
+  const confirmarCambioLaboral = () => {
+    // Redirect to Legajo with params to pre-fill "Datos Laborales" form (Carrera)
+    // We assume Legajo handles 'action=new-position'
+    const params = new URLSearchParams();
+    params.set("tab", "datos-laborales");
+    params.set("action", "new-position");
+    params.set("puesto", puesto);
+    params.set("area", areaId);
+    params.set("sector", sectorId);
+
+    // Also Close modal here (cancel edit essentially, or we could SAVE then redirect? 
+    // User wants "Change in History". If we just save here, we lose the history of the old position unless the backend handles it.
+    // The requirement is: "que lo dirija al legajo para hacer el cambio en el historial laboral".
+    // This implies we SHOULD NOT save the change here yet, but let the user do it via the Career flow.
+    // So we just redirect.
+    if (empleadoInicial?._id) {
+      navigate(`/nomina/legajo/${empleadoInicial._id}?${params.toString()}`);
+    } else {
+      // Fallback?? Should not happen in create mode
+      toast.error("Error: Acción no disponible en creación");
+    }
   };
 
   const inputCls = (hasError) =>
@@ -503,6 +555,7 @@ export default function FormularioEmpleado({
             <option value="@gmail.com">@gmail.com</option>
             <option value="@hotmail.com">@hotmail.com</option>
           </select>
+
         </div>
         {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
       </div>
@@ -515,7 +568,10 @@ export default function FormularioEmpleado({
             ref={refs.areaId}
             className={inputCls(!!errors.areaId)}
             value={areaId}
-            onChange={(e) => setAreaId(e.target.value)}
+            onChange={(e) => {
+              setAreaId(e.target.value);
+              setSectorId(""); // ⬅ Reseteamos manualmente al cambiar área
+            }}
             required
             aria-invalid={!!errors.areaId}
           >
@@ -529,18 +585,17 @@ export default function FormularioEmpleado({
           {errors.areaId && <p className="mt-1 text-xs text-red-600">{errors.areaId}</p>}
         </div>
         <div>
-          <label className="block text-sm font-medium text-muted-foreground">Sector</label>
+          <label className="block text-sm font-medium text-muted-foreground">Dependencias (Opcional)</label>
           <select
             ref={refs.sectorId}
             className={inputCls(!!errors.sectorId)}
             value={sectorId}
             onChange={(e) => setSectorId(e.target.value)}
-            required
             aria-invalid={!!errors.sectorId}
             disabled={!areaId || !sectoresDelArea.length}
           >
             <option value="">
-              {!areaId ? "Elegí un área primero" : (sectoresDelArea.length ? "Seleccione un sector" : "Sin sectores")}
+              {!areaId ? "Elegí un área primero" : "Sin Dependencia / Ninguna"}
             </option>
             {sectoresDelArea.map((s) => (
               <option key={s._id} value={s._id}>
@@ -550,6 +605,7 @@ export default function FormularioEmpleado({
           </select>
           {errors.sectorId && <p className="mt-1 text-xs text-red-600">{errors.sectorId}</p>}
         </div>
+
       </div>
 
       {/* Acciones */}
@@ -559,6 +615,39 @@ export default function FormularioEmpleado({
         </Button>
         <Button type="submit">{empleadoInicial ? "Guardar cambios" : "Guardar"}</Button>
       </div>
+
+      {/* Modal Detect Change */}
+      {showChangeModal && (
+        <div className="absolute inset-0 z-50 rounded-xl bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95 duration-200">
+          <div className="h-12 w-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mb-4 shadow-sm">
+            <AlertTriangle size={24} />
+          </div>
+          <h3 className="text-lg font-bold text-slate-900 mb-1">Detectamos un cambio de posición</h3>
+          <p className="text-sm text-slate-500 mb-6 max-w-[280px]">
+            Has modificado el Área o Sector. <br />¿Cómo te gustaría proceder?
+          </p>
+          <div className="flex flex-col gap-3 w-full max-w-[260px]">
+            <Button onClick={confirmarCorreccion} className="w-full bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 shadow-sm">
+              Es una corrección (Actualizar)
+            </Button>
+            <div className="relative flex py-1 items-center">
+              <div className="flex-grow border-t border-slate-200"></div>
+              <span className="flex-shrink-0 mx-2 text-[10px] text-slate-400 font-medium uppercase">o</span>
+              <div className="flex-grow border-t border-slate-200"></div>
+            </div>
+            <Button onClick={confirmarCambioLaboral} className="w-full bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-200">
+              Es un cambio laboral
+            </Button>
+          </div>
+          <button
+            onClick={() => setShowChangeModal(false)}
+            className="mt-6 text-xs text-slate-400 hover:text-slate-600 underline"
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
+
     </form>
   );
 }

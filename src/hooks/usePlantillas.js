@@ -11,17 +11,14 @@ export default function usePlantillas({ year, scopeType, scopeId, tipoFiltro }) 
 
     setLoading(true);
     try {
-  
- const buildQS = (extra = {}) => {
+
+      const buildQS = (extra = {}) => {
         const p = new URLSearchParams();
         p.set("year", String(year));
         if (scopeType) p.set("scopeType", scopeType);
-        if (scopeId)   p.set("scopeId", scopeId);
-        if (tipoFiltro && tipoFiltro !== "todos") {
-          if (tipoFiltro === "activas") { p.set("status", "active"); p.set("activo", "true"); }
-          else { p.set("tipo", tipoFiltro); }
-        }
-        Object.entries(extra).forEach(([k,v]) => v != null && v !== "" && p.set(k, String(v)));
+        if (scopeId) p.set("scopeId", scopeId);
+        if (tipoFiltro) p.set("tipoFiltro", tipoFiltro);
+        Object.entries(extra).forEach(([k, v]) => v != null && v !== "" && p.set(k, String(v)));
         return p.toString();
       };
 
@@ -42,11 +39,11 @@ export default function usePlantillas({ year, scopeType, scopeId, tipoFiltro }) 
           const resp = await api(`/templates?${qs}`);
           const arr =
             Array.isArray(resp) ? resp :
-            Array.isArray(resp?.items) ? resp.items :
-            Array.isArray(resp?.data) ? resp.data :
-            Array.isArray(resp?.results) ? resp.results :
-            Array.isArray(resp?.rows) ? resp.rows :
-            Array.isArray(resp?.templates) ? resp.templates : [];
+              Array.isArray(resp?.items) ? resp.items :
+                Array.isArray(resp?.data) ? resp.data :
+                  Array.isArray(resp?.results) ? resp.results :
+                    Array.isArray(resp?.rows) ? resp.rows :
+                      Array.isArray(resp?.templates) ? resp.templates : [];
           console.debug("[usePlantillas] RESULT len =", arr.length, "for qs:", qs);
           if (arr.length || (attempts.length === 1)) { finalArr = arr; break; }
           // si vació, sigo probando siguientes variantes
@@ -66,7 +63,7 @@ export default function usePlantillas({ year, scopeType, scopeId, tipoFiltro }) 
     } finally {
       setLoading(false);
     }
-}, [year, scopeType, scopeId, tipoFiltro]);
+  }, [year, scopeType, scopeId, tipoFiltro]);
 
   useEffect(() => { load(); }, [load]);
 

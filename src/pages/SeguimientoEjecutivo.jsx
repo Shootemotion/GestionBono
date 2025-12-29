@@ -1,3 +1,18 @@
+// --- Modal Component for Employee List ---
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
 import { toast } from "react-toastify";
@@ -46,6 +61,9 @@ export default function SeguimientoEjecutivo() {
   // Expanded Areas State
   const [expanded, setExpanded] = useState({});
   const [chartMode, setChartMode] = useState('sector');
+
+  // Modal State
+  const [selectedAreaForTable, setSelectedAreaForTable] = useState(null);
 
   const toggleArea = (id) => {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -129,7 +147,7 @@ export default function SeguimientoEjecutivo() {
         </div>
 
         {/* METRICAS GLOBALES */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           <MetricCard
             icon={<Users className="text-blue-500 w-6 h-6" />}
             label="Total Colaboradores"
@@ -144,12 +162,20 @@ export default function SeguimientoEjecutivo() {
             sub={`${100 - metrics.evaluatedPct}% del total`}
             color="border-l-4 border-amber-500 shadow-md hover:shadow-lg transition-shadow"
           />
+          {/* New Metrics for Agreement */}
           <MetricCard
-            icon={<TrendingUp className="text-emerald-500 w-6 h-6" />}
-            label="Score Promedio"
-            value={`${metrics.averageScore}%`}
-            sub="Nivel Global"
+            icon={<CheckCircle2 className="text-emerald-500 w-6 h-6" />}
+            label="En Acuerdo"
+            value={metrics.agreementCount || 0}
+            sub="Feedbacks firmados/ack"
             color="border-l-4 border-emerald-500 shadow-md hover:shadow-lg transition-shadow"
+          />
+          <MetricCard
+            icon={<AlertCircle className="text-rose-500 w-6 h-6" />}
+            label="En Desacuerdo"
+            value={metrics.disagreementCount || 0}
+            sub="Feedbacks cuestionados"
+            color="border-l-4 border-rose-500 shadow-md hover:shadow-lg transition-shadow"
           />
           <MetricCard
             icon={<DollarSign className="text-purple-500 w-6 h-6" />}
@@ -329,7 +355,7 @@ export default function SeguimientoEjecutivo() {
                     <div className={`rounded-xl p-3 border flex flex-col items-center justify-center h-full
                             ${area.pendingPct > 20 ? 'bg-amber-50 border-amber-100' : 'bg-emerald-50 border-emerald-100'}
                          `}>
-                      <span className={`text-[10px] uppercase font-bold tracking-wider ${area.pendingPct > 20 ? 'text-amber-500' : 'text-emerald-500'}`}>Pendientes</span>
+                      <span className={`text-[10px] uppercase font-bold tracking-wider ${area.pendingPct > 20 ? 'text-amber-500' : 'text-emerald-500'}`}>Feedback Pendiente</span>
                       <span className={`text-xl font-bold ${area.pendingPct > 20 ? 'text-amber-700' : 'text-emerald-700'}`}>{area.pendingPct}%</span>
                     </div>
                   </div>
@@ -359,11 +385,17 @@ export default function SeguimientoEjecutivo() {
 
                       {/* Top Performers */}
                       <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-                        <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
-                          <div className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg">
-                            <TrendingUp className="w-4 h-4" />
+                        <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
+                          <div className="flex items-center gap-2">
+                            <div className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg">
+                              <TrendingUp className="w-4 h-4" />
+                            </div>
+                            <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wide">Top Performance</h4>
                           </div>
-                          <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wide">Top Performance</h4>
+                          <div className="flex gap-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">
+                            <span className="w-12">Prelim</span>
+                            <span className="w-12">Cierre</span>
+                          </div>
                         </div>
 
                         <div className="space-y-3">
@@ -379,11 +411,17 @@ export default function SeguimientoEjecutivo() {
 
                       {/* Potencial a Desarrollar (Low Scores or Disagreement) */}
                       <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-                        <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
-                          <div className="p-1.5 bg-rose-100 text-rose-700 rounded-lg">
-                            <AlertCircle className="w-4 h-4" />
+                        <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
+                          <div className="flex items-center gap-2">
+                            <div className="p-1.5 bg-rose-100 text-rose-700 rounded-lg">
+                              <AlertCircle className="w-4 h-4" />
+                            </div>
+                            <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wide">Alertas / Mejora</h4>
                           </div>
-                          <h4 className="font-bold text-slate-700 text-sm uppercase tracking-wide">Oportunidades de Mejora / Alertas</h4>
+                          <div className="flex gap-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">
+                            <span className="w-12">Prelim</span>
+                            <span className="w-12">Cierre</span>
+                          </div>
                         </div>
 
                         <div className="space-y-3">
@@ -398,6 +436,17 @@ export default function SeguimientoEjecutivo() {
                       </div>
 
                     </div>
+                    {/* End Grid */}
+
+                    <div className="mt-6 flex justify-center">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setSelectedAreaForTable(area); }}
+                        className="bg-white border-2 border-slate-200 hover:border-slate-800 text-slate-600 hover:text-slate-900 px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-sm flex items-center gap-2"
+                      >
+                        <Users size={16} /> Ver Nómina Completa ({area.employees?.length || 0})
+                      </button>
+                    </div>
+
                   </div>
                 )}
               </div>
@@ -405,6 +454,102 @@ export default function SeguimientoEjecutivo() {
           })}
         </div>
       </div>
+
+      {/* --- MODAL TABLE --- */}
+      {selectedAreaForTable && (
+        <Dialog open={!!selectedAreaForTable} onOpenChange={() => setSelectedAreaForTable(null)}>
+          <DialogContent className="max-w-[95vw] w-full h-[90vh] flex flex-col p-0 overflow-hidden rounded-2xl">
+            <div className="p-6 border-b border-slate-100 bg-white z-10">
+              <DialogHeader>
+                <DialogTitle className="text-2xl font-bold flex items-center gap-3">
+                  <div className="p-2.5 bg-blue-100 rounded-xl text-blue-600">
+                    <Building2 size={24} />
+                  </div>
+                  <div>
+                    {selectedAreaForTable.nombre}
+                    <span className="text-slate-400 font-normal text-base ml-2">Nómina Completa</span>
+                  </div>
+                  <div className="ml-auto flex items-center gap-2">
+                    <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-sm font-bold">
+                      {selectedAreaForTable.employees?.length} Colaboradores
+                    </span>
+                  </div>
+                </DialogTitle>
+              </DialogHeader>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <Table>
+                  <TableHeader className="bg-slate-50">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="w-[350px] py-4 pl-6">Colaborador / Puesto</TableHead>
+                      <TableHead className="text-center py-4">Score Prelim</TableHead>
+                      <TableHead className="text-center py-4">Score Cierre</TableHead>
+                      <TableHead className="text-center py-4">Estado Feedback</TableHead>
+                      <TableHead className="text-right py-4 pr-6">Situación</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {selectedAreaForTable.employees?.map((emp) => (
+                      <TableRow key={emp.id} className="hover:bg-blue-50/30 transition-colors">
+                        <TableCell className="font-medium pl-6 py-3">
+                          <div className="flex items-center gap-4">
+                            <Avatar src={emp.foto} alt={emp.nombre} size="md" />
+                            <div>
+                              <div className="text-slate-800 font-bold text-sm">{emp.nombre}</div>
+                              <div className="text-slate-500 text-xs mt-0.5">{emp.puesto || emp.sector || "Sin Puesto"}</div>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex flex-col items-center">
+                            <span className={`text-sm font-bold ${emp.scorePrelim >= 70 ? 'text-blue-600' : 'text-slate-400'}`}>
+                              {emp.scorePrelim != null ? Math.round(emp.scorePrelim) : '-'}%
+                            </span>
+                            {emp.scorePrelim && <span className="text-[9px] text-slate-400 uppercase">Prelim</span>}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex flex-col items-center">
+                            <span className={`text-lg font-bold ${emp.scoreClosing >= 70 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                              {emp.scoreClosing != null ? Math.round(emp.scoreClosing) : '-'}%
+                            </span>
+                            {emp.scoreClosing && <span className="text-[9px] text-emerald-600/70 uppercase font-bold">Final</span>}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase
+                                            ${['SIGNED', 'CONFIRMADO', 'ACK'].includes(emp.feedbackStatus)
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-amber-100 text-amber-700'}
+                                        `}>
+                            {emp.feedbackStatus === "SIGNED" || emp.feedbackStatus === "CONFIRMADO" ? "Cerrado" : emp.feedbackStatus}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right pr-6">
+                          {emp.disagreement ? (
+                            <div className="flex items-center justify-end gap-1 text-rose-600">
+                              <AlertCircle size={14} />
+                              <span className="font-bold text-xs">EN DESACUERDO</span>
+                            </div>
+                          ) : (
+                            <span className="text-emerald-600 text-xs font-bold flex items-center justify-end gap-1">
+                              <CheckCircle2 size={14} /> OK
+                            </span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+
+          </DialogContent>
+        </Dialog>
+      )}
+
     </div>
   );
 }
@@ -424,27 +569,47 @@ function MetricCard({ icon, label, value, sub, color }) {
 }
 
 function PerformerRow({ person, isCritical }) {
+  // Helpers for displaying score cells
+  const ScoreCell = ({ score, isClosing }) => {
+    if (score === null || score === undefined) return <span className="text-slate-300 w-8 text-center">-</span>;
+    // Color logic
+    let color = "text-slate-600";
+    if (score >= 90) color = "text-emerald-600";
+    else if (score >= 70) color = "text-blue-600";
+    else if (score < 60) color = "text-rose-500";
+
+    return <span className={`font-bold w-8 text-center ${color}`}>{Math.round(score)}%</span>;
+  };
+
   return (
     <div className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 transition-colors group">
       <div className="flex items-center gap-3 overflow-hidden">
         <Avatar src={person.foto} alt={person.nombre} size="sm" />
-        <div className="truncate">
+        <div className="truncate min-w-0">
           <div className="text-sm font-semibold text-slate-700 truncate">{person.nombre}</div>
-          <div className="text-[10px] text-slate-400">{person.sector || "Sin sector"}</div>
+          <div className="text-[10px] text-slate-400 truncate max-w-[140px]">{person.puesto || person.sector || "Sin Puesto"}</div>
+          {/* Mobile Only Flags */}
+          {person.disagreement && (
+            <span className="text-[9px] font-bold text-rose-600 block md:hidden">EN DESACUERDO</span>
+          )}
         </div>
       </div>
 
-      <div className="text-right pl-2">
-        {isCritical && person.disagreement ? (
-          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700">DESACUERDO</span>
-        ) : (
-          <span className={`text-sm font-bold ${isCritical ? 'text-rose-600' : 'text-emerald-600'}`}>
-            {person.score}%
-          </span>
-        )}
-        {person.feedbackStatus !== "CONFIRMADO" && person.feedbackStatus !== "SIGNED" && person.feedbackStatus !== "ACK" && (
-          <div className="text-[9px] text-amber-500 font-medium">Pendiente</div>
-        )}
+      <div className="flex items-center gap-2 text-right pl-2 text-sm">
+        {/* Prelim Column */}
+        <div className="w-12 flex justify-center">
+          <ScoreCell score={person.scorePrelim} />
+        </div>
+
+        {/* Closing Column */}
+        <div className="w-12 flex justify-center relative">
+          <ScoreCell score={person.scoreClosing} isClosing />
+          {person.disagreement && (
+            <div className="absolute -top-1 -right-0 text-rose-500" title="En desacuerdo">
+              <AlertCircle size={10} fill="currentColor" className="text-white" />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

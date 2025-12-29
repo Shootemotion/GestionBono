@@ -23,6 +23,7 @@ export default function FormularioObjetivos({
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [proceso, setProceso] = useState("");
+  const [estado, setEstado] = useState("");
   const [year, setYear] = useState(initialYear || currentYear);
   const [scopeType, setScopeType] = useState(initialScopeType || "area");
   const [scopeId, setScopeId] = useState(initialScopeId || "");
@@ -68,6 +69,9 @@ export default function FormularioObjetivos({
     setNombre(initialData.nombre || "");
     setDescripcion(initialData.descripcion || "");
     setProceso(initialData.proceso || "");
+    setEstado(initialData.activo ? "Activo" : "Inactivo");
+   
+
     setYear(initialData.year || currentYear);
 
     const apiScope = initialData.scopeType || "area";
@@ -119,7 +123,12 @@ export default function FormularioObjetivos({
             m.tolerancia !== undefined && m.tolerancia !== null
               ? m.tolerancia
               : 0,
+          tolerancia:
+            m.tolerancia !== undefined && m.tolerancia !== null
+              ? m.tolerancia
+              : 0,
           reglaCierre: m.reglaCierre || "promedio",
+          umbralPeriodos: m.umbralPeriodos || 0,
         }))
         : []
     );
@@ -158,7 +167,10 @@ export default function FormularioObjetivos({
         reconoceEsfuerzo: true,
         permiteOver: false,
         tolerancia: 0,
+        permiteOver: false,
+        tolerancia: 0,
         reglaCierre: "promedio",
+        umbralPeriodos: 0,
       },
     ]);
 
@@ -249,7 +261,9 @@ export default function FormularioObjetivos({
             !Number.isNaN(toleranciaNum) && toleranciaNum >= 0
               ? toleranciaNum
               : 0,
+
           reglaCierre: m.reglaCierre || "promedio",
+          umbralPeriodos: Number(m.umbralPeriodos || 0),
         };
       })
       .filter((m) => m.nombre || m.esperado !== null);
@@ -262,11 +276,12 @@ export default function FormularioObjetivos({
       nombre,
       descripcion,
       proceso,
+
       frecuencia,
       modoAcumulacion,
       acumulativo: modoAcumulacion === "acumulativo",
       pesoBase: Number(peso || 0),
-      activo: true,
+      activo: estado === "Activo",
     };
 
     if (usarFechaCierreCustom && fechaCierre) {
@@ -333,6 +348,17 @@ export default function FormularioObjetivos({
     { value: "Organizacional", label: "Organizacional" },
   ];
 
+  const ESTADO = [
+    { value: "", label: "Selecciona un estado…" },
+    { value: "Activo", label: "Activo" },
+    { value: "Inactivo", label: "Inactivo" },
+
+  ];
+
+
+
+
+
   return (
     <form onSubmit={(e) => handleSubmit(e)} className="flex flex-col h-full">
       {/* Contenido Scrollable */}
@@ -372,7 +398,24 @@ export default function FormularioObjetivos({
                 ))}
               </select>
               <FieldError name="proceso" />
+
+              <label className="text-xs">Estado</label>
+              <select
+                className={inputCls}
+                value={estado}
+                onChange={(a) => setEstado(a.target.value)}
+                required
+              >
+                {ESTADO.map((p) => (
+                  <option key={p.value || "blank"} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <FieldError name="estado" />
             </div>
+
+
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -396,7 +439,7 @@ export default function FormularioObjetivos({
                 >
                   <option value="mensual">Mensual</option>
                   <option value="trimestral">Trimestral</option>
-                               </select>
+                </select>
                 <FieldError name="frecuencia" />
               </div>
             </div>
@@ -742,6 +785,26 @@ export default function FormularioObjetivos({
                           </option>
                         </select>
                       </div>
+                      {m.reglaCierre === "umbral_periodos" && (
+                        <div>
+                          <label className="mb-1 block text-xs text-muted-foreground">
+                            Umbral (Cant.)
+                          </label>
+                          <input
+                            type="number"
+                            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                            value={m.umbralPeriodos || ""}
+                            onChange={(e) =>
+                              handleMetaChange(
+                                i,
+                                "umbralPeriodos",
+                                e.target.value
+                              )
+                            }
+                            placeholder="Ej. 3"
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
 

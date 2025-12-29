@@ -16,7 +16,7 @@ const empleadoSchema = new mongoose.Schema(
     categoria: { type: String },
     estadoLaboral: {
       type: String,
-      enum: ["VINCULADO", "DESVINCULADO", "ACTIVO", "SUSPENDIDO"],
+      enum: ["VINCULADO", "DESVINCULADO"],
       default: "VINCULADO",
     },
     cvUrl: { type: String, default: null },
@@ -46,7 +46,7 @@ const empleadoSchema = new mongoose.Schema(
     sector: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Sector",
-      required: true,
+      required: false,
     },
 
     fotoUrl: { type: String, default: null },

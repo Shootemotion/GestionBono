@@ -1,4 +1,5 @@
 import Carrera from "../models/Carrera.model.js";
+import Empleado from "../models/Empleado.model.js";
 
 export async function listCarrera(req, res, next) {
   try {
@@ -10,6 +11,7 @@ export async function listCarrera(req, res, next) {
       .lean();
     res.json(items);
   } catch (e) { next(e); }
+
 }
 
 export async function createCarrera(req, res, next) {
@@ -17,8 +19,24 @@ export async function createCarrera(req, res, next) {
     const { id } = req.params; // empleadoId
     const { puesto, area, sector, desde, hasta, motivo } = req.body;
     if (!puesto || !desde) return res.status(400).json({ message: "puesto y desde son requeridos" });
+
     const item = await Carrera.create({ empleado: id, puesto, area, sector, desde, hasta, motivo });
     const populated = await Carrera.findById(item._id).populate("area", "nombre").populate("sector", "nombre");
+
+    // Actualizar datos actuales del empleado si este puesto es "vigente" 
+    // (Asumimos que si estamos agregando algo es lo actual, o verificar por fecha)
+    // Estrategia: Buscar el último por fecha 'desde' y actualizar el empleado con eso.
+    const ultimo = await Carrera.findOne({ empleado: id }).sort({ desde: -1 });
+
+    if (ultimo && String(ultimo._id) === String(item._id)) {
+      await Empleado.findByIdAndUpdate(id, {
+        puesto: ultimo.puesto,
+        area: ultimo.area,
+        sector: ultimo.sector,
+        // No cambiamos fechaIngreso original
+      });
+    }
+
     res.status(201).json(populated);
   } catch (e) { next(e); }
 }

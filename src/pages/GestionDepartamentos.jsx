@@ -61,6 +61,7 @@ export default function GestionDepartamentos() {
 
   const [modal, setModal] = useState({ open: false, modo: null, data: null });
   const [editArea, setEditArea] = useState(null);
+  const [globalEditMode, setGlobalEditMode] = useState(false); // Si true, el modal de área permite cambiar de área
 
   // Para unión visual / reorden / filtro por área
   const [hoveredAreaId, setHoveredAreaId] = useState(null);
@@ -255,6 +256,22 @@ export default function GestionDepartamentos() {
           </div>
           {canEditStructure && (
             <div className="flex gap-2">
+              {/* Botón Global de Asignación */}
+              {canEditReferentes && (
+                <Button
+                  className="bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
+                  onClick={() => {
+                    if (areas.length > 0) {
+                      setEditArea(areas[0]);
+                      setGlobalEditMode(true);
+                    } else {
+                      toast.info("No hay áreas cargadas para asignar referentes.");
+                    }
+                  }}
+                >
+                  Asignar Referentes
+                </Button>
+              )}
               <Button
                 className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-0"
                 onClick={() => open("crear_area")}
@@ -262,7 +279,7 @@ export default function GestionDepartamentos() {
                 + Nueva Área
               </Button>
               <Button variant="outline" onClick={() => open("crear_sector")}>
-                + Nuevo Sector
+                + Nueva Dependencia
               </Button>
             </div>
           )}
@@ -290,80 +307,61 @@ export default function GestionDepartamentos() {
                 return (
                   <li
                     key={aId}
-                    className={`group rounded-lg ring-1 ring-border/60 bg-background/70 hover:bg-background transition-all hover:shadow-sm relative cursor-pointer`}
+                    className={`group rounded-xl border border-slate-200 bg-white hover:shadow-md transition-all cursor-pointer overflow-hidden ${conectado ? "ring-2 ring-primary ring-offset-2" : ""}`}
                     onMouseEnter={() => setHoveredAreaId(aId)}
                     onMouseLeave={() =>
                       setHoveredAreaId((v) => (v === aId ? null : v))
                     }
-                    onClick={() => setAreaFilterId(aId)}
-                    title="Click para filtrar sectores de esta área"
+                    onClick={() => setAreaFilterId(prev => prev === aId ? null : aId)}
+                    title={conectado ? "Click para quitar filtro" : "Click para filtrar dependencias"}
                   >
-                    <div className="flex items-start gap-3 p-3">
-                      {/* Franja izquierda */}
-                      <div
-                        className={`h-10 w-1.5 rounded-full ${conectado ? "bg-primary/60" : "bg-primary/20"
-                          } mt-1 transition-colors`}
-                      />
+                    <div className="flex items-center gap-4 p-4">
+                      {/* Icono / Inicial */}
+                      <div className={`h-11 w-11 rounded-xl flex items-center justify-center text-lg font-bold shadow-sm transition-colors ${conectado ? "bg-blue-600 text-white shadow-blue-200" : "bg-white border border-slate-200 text-slate-500"}`}>
+                        {a.nombre.charAt(0).toUpperCase()}
+                      </div>
 
-                      {/* Datos */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-medium truncate">
-                            {a.nombre}
-                          </h3>
-                          <span className="text-[11px] rounded-full border px-2 py-0.5">
-                            Sectores: {countSectoresDeArea(aId)}
-                          </span>
-                        </div>
-
-                        {/* Referentes */}
-                        <div className="mt-1 text-xs text-muted-foreground truncate">
-                          {refs ? `Referentes: ${refs}` : "Referentes: —"}
-                        </div>
-
-                        {/* Cantidad empleados del área */}
-                        <div className="mt-1">
-                          <span className="inline-flex items-center text-[11px] rounded-full px-2 py-0.5 bg-sky-100 text-sky-700 ring-1 ring-sky-200">
-                            Empleados: {cantEmps}
-                          </span>
+                      {/* Info Central: Nombre + Referente */}
+                      <div className="flex-1 min-w-0 flex flex-col justify-center">
+                        <h3 className={`text-sm font-bold leading-none mb-1.5 transition-colors ${conectado ? "text-blue-700" : "text-slate-800"}`}>
+                          {a.nombre}
+                        </h3>
+                        <div className="text-xs text-muted-foreground flex items-center gap-1.5 truncate">
+                          <span className="shrink-0 text-slate-400 font-medium">Líder:</span>
+                          <span className="font-semibold text-slate-600">{refs || "—"}</span>
                         </div>
                       </div>
 
-                      {/* Acciones (solo en hover) */}
-                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {canEditReferentes && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditArea(a);
-                            }}
-                            className="whitespace-nowrap"
-                          >
-                            Editar / Referentes
-                          </Button>
-                        )}
+                      {/* Métricas (Lado derecho) */}
+                      <div className="flex items-center gap-3 pr-2">
+                        <div className="text-center bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 min-w-[60px]">
+                          <div className="text-sm font-black text-slate-700 leading-none">{cantEmps}</div>
+                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">Colab.</div>
+                        </div>
+                        <div className="text-center bg-blue-50/50 px-3 py-1.5 rounded-lg border border-blue-100 min-w-[60px]">
+                          <div className="text-sm font-black text-blue-700 leading-none">{countSectoresDeArea(aId)}</div>
+                          <div className="text-[9px] font-bold text-blue-400 uppercase tracking-wider mt-0.5">Deps.</div>
+                        </div>
+                      </div>
+
+                      {/* Acciones flotantes (Hover) - Solo Eliminar/Editar datos. Referentes es global ahora */}
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 ml-4 border-l pl-4">
                         {canEditStructure && (
                           <Button
-                            size="sm"
-                            variant="outline"
-                            className="bg-rose-100 text-rose-700 hover:bg-rose-200 border-0"
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-full"
                             onClick={(e) => {
                               e.stopPropagation();
                               delItem("area", aId);
                             }}
+                            title="Eliminar área"
                           >
-                            Eliminar
+                            ×
                           </Button>
                         )}
                       </div>
                     </div>
-
-                    {/* Sombra hacia Sectores cuando está conectada */}
-                    {conectado && (
-                      <div className="pointer-events-none absolute -right-2 top-0 bottom-0 w-2 bg-gradient-to-r from-primary/20 to-transparent rounded-r" />
-                    )}
                   </li>
                 );
               })}
@@ -380,7 +378,7 @@ export default function GestionDepartamentos() {
           <section className="rounded-xl bg-card text-card-foreground shadow-md ring-1 ring-border/60 relative">
             <div className="flex items-center justify-between p-4 border-b">
               <div className="flex items-center gap-3">
-                <h2 className="text-base font-semibold">Sectores</h2>
+                <h2 className="text-base font-semibold">Dependencias</h2>
                 {areaFilterId && (
                   <button
                     className="text-xs rounded-full bg-blue-50 text-blue-700 px-2 py-1 border border-blue-200 hover:bg-blue-100"
@@ -410,62 +408,65 @@ export default function GestionDepartamentos() {
                 return (
                   <li
                     key={sId}
-                    className={`group rounded-lg ring-1 ring-border/60 transition-all hover:shadow-sm relative ${conectadoHover
-                        ? "bg-primary/5 border-l-2 border-primary/50"
-                        : "bg-background/70 hover:bg-background"
-                      }`}
+                    className={`group rounded-xl border border-slate-200 bg-white hover:shadow-md transition-all overflow-hidden cursor-pointer ${conectadoHover ? "ring-2 ring-primary ring-offset-2" : ""}`}
                   >
-                    <div className="flex items-start gap-3 p-3">
-                      {/* Franja/estado de conexión */}
-                      <div
-                        className={`h-10 w-1.5 rounded-full ${conectadoHover ? "bg-primary/60" : "bg-primary/20"
-                          } mt-1 transition-colors`}
-                      />
+                    <div className="flex items-center gap-4 p-4">
+                      {/* Icono / Inicial */}
+                      <div className={`h-10 w-10 rounded-full flex items-center justify-center text-base font-bold shadow-sm ${conectadoHover ? "bg-blue-100 text-blue-700" : "bg-slate-50 text-slate-400"}`}>
+                        {s.nombre.charAt(0).toUpperCase()}
+                      </div>
 
-                      {/* Datos */}
-                      <div className="flex-1 min-w-0">
+                      {/* Info Central */}
+                      <div className="flex-1 min-w-0 flex flex-col justify-center">
                         <div className="flex items-center gap-2">
-                          <h3 className="font-medium truncate">
+                          <h3 className="text-sm font-semibold text-slate-900 leading-none">
                             {s.nombre}
                           </h3>
-                          <span className="text-[11px] rounded-full border px-2 py-0.5">
-                            Área: {s?.areaId?.nombre ?? "—"}
+                          <span className="text-[10px] text-muted-foreground border px-1.5 rounded-full bg-slate-50">
+                            {s?.areaId?.nombre || "—"}
                           </span>
                         </div>
-
-                        {/* Referentes */}
-                        <div className="mt-1 text-xs text-muted-foreground truncate">
-                          {refs ? `Referentes: ${refs}` : "Referentes: —"}
+                        <div className="text-xs text-muted-foreground flex items-center gap-1.5 truncate mt-1">
+                          <span className="shrink-0 text-slate-400">Líder:</span>
+                          <span className="font-medium text-slate-700">{refs || "—"}</span>
                         </div>
-
-                        {/* Cantidad empleados del sector */}
-                        <div className="mt-1">
-                          <span className="inline-flex items-center text-[11px] rounded-full px-2 py-0.5 bg-sky-100 text-sky-700 ring-1 ring-sky-200">
-                            Empleados: {cantEmps}
-                          </span>
+                        {/* Líder Heredado del Área */}
+                        <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 truncate mt-0.5">
+                          <span className="shrink-0 text-slate-400">Líder Área:</span>
+                          <span className="font-medium text-slate-600">{nombresReferentes(areas.find(a => String(a._id) === aId)?.referentes) || "—"}</span>
                         </div>
                       </div>
 
-                      {/* Acciones (solo hover) */}
-                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {/* Métricas */}
+                      <div className="flex items-center gap-4 pr-2">
+                        <div className="text-center bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 min-w-[60px]">
+                          <div className="text-sm font-black text-slate-700 leading-none">{cantEmps}</div>
+                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">Colab.</div>
+                        </div>
+                      </div>
+
+                      {/* Acciones flotantes */}
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 ml-4 border-l pl-4">
                         {canEditStructure && (
                           <Button
-                            size="sm"
-                            variant="outline"
+                            size="icon"
+                            variant="ghost"
                             onClick={() => open("editar_sector", s)}
-                            className="whitespace-nowrap"
+                            className="h-8 w-8 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-full"
+                            title="Editar dependencia"
                           >
-                            Editar
+                            ✎
                           </Button>
                         )}
                         {canEditStructure && (
                           <Button
-                            size="sm"
-                            variant="outline"
-                            className="bg-rose-100 text-rose-700 hover:bg-rose-200 border-0"
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-full"
                             onClick={() => delItem("sector", sId)}
+                            title="Eliminar dependencia"
                           >
-                            Eliminar
+                            ×
                           </Button>
                         )}
                       </div>
@@ -477,8 +478,8 @@ export default function GestionDepartamentos() {
               {sectoresView.length === 0 && (
                 <li className="text-sm text-muted-foreground py-10 text-center">
                   {areaFilterId
-                    ? "No hay sectores para esta área."
-                    : "No hay sectores cargados."}
+                    ? "No hay dependencias para esta área."
+                    : "No hay dependencias cargadas."}
                 </li>
               )}
             </ul>
@@ -517,7 +518,16 @@ export default function GestionDepartamentos() {
               empleados={empleados}
               initialTab="referentes"
               canEditReferentes={canEditReferentes}
-              onClose={() => setEditArea(null)}
+              onClose={() => {
+                setEditArea(null);
+                setGlobalEditMode(false);
+              }}
+              // Props para selector de área
+              allAreas={globalEditMode ? areas : []}
+              onSwitchArea={(id) => {
+                const found = areas.find(a => String(a._id) === String(id));
+                if (found) setEditArea(found);
+              }}
               onAreaUpdated={(upd) =>
                 setAreas((p) =>
                   p.map((a) => (a._id === upd._id ? upd : a))

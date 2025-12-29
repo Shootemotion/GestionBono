@@ -54,7 +54,16 @@ export async function listPlantillas(req, res) {
     if (year) query.year = Number(year);
     if (scopeType) query.scopeType = scopeType;
     if (scopeId) query.scopeId = scopeId;
-    if (tipoFiltro === "activas") query.activo = true;
+    if (tipoFiltro === "activas") {
+      query.activo = true;
+    } else if (tipoFiltro === "inactivas") {
+      query.activo = false;
+    } else if (tipoFiltro === "todos" || tipoFiltro === "all") {
+      // No filtrar por activo (traer todo)
+    } else {
+      // Default: Solo activas (protección seguridad)
+      query.activo = true;
+    }
 
     const list = await Plantilla.find(query).sort({ createdAt: -1 });
     res.json(list);

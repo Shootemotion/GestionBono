@@ -8,7 +8,7 @@
  * @param {string} unidad - "Cumple/No Cumple" | "Porcentual" | "Numerico".
  * @returns {number} - Porcentaje de cumplimiento (0–100).
  */
-export function calcularPorcentajeMeta(resultado, esperado, operador = ">=", unidad = "Numerico", permiteOver = false) {
+export function calcularPorcentajeMeta(resultado, esperado, operador = ">=", unidad = "Numerico", permiteOver = false, reconoceEsfuerzo = false) {
   if (unidad === "Cumple/No Cumple") {
     return resultado ? 100 : 0;
   }
@@ -29,6 +29,11 @@ export function calcularPorcentajeMeta(resultado, esperado, operador = ">=", uni
     default: p = 0;
   }
 
+  // Si NO reconoce esfuerzo y no llegó al 100%, es 0.
+  if (!reconoceEsfuerzo && p < 100) {
+    p = 0;
+  }
+
   // Si permiteOver es true, no limitamos a 100 (salvo que sea binaria o casos especiales)
   // Si es false, limitamos a 100.
   if (!permiteOver) {
@@ -41,7 +46,8 @@ export function calcularPorcentajeMeta(resultado, esperado, operador = ">=", uni
 export function evaluarCumple(resultado, esperado, operador = ">=", unidad = "Numerico") {
   // Para evaluar si cumple, usamos la lógica estándar (sin over) para ver si llega al 100%
   // O simplemente verificamos si el cálculo base (incluso con over) es >= 100
-  return calcularPorcentajeMeta(resultado, esperado, operador, unidad, true) >= 100;
+  // Nota: Pasar reconoceEsfuerzo=true aquí simplemente para ver el % bruto, aunque evaluarCumple es binario.
+  return calcularPorcentajeMeta(resultado, esperado, operador, unidad, true, true) >= 100;
 }
 
 export function calcularResultadoGlobal(metas) {
@@ -58,7 +64,8 @@ export function calcularResultadoGlobal(metas) {
         m.esperado,
         m.operador,
         m.unidad,
-        m.permiteOver // Pasamos el flag
+        m.permiteOver, // Pasamos el flag
+        m.reconoceEsfuerzo // Pasamos el flag
       );
       console.debug("[calcularResultadoGlobal] meta:", m.nombre, {
         resultado: m.resultado,

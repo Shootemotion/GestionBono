@@ -140,4 +140,8 @@ router.get(
   getEvaluacionesEmpleado
 );
 
+// testing
+import { deleteEvaluacion } from "../controllers/evaluacion.controller.js";
+router.delete("/:id", authenticateJWT, deleteEvaluacion);
+
 export default router;

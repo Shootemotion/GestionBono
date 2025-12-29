@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
-import { Save, Calculator, AlertCircle, Info, Plus, Trash2, Edit2, GitMerge, ChevronsRight, Wallet, TrendingUp } from 'lucide-react';
+import { Save, Calculator, Plus, Trash2, Edit2, ChevronsRight, LayoutGrid, User, Layers, ArrowRight, Search, X, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from "@/components/ui/input";
 import {
     Dialog,
     DialogContent,
@@ -10,208 +11,355 @@ import {
     DialogTitle,
     DialogFooter,
 } from "@/components/ui/dialog";
-// import { Label } from "@/components/ui/label"; // Removed missing component
-import { Input } from "@/components/ui/input";
-// Removed invalid Select imports because project uses simple select or native HTML tags
 
 export default function ConfiguracionBono() {
     const [year, setYear] = useState(new Date().getFullYear());
     const [loading, setLoading] = useState(false);
     const [calculating, setCalculating] = useState(false);
+
+    // Main config state (container for overrides)
     const [config, setConfig] = useState({
-        // pesos: { objetivos: 70, competencias: 30 }, // Removed
+        // Default dummy values (not used logic-wise if user asks for no global)
         escala: { tipo: "lineal", minPct: 0, maxPct: 1.0, umbral: 60, tramos: [] },
-        bonoTarget: 1.0,
+        bonoTarget: 0,
         overrides: []
     });
 
-    // Override Modal State
-    const [isOverrideModalOpen, setIsOverrideModalOpen] = useState(false);
-    const [currentOverride, setCurrentOverride] = useState(null); // { type, targetId, ... }
+    // Builder State
     const [catalogs, setCatalogs] = useState({ areas: [], empleados: [] });
     const [searchTerm, setSearchTerm] = useState("");
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const searchRef = useRef(null);
+
+    const [builderState, setBuilderState] = useState({
+        // isEditing removed, strictly for creation now
+        type: "area", // area | empleado
+        targetId: "",
+        targetName: "",
+        bonoTarget: 0,
+        escala: { tipo: "lineal", minPct: 0, maxPct: 1.0, umbral: 60, tramos: [] }
+    });
+
+    // Edit Modal State
+    const [editModal, setEditModal] = useState({
+        isOpen: false,
+        index: -1,
+        data: null // { targetName, bonoTarget, escala: ... }
+    });
+
+    // Simulator State
+    const [simData, setSimData] = useState({ score: 85, sueldo: 1000000 });
 
     useEffect(() => {
         loadCatalogs();
+        // Click outside handler for search
+        const handleClickOutside = (event) => {
+            if (searchRef.current && !searchRef.current.contains(event.target)) {
+                setIsSearchOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
-
-    const loadCatalogs = async () => {
-        try {
-            const [a, e] = await Promise.all([api("/areas"), api("/empleados?limit=1000")]);
-
-            // Normalize responses
-            const areas = Array.isArray(a) ? a : (a.data || []);
-            const emps = Array.isArray(e) ? e : (e.items || e.data || []);
-
-            setCatalogs({
-                areas: areas.map(x => ({ id: x._id, name: x.nombre })),
-                // Simple mapping for selector
-                empleados: emps.map(x => ({ id: x._id || x.id, name: `${x.apellido}, ${x.nombre}` }))
-            });
-        } catch (err) {
-            console.error("Error loading catalogs", err);
-        }
-    };
 
     useEffect(() => {
         loadConfig();
     }, [year]);
 
+    const loadCatalogs = async () => {
+        try {
+            const [a, e] = await Promise.all([api("/areas"), api("/empleados?limit=1000")]);
+            const areas = Array.isArray(a) ? a : (a.data || []);
+            const emps = Array.isArray(e) ? e : (e.items || e.data || []);
+            setCatalogs({
+                areas: areas.map(x => ({ id: x._id, name: x.nombre })),
+                empleados: emps.map(x => ({ id: x._id || x.id, name: `${x.apellido}, ${x.nombre}` }))
+            });
+        } catch (err) {
+            console.error("Error catalogs", err);
+        }
+    };
+
     const loadConfig = async () => {
         setLoading(true);
         try {
             const data = await api(`/bono/config/${year}`);
-            console.log("DEBUG: Fetched Config", data);
             if (data && !data.isNew) {
                 setConfig({
-                    // pesos: { objetivos: 70, competencias: 30 }, // Removed
                     escala: data.escala || { tipo: "lineal", minPct: 0, maxPct: 1.0, umbral: 60, tramos: [] },
-                    bonoTarget: data.bonoTarget ?? 1.0,
+                    bonoTarget: data.bonoTarget ?? 0,
                     overrides: data.overrides || [],
                 });
             } else {
-                // Defaults
                 setConfig({
-                    // pesos: { objetivos: 70, competencias: 30 }, // Removed
                     escala: { tipo: "lineal", minPct: 0, maxPct: 1.0, umbral: 60, tramos: [] },
-                    bonoTarget: 1.0,
+                    bonoTarget: 0,
                     overrides: []
                 });
             }
         } catch (err) {
             console.error(err);
-            toast.error("Error cargando configuración");
         } finally {
             setLoading(false);
         }
     };
 
-    const handleSave = async () => {
+    // --- Actions ---
+
+    const handleSaveGlobal = async (newConfig = config) => {
         try {
-            await api(`/bono/config/${year}`, {
-                method: "POST",
-                body: config,
-            });
-            toast.success("Configuración guardada");
+            await api(`/bono/config/${year}`, { method: "POST", body: newConfig });
+            return true;
         } catch (err) {
             console.error(err);
-            toast.error("Error al guardar");
+            toast.error("Error al guardar en servidor");
+            return false;
         }
     };
 
-    const handleCalculate = async (deferredConfig = null) => {
-        if (!confirm(`¿Estás seguro de recalcular los bonos para el año ${year}? Esto actualizará los borradores existentes.`)) return;
-
+    const handleCalculate = async () => {
+        if (!confirm(`¿Recalcular bonos ${year}?`)) return;
         setCalculating(true);
         try {
-            // 1. Auto-save config first to ensure backend has it. 
-            // If deferredConfig is passed (from handleSaveOverride), use it. Otherwise use current state.
-            const configToSave = deferredConfig || config;
-
-            await api(`/bono/config/${year}`, {
-                method: "POST",
-                body: configToSave,
-            });
-
-            // 2. Trigger calculation
+            await handleSaveGlobal(); // Ensure latest is saved
             const res = await api(`/bono/calculate/${year}`, { method: "POST" });
             toast.success(res.message || "Cálculo finalizado");
         } catch (err) {
-            console.error(err);
             toast.error(err.message || "Error al calcular");
         } finally {
             setCalculating(false);
         }
     };
 
-    // --- Override Handlers ---
-    const handleAddOverride = () => {
-        setCurrentOverride({
-            isNew: true,
+    // --- Builder Handlers ---
+
+    const resetBuilder = () => {
+        setBuilderState({
             type: "area",
             targetId: "",
-            bonoTarget: config.bonoTarget, // Default to global
-            escala: { ...config.escala }   // Default to global
+            targetName: "",
+            bonoTarget: 0,
+            escala: { tipo: "lineal", minPct: 0, maxPct: 1.0, umbral: 60, tramos: [] }
         });
-        setIsOverrideModalOpen(true);
+        setSearchTerm("");
     };
 
-    const handleEditOverride = (index) => {
-        const ov = config.overrides[index];
-        setCurrentOverride({ ...ov, isNew: false, index });
-        setIsOverrideModalOpen(true);
-    };
-
-    const handleRemoveOverride = (index) => {
-        if (!confirm("¿Eliminar esta excepción?")) return;
+    const handleDeleteRule = async (idx) => {
+        if (!confirm("¿Eliminar esta regla?")) return;
         const newOverrides = [...config.overrides];
-        newOverrides.splice(index, 1);
-        setConfig({ ...config, overrides: newOverrides });
+        newOverrides.splice(idx, 1);
+        const newConfig = { ...config, overrides: newOverrides };
+        setConfig(newConfig);
+        await handleSaveGlobal(newConfig);
+        toast.success("Regla eliminada");
     };
 
-    const handleSaveOverride = () => {
-        if (!currentOverride.targetId) return toast.error("Debes seleccionar un Área o Empleado");
+    const handleSaveBuilder = async () => {
+        if (!builderState.targetId) return toast.error("Seleccioná un Área o Empleado");
 
-        // Helper name
-        let targetName = "";
-        if (currentOverride.type === "area") {
-            const a = catalogs.areas.find(x => x.id === currentOverride.targetId);
-            targetName = a ? a.name : "Desconocido";
+        // Resolve Name
+        let name = "Desconocido";
+        if (builderState.type === "area") {
+            const f = catalogs.areas.find(x => x.id === builderState.targetId);
+            if (f) name = f.name;
         } else {
-            const e = catalogs.empleados.find(x => x.id === currentOverride.targetId);
-            targetName = e ? e.name : "Desconocido";
+            // Check if user manually typed name that exists or we rely on selection
+            // We rely on targetId being set. if targetId is set, search catalogs
+            const f = catalogs.empleados.find(x => x.id === builderState.targetId);
+            if (f) name = f.name;
         }
 
-        const newOv = {
-            type: currentOverride.type,
-            targetId: currentOverride.targetId,
-            targetName,
-            bonoTarget: Number(currentOverride.bonoTarget),
-            escala: {
-                ...currentOverride.escala,
-                minPct: Number(currentOverride.escala.minPct),
-                maxPct: Number(currentOverride.escala.maxPct),
-                umbral: Number(currentOverride.escala.umbral),
-            }
+        const newRule = {
+            type: builderState.type,
+            targetId: builderState.targetId,
+            targetName: name,
+            bonoTarget: Number(builderState.bonoTarget),
+            escala: { ...builderState.escala }
         };
 
-        const newOverrides = [...(config.overrides || [])];
-        if (currentOverride.isNew) {
-            newOverrides.push(newOv);
-        } else {
-            newOverrides[currentOverride.index] = newOv;
+        const newOverrides = [...config.overrides, newRule];
+
+        const newConfig = { ...config, overrides: newOverrides };
+        setConfig(newConfig);
+
+        const ok = await handleSaveGlobal(newConfig);
+        if (ok) {
+            toast.success("Regla creada");
+            resetBuilder();
         }
+    };
 
-        const updatedConfig = { ...config, overrides: newOverrides };
-        setConfig(updatedConfig);
-        setIsOverrideModalOpen(false);
+    const handleRecalculateRule = async (rule) => {
+        const toastId = toast.loading("Recalculando...");
+        try {
+            // Force save global first to ensure rule is up to date
+            await handleSaveGlobal();
 
-        // Auto-save logic
-        api(`/bono/config/${year}`, {
-            method: "POST",
-            body: updatedConfig,
-        }).then(() => {
-            toast.success("Excepción guardada");
+            const q = `?targetId=${rule.targetId}&type=${rule.type}`;
+            const res = await api(`/bono/calculate/${year}${q}`, { method: "POST" });
 
-            // Prompt for recalculation
-            if (confirm("¿Deseas recalcular los bonos ahora para aplicar esta excepción?")) {
-                handleCalculate(updatedConfig);
+            toast.dismiss(toastId);
+
+            // Show detailed result if available
+            if (res.debugs && res.debugs.length > 0) {
+                toast.success(
+                    <div className="text-xs">
+                        <div className="font-bold mb-1">Cálculo Exitoso</div>
+                        <ul className="list-disc pl-3 text-[10px] space-y-0.5 opacity-90">
+                            {res.debugs.map((d, i) => <li key={i}>{d}</li>)}
+                        </ul>
+                    </div>,
+                    { duration: 5000 }
+                );
+            } else {
+                toast.success("Bono recalculado correctamente");
             }
-        }).catch(err => {
+        } catch (err) {
             console.error(err);
-            toast.error("Error al guardar la excepción");
+            toast.dismiss(toastId);
+            toast.error("Error al recalcular");
+        }
+    };
+
+    // --- Edit Modal Handlers ---
+
+    const handleEditRule = (idx) => {
+        const rule = config.overrides[idx];
+        setEditModal({
+            isOpen: true,
+            index: idx,
+            data: JSON.parse(JSON.stringify(rule)) // Deep copy
         });
     };
+
+    const handleSaveEdit = async () => {
+        if (!editModal.data) return;
+
+        const newOverrides = [...config.overrides];
+        newOverrides[editModal.index] = editModal.data;
+
+        const newConfig = { ...config, overrides: newOverrides };
+        setConfig(newConfig);
+
+        const ok = await handleSaveGlobal(newConfig);
+        if (ok) {
+            toast.success("Regla actualizada");
+            setEditModal({ isOpen: false, index: -1, data: null });
+        }
+    };
+
+    // --- Helper for Robust parsing (Handles "0,6" and "0.6") ---
+    const safeParse = (val) => {
+        if (!val && val !== 0) return 0;
+        // Convert to string, replace comma with dot, then parse
+        const s = String(val).replace(',', '.');
+        const n = Number(s);
+        return isNaN(n) ? 0 : n;
+    };
+
+    // --- Dynamic Text Generation (Reusable) ---
+    const renderDynamicExplanation = (escala, bonoTarget) => {
+        const bTarget = safeParse(bonoTarget);
+        const targetDesc = `Bono Target: ${(bTarget * 100).toFixed(0)}% del sueldo de referencia`;
+
+        if (escala.tipo === 'lineal') {
+            const umbral = safeParse(escala.umbral);
+            const minPct = safeParse(escala.minPct);
+            const maxPct = safeParse(escala.maxPct);
+
+            return (
+                <div className="text-sm text-slate-700 space-y-3">
+                    <div className="flex items-center gap-2 pb-2 border-b border-slate-200/50">
+                        <span className="font-bold text-blue-700">{targetDesc}</span>
+                    </div>
+                    <ul className="space-y-2 text-xs text-slate-600">
+                        <li className="flex items-start gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-1.5 shrink-0"></span>
+                            <span>Si el cumplimiento es menor al <strong>{umbral}%</strong>, <span className="text-slate-500 font-medium">no corresponde pago de bono.</span></span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-300 mt-1.5 shrink-0"></span>
+                            <span>Al alcanzar el umbral del <strong>{umbral}%</strong>, se paga el <strong>{(minPct * 100).toFixed(0)}%</strong> del bono base.</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-1.5 shrink-0"></span>
+                            <span>Si se logra el objetivo al <strong>100%</strong>, se paga el <strong>{(maxPct * 100).toFixed(0)}%</strong> del bono base.</span>
+                        </li>
+                    </ul>
+                    <div className="text-[10px] text-slate-400 font-medium pt-1 italic border-t border-slate-100 mt-2">
+                        * El cálculo se realiza de forma proporcional (lineal) entre los puntos definidos.
+                    </div>
+                </div>
+            );
+        } else {
+            const steps = escala.tramos || [];
+            if (!steps.length) return <p className="text-xs text-slate-400 italic">No hay tramos definidos para esta regla.</p>;
+
+            return (
+                <div className="text-sm text-slate-700 space-y-3">
+                    <div className="flex items-center gap-2 pb-2 border-b border-slate-200/50">
+                        <span className="font-bold text-indigo-700">{targetDesc}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mb-2">El bono se paga en escalones fijos según el cumplimiento:</p>
+                    <div className="space-y-1.5">
+                        {[...steps].sort((a, b) => a.gte - b.gte).map((t, i) => (
+                            <div key={i} className="flex justify-between items-center bg-white px-3 py-2 rounded-lg border border-slate-100 text-xs shadow-sm">
+                                <span className="font-medium text-slate-600">Cumplimiento &ge; <strong>{t.gte}%</strong></span>
+                                <ArrowRight size={10} className="text-slate-300" />
+                                <span className="font-bold text-indigo-600">Paga x{t.pct} bonos</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+    };
+
+    // --- Simulator Logic ---
+    const getSimResult = () => {
+        const score = safeParse(simData.score);
+        const sueldo = safeParse(simData.sueldo);
+        const bTarget = safeParse(builderState.bonoTarget);
+        const { escala } = builderState;
+        let factor = 0;
+
+        if (escala.tipo === 'lineal') {
+            const umbral = safeParse(escala.umbral);
+            const minPct = safeParse(escala.minPct);
+            const maxPct = safeParse(escala.maxPct);
+
+            if (score >= umbral) {
+                if (score >= 100) factor = maxPct;
+                else {
+                    const range = 100 - umbral;
+                    if (range > 0) {
+                        const progress = (score - umbral) / range;
+                        factor = minPct + progress * (maxPct - minPct);
+                    }
+                }
+            }
+        } else {
+            const steps = escala.tramos || [];
+            // find highest match
+            const match = [...steps].sort((a, b) => b.gte - a.gte).find(s => score >= s.gte);
+            if (match) factor = safeParse(match.pct);
+        }
+
+        const monto = sueldo * bTarget * factor;
+        return { monto, percentageOfTarget: factor };
+    };
+    const simRes = getSimResult();
+
 
     return (
         <div className="min-h-screen bg-[#f8fafc] p-6 lg:p-10 font-sans text-slate-600">
-            <div className="max-w-5xl mx-auto space-y-10">
+            <div className="max-w-6xl mx-auto space-y-8">
 
-                {/* Header Actions */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                {/* Header */}
+                <div className="flex justify-between items-center">
                     <div>
                         <h1 className="text-3xl font-black text-slate-800 tracking-tight">Reglas de Bonos</h1>
-                        <p className="text-lg text-slate-500 mt-1">Configuración y Excepciones del Cálculo {year}</p>
+                        <p className="text-slate-500 mt-1">Definición de reglas por Área o Empleado.</p>
                     </div>
                     <div className="flex items-center gap-4">
                         <select
@@ -221,553 +369,551 @@ export default function ConfiguracionBono() {
                         >
                             {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
                         </select>
-
-                        <Button onClick={handleCalculate} disabled={calculating} className="bg-slate-900 text-white hover:bg-slate-800 rounded-xl px-5 py-6">
-                            <Calculator className="mr-2" size={20} />
+                        <Button onClick={handleCalculate} disabled={calculating} className="bg-slate-900 text-white hover:bg-slate-800 rounded-xl px-4 py-6 shadow-lg shadow-blue-500/20 active:scale-95 transition-all">
+                            <RefreshCw className={`mr-2 ${calculating ? 'animate-spin' : ''}`} size={18} />
                             {calculating ? "Calculando..." : "Recalcular Todo"}
-                        </Button>
-
-                        <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-5 py-6 shadow-lg shadow-blue-600/20">
-                            <Save className="mr-2" size={20} /> Guardar Cambios
                         </Button>
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+                {/* --- GLOBAL CONFIG REMOVED --- */}
 
-                    {/* Left Column: Global Config */}
-                    <div className="lg:col-span-2 space-y-8">
 
-                        {/* 1. Global Rule Card */}
-                        <section className="bg-white rounded-3xl p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 relative overflow-hidden group transition-all hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)]">
-                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500" />
-                            <div className="flex justify-between items-start mb-8">
-                                <div>
-                                    <h2 className="text-2xl font-black text-slate-800 tracking-tight">Regla Global</h2>
-                                    <p className="text-slate-500 font-medium">Aplica a todos los empleados por defecto.</p>
-                                </div>
-                                <div className="bg-slate-100 text-slate-600 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider shadow-inner">
-                                    Default
-                                </div>
+                {/* --- BUILDER (Top) --- */}
+                <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div className="bg-slate-50/50 px-8 py-4 border-b border-slate-100 flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-blue-100 text-blue-600 p-2 rounded-lg">
+                                <Plus size={20} />
                             </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                                {/* Target Input */}
-                                <div className="space-y-4">
-                                    <label className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
-                                        <Wallet className="w-4 h-4" /> Target (Sueldos)
-                                    </label>
-                                    <div className="relative group/input">
-                                        <input
-                                            type="number" step="0.1"
-                                            value={config.bonoTarget}
-                                            onChange={(e) => setConfig({ ...config, bonoTarget: Number(e.target.value) })}
-                                            className="w-full text-5xl font-black text-slate-800 bg-transparent border-b-2 border-slate-100 focus:border-blue-500 outline-none py-2 transition-colors placeholder-slate-200"
-                                        />
-                                        <span className="absolute right-0 bottom-4 text-slate-400 font-medium text-sm bg-slate-50 px-2 py-1 rounded-md">Sueldos Brutos</span>
-                                    </div>
-                                    <p className="text-xs text-slate-400 leading-relaxed max-w-[90%]">
-                                        Multiplicador base. Si el sueldo es $1M y el target es 1.5, el bono base es $1.5M.
-                                    </p>
-                                </div>
-
-                                {/* Escala Type Selector */}
-                                <div className="space-y-4">
-                                    <label className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
-                                        <TrendingUp className="w-4 h-4" /> Modelo de Cálculo
-                                    </label>
-                                    <div className="flex p-1 bg-slate-100 rounded-xl">
-                                        <button
-                                            onClick={() => setConfig({ ...config, escala: { ...config.escala, tipo: "lineal" } })}
-                                            className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-all shadow-sm ${config.escala.tipo === "lineal" ? "bg-white text-blue-600 shadow-sm ring-1 ring-black/5" : "text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 shadow-none"}`}
-                                        >
-                                            Lineal
-                                        </button>
-                                        <button
-                                            onClick={() => setConfig({ ...config, escala: { ...config.escala, tipo: "tramos" } })}
-                                            className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-all shadow-sm ${config.escala.tipo === "tramos" ? "bg-white text-indigo-600 shadow-sm ring-1 ring-black/5" : "text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 shadow-none"}`}
-                                        >
-                                            Por Tramos
-                                        </button>
-                                    </div>
-                                    <div className="p-3 bg-slate-50 rounded-lg text-xs text-slate-500 border border-slate-100">
-                                        {config.escala.tipo === "lineal"
-                                            ? "Proporcional: Paga % exacto según cumplimiento."
-                                            : "Escalones: Paga % fijo al alcanzar hitos."}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <hr className="my-8 border-slate-100" />
-
-                            {/* Linear Config Details */}
-                            {config.escala.tipo === "lineal" && (
-                                <div className="space-y-6">
-                                    <div className="grid grid-cols-3 gap-4">
-                                        {[
-                                            { label: "Umbral Mínimo", val: config.escala.umbral, set: (v) => setConfig({ ...config, escala: { ...config.escala, umbral: v } }), unit: "%" },
-                                            { label: "Pago Mínimo", val: config.escala.minPct, set: (v) => setConfig({ ...config, escala: { ...config.escala, minPct: v } }), unit: "x" },
-                                            { label: "Tope (Cap)", val: config.escala.maxPct, set: (v) => setConfig({ ...config, escala: { ...config.escala, maxPct: v } }), unit: "x" }
-                                        ].map((item, i) => (
-                                            <div key={i} className="bg-slate-50 p-4 rounded-2xl border border-slate-100 hover:border-blue-200 transition-colors group/item">
-                                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-wider">{item.label}</label>
-                                                <div className="flex items-baseline gap-1">
-                                                    <input
-                                                        type="number" step={item.unit === 'x' ? 0.01 : 1}
-                                                        value={item.val}
-                                                        onChange={(e) => item.set(Number(e.target.value))}
-                                                        className="bg-transparent w-full text-xl font-bold text-slate-700 outline-none placeholder-slate-300"
-                                                    />
-                                                    <span className="text-xs font-bold text-slate-400">{item.unit}</span>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-
-                                    {/* Info Card Linear */}
-                                    <div className="flex gap-4 p-5 bg-gradient-to-br from-blue-50 to-white rounded-2xl border border-blue-100/50 shadow-sm">
-                                        <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 shadow-sm border border-blue-200">
-                                            <TrendingUp size={20} />
-                                        </div>
-                                        <div className="flex-1">
-                                            <h4 className="font-bold text-blue-900 text-sm mb-1">Modelo Proporcional</h4>
-                                            <p className="text-sm text-slate-600 leading-relaxed mb-3">
-                                                Incentiva cada punto de mejora. El pago crece linealmente.
-                                            </p>
-                                            <ul className="list-disc ml-4 space-y-1.5 text-xs text-blue-700 font-medium border-l-2 border-blue-200 pl-4">
-                                                <li>
-                                                    <span className="opacity-70">Menos del {config.escala.umbral}%:</span>
-                                                    <span className="block font-bold text-slate-600">No cobra bono ($0)</span>
-                                                </li>
-                                                <li>
-                                                    <span className="opacity-70">Al llegar al {config.escala.umbral}% (Umbral):</span>
-                                                    <span className="block font-bold text-slate-600">Cobra base de {Math.round((config.escala.minPct || 0) * 100)}% del bono</span>
-                                                </li>
-                                                <li>
-                                                    <span className="opacity-70">Al 100% de cumplimiento:</span>
-                                                    <span className="block font-bold text-slate-600">Cobra el {Math.round((config.escala.maxPct || 0) * 100)}% (Tope)</span>
-                                                </li>
-                                            </ul>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Tramos Config Details */}
-                            {config.escala.tipo === "tramos" && (
-                                <div className="mt-8 animate-in fade-in slide-in-from-top-4 duration-500">
-                                    <div className="flex justify-between items-center mb-4">
-                                        <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                                            <GitMerge className="text-indigo-500" size={16} /> Configuración de Niveles
-                                        </h4>
-                                        <Button
-                                            size="sm" variant="ghost"
-                                            onClick={() => {
-                                                const newTramos = [...(config.escala.tramos || []), { gte: 90, pct: 1.0 }];
-                                                setConfig({ ...config, escala: { ...config.escala, tramos: newTramos.sort((a, b) => a.gte - b.gte) } });
-                                            }}
-                                            className="text-xs h-8 ml-auto text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50"
-                                        >
-                                            <Plus className="w-3 h-3 mr-1" /> Agregar Nivel
-                                        </Button>
-                                    </div>
-
-                                    {(config.escala.tramos || []).length === 0 ? (
-                                        <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
-                                            <p className="text-slate-400 font-medium">No hay niveles definidos.</p>
-                                            <p className="text-xs text-slate-400 mt-1">El bono será 0% si no se configuran tramos.</p>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-3">
-                                            {config.escala.tramos.map((tramo, idx) => (
-                                                <div key={idx} className="flex items-center gap-4 bg-white p-4 rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-all group">
-                                                    <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-xs ring-1 ring-indigo-100">{idx + 1}</div>
-
-                                                    {/* From */}
-                                                    <div className="flex-1">
-                                                        <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Score &ge;</label>
-                                                        <div className="flex items-center gap-1">
-                                                            <input
-                                                                type="number"
-                                                                className="w-14 font-bold text-lg text-slate-700 outline-none placeholder-slate-300 border-b border-transparent focus:border-indigo-500 bg-transparent transition-colors"
-                                                                value={tramo.gte}
-                                                                onChange={(e) => {
-                                                                    const newTramos = [...config.escala.tramos];
-                                                                    newTramos[idx].gte = Number(e.target.value);
-                                                                    setConfig({ ...config, escala: { ...config.escala, tramos: newTramos.sort((a, b) => a.gte - b.gte) } });
-                                                                }}
-                                                            />
-                                                            <span className="text-sm font-bold text-slate-300">%</span>
-                                                        </div>
-                                                    </div>
-
-                                                    <ChevronsRight className="text-slate-300" />
-
-                                                    {/* To */}
-                                                    <div className="flex-1">
-                                                        <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Bono Paga</label>
-                                                        <div className="flex items-center gap-1">
-                                                            <input
-                                                                type="number" step="0.05"
-                                                                className="w-14 font-bold text-lg text-emerald-600 outline-none placeholder-slate-300 border-b border-transparent focus:border-emerald-500 bg-transparent transition-colors"
-                                                                value={tramo.pct}
-                                                                onChange={(e) => {
-                                                                    const newTramos = [...config.escala.tramos];
-                                                                    newTramos[idx].pct = Number(e.target.value);
-                                                                    setConfig({ ...config, escala: { ...config.escala, tramos: newTramos } });
-                                                                }}
-                                                            />
-                                                            <span className="text-xs font-bold text-slate-300">x</span>
-                                                        </div>
-                                                    </div>
-
-                                                    <button
-                                                        onClick={() => {
-                                                            const newTramos = config.escala.tramos.filter((_, i) => i !== idx);
-                                                            setConfig({ ...config, escala: { ...config.escala, tramos: newTramos } });
-                                                        }}
-                                                        className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    {/* Info Card Tramos */}
-                                    <div className="mt-6 flex gap-4 p-5 bg-gradient-to-br from-indigo-50 to-white rounded-2xl border border-indigo-100/50 shadow-sm">
-                                        <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0 shadow-sm border border-indigo-200">
-                                            <GitMerge size={20} />
-                                        </div>
-                                        <div>
-                                            <h4 className="font-bold text-indigo-900 text-sm mb-1">Modelo Escalonado</h4>
-                                            <p className="text-sm text-slate-600 leading-relaxed">
-                                                El pago es fijo por rangos. Incentiva a "saltar" al siguiente nivel para ver ganancia real. Ideal para ventas.
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                        </section>
-
-                        {/* 2. Overrides List */}
-                        <section>
-                            <div className="flex justify-between items-end mb-6 px-1">
-                                <div>
-                                    <h2 className="text-xl font-bold text-slate-800">Excepciones</h2>
-                                    <p className="text-slate-500 text-sm font-medium">Reglas específicas para áreas o personas.</p>
-                                </div>
-                                <Button onClick={handleAddOverride} variant="outline" className="border-dashed border-2 border-slate-200 hover:border-blue-500 hover:text-blue-600 text-slate-500 font-bold rounded-xl h-10">
-                                    <Plus size={16} className="mr-2" /> Agregar Regla
-                                </Button>
-                            </div>
-
-                            <div className="space-y-4">
-                                {(!config.overrides || config.overrides.length === 0) && (
-                                    <div className="py-16 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50/50">
-                                        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
-                                            <GitMerge size={24} />
-                                        </div>
-                                        <p className="text-slate-500 font-bold">No hay excepciones creadas</p>
-                                        <p className="text-sm text-slate-400 mt-1">Todas las personas usan la Regla Global.</p>
-                                    </div>
-                                )}
-                                {(config.overrides || []).map((ov, idx) => (
-                                    <div key={idx} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between group hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:-translate-y-1 transition-all duration-300">
-                                        <div className="flex items-center gap-5">
-                                            <div className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center font-bold text-xs border-2 shadow-sm ${ov.type === 'area' ? 'bg-indigo-50 border-indigo-100 text-indigo-600' : 'bg-emerald-50 border-emerald-100 text-emerald-600'}`}>
-                                                <span className="text-[10px] opacity-60 uppercase">{ov.type === 'area' ? 'Area' : 'Emp'}</span>
-                                                <span className="text-lg">{ov.type === 'area' ? 'A' : 'E'}</span>
-                                            </div>
-                                            <div>
-                                                <h4 className="font-bold text-slate-800 text-lg tracking-tight">{ov.targetName || "Sin Nombre"}</h4>
-                                                <div className="flex items-center gap-3 text-sm text-slate-500 font-medium mt-1">
-                                                    <span className="bg-slate-100 px-2 py-0.5 rounded text-xs font-bold text-slate-600 border border-slate-200">
-                                                        x{ov.bonoTarget}
-                                                    </span>
-                                                    <span className="w-1 h-1 bg-slate-300 rounded-full" />
-                                                    <span className={`${ov.escala.tipo === 'lineal' ? 'text-blue-600' : 'text-indigo-600'} font-medium`}>
-                                                        {ov.escala.tipo === 'lineal' ? `Lineal (${ov.escala.umbral}% - ${Math.round(ov.escala.maxPct * 100)}%)` : 'Escalonado'}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity transform translate-x-2 group-hover:translate-x-0">
-                                            <button onClick={() => handleEditOverride(idx)} className="p-2.5 bg-slate-50 hover:bg-blue-50 rounded-xl text-slate-400 hover:text-blue-600 transition-colors">
-                                                <Edit2 size={18} />
-                                            </button>
-                                            <button onClick={() => handleRemoveOverride(idx)} className="p-2.5 bg-slate-50 hover:bg-rose-50 rounded-xl text-slate-400 hover:text-rose-600 transition-colors">
-                                                <Trash2 size={18} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
-                    </div>
-
-                    {/* Right Column: Simulator */}
-                    <div className="lg:col-span-1">
-                        <div className="bg-slate-900 text-white rounded-3xl p-8 sticky top-8 shadow-2xl shadow-slate-900/20">
-                            <h3 className="text-xl font-bold mb-6 flex items-center gap-3">
-                                <Calculator className="text-blue-400" /> Simulador
-                            </h3>
-
-                            <div className="space-y-6">
-                                <div>
-                                    <label className="text-xs uppercase font-bold text-slate-500 mb-2 block">Score Global</label>
-                                    <input
-                                        type="number" id="simScore" placeholder="85"
-                                        className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-white font-bold text-lg placeholder-slate-600 focus:ring-2 focus:ring-blue-500"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs uppercase font-bold text-slate-500 mb-2 block">Sueldo Base</label>
-                                    <input
-                                        type="number" id="simSueldo" placeholder="1000000"
-                                        className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-white font-bold text-lg placeholder-slate-600 focus:ring-2 focus:ring-blue-500"
-                                    />
-                                </div>
-                                <Button
-                                    className="w-full bg-blue-600 hover:bg-blue-500 text-white py-6 rounded-xl font-bold text-lg shadow-lg shadow-blue-600/30 transition-all active:scale-95"
-                                    onClick={() => {
-                                        const score = Number(document.getElementById('simScore').value);
-                                        const sueldo = Number(document.getElementById('simSueldo').value);
-
-                                        let pct = 0;
-                                        if (config.escala.tipo === 'lineal') {
-                                            const { minPct, maxPct, umbral } = config.escala;
-                                            if (score >= umbral) {
-                                                if (score >= 100) pct = maxPct;
-                                                else {
-                                                    const range = 100 - umbral;
-                                                    const progress = (score - umbral) / range;
-                                                    pct = minPct + progress * (maxPct - minPct);
-                                                }
-                                            }
-                                        } else {
-                                            // Tramos logic
-                                            const tramos = config.escala.tramos || [];
-                                            const sorted = [...tramos].sort((a, b) => b.gte - a.gte);
-                                            const met = sorted.find(t => score >= t.gte);
-                                            pct = met ? met.pct : 0;
-                                        }
-
-                                        const final = sueldo * config.bonoTarget * pct;
-                                        document.getElementById('simDisplay').innerText = `$ ${final.toLocaleString()}`;
-                                        document.getElementById('simTarget').innerText = `${(pct * 100).toFixed(1)}% del Target`;
-                                    }}
-                                >
-                                    Calcular Bono
-                                </Button>
-
-                                <div className="pt-6 border-t border-slate-800 mt-6 text-center">
-                                    <div className="text-sm text-slate-400 mb-1">Resultado Estimado</div>
-                                    <div id="simDisplay" className="text-3xl font-black text-emerald-400 tracking-tight">$ 0</div>
-                                    <div id="simTarget" className="text-xs text-slate-500 mt-2 font-mono">0% del Target</div>
-                                </div>
-                            </div>
+                            <h2 className="font-bold text-lg text-slate-800">
+                                Nueva Regla
+                            </h2>
                         </div>
                     </div>
 
-                </div>
+                    <div className="p-8 grid grid-cols-1 lg:grid-cols-12 gap-10">
+                        {/* LEFT: Config Form (Cols 8) */}
+                        <div className="lg:col-span-8 space-y-8">
 
-                {/* --- Modals --- */}
-                <Dialog open={isOverrideModalOpen} onOpenChange={setIsOverrideModalOpen}>
-                    <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                        <DialogHeader>
-                            <DialogTitle>{currentOverride?.isNew ? 'Nueva Excepción' : 'Editar Excepción'}</DialogTitle>
-                        </DialogHeader>
-
-                        {currentOverride && (
-                            <div className="grid gap-6 py-4">
-                                {/* Target Select */}
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Excepción</label>
-                                        <select
-                                            className="w-full mt-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
-                                            value={currentOverride.type}
-                                            onChange={(e) => setCurrentOverride({ ...currentOverride, type: e.target.value, targetId: "" })}
-                                            disabled={!currentOverride.isNew}
-                                        >
-                                            <option value="area">Por Área</option>
-                                            <option value="empleado">Por Empleado</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">{currentOverride.type === 'area' ? 'Seleccionar Área' : 'Seleccionar Empleado'}</label>
-
-                                        {currentOverride.type === 'empleado' && (
-                                            <div className="relative mb-2">
-                                                <Input
-                                                    type="text"
-                                                    placeholder="Buscar empleado..."
-                                                    className="h-9 text-xs mb-1"
-                                                    value={searchTerm}
-                                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                                />
-                                            </div>
-                                        )}
-
-                                        <select
-                                            className="w-full mt-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
-                                            value={currentOverride.targetId}
-                                            onChange={(e) => setCurrentOverride({ ...currentOverride, targetId: e.target.value })}
-                                            disabled={!currentOverride.isNew}
-                                            size={currentOverride.type === 'empleado' && searchTerm ? 5 : 1}
-                                        >
-                                            <option value="">-- Seleccionar --</option>
-                                            {currentOverride.type === 'area'
-                                                ? catalogs.areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)
-                                                : catalogs.empleados
-                                                    .filter(e => e.name.toLowerCase().includes(searchTerm.toLowerCase()))
-                                                    .map(e => <option key={e.id} value={e.id}>{e.name}</option>)
-                                            }
-                                        </select>
-                                        {currentOverride.type === 'empleado' && searchTerm && (
-                                            <p className="text-[10px] text-slate-400 mt-1 text-right">
-                                                {catalogs.empleados.filter(e => e.name.toLowerCase().includes(searchTerm.toLowerCase())).length} resultados
-                                            </p>
-                                        )}
+                            {/* 1. Scope Selection */}
+                            <div className="grid grid-cols-2 gap-6">
+                                <div>
+                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Alcance</label>
+                                    <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
+                                        <button
+                                            onClick={() => {
+                                                setBuilderState({ ...builderState, type: 'area', targetId: '', targetName: '' });
+                                                setSearchTerm('');
+                                            }}
+                                            className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${builderState.type === 'area' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                                            Por Área
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setBuilderState({ ...builderState, type: 'empleado', targetId: '', targetName: '' });
+                                                setSearchTerm('');
+                                            }}
+                                            className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${builderState.type === 'empleado' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                                            Por Empleado
+                                        </button>
                                     </div>
                                 </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">
+                                        {builderState.type === 'area' ? 'Seleccionar Área' : 'Seleccionar Empleado'}
+                                    </label>
 
-                                <hr />
-
-                                {/* Config Fields (Same as main but specific) */}
-                                <div className="space-y-4">
-                                    <h4 className="font-semibold text-sm text-slate-900">Configuración Específica</h4>
-
-                                    <div className="bg-slate-50 p-4 rounded-lg border border-slate-100 space-y-4">
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">Bono Target (Multiplicador)</label>
-                                            <Input
-                                                type="number" step="0.1"
-                                                value={currentOverride.bonoTarget}
-                                                onChange={(e) => setCurrentOverride({ ...currentOverride, bonoTarget: e.target.value })}
-                                                className="w-32 bg-white"
-                                            />
-                                        </div>
-
-                                        {/* Override Scale Type */}
-                                        <div className="flex gap-2 mb-4">
-                                            <button
-                                                onClick={() => setCurrentOverride({ ...currentOverride, escala: { ...currentOverride.escala, tipo: "lineal" } })}
-                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${currentOverride.escala.tipo === "lineal" ? "bg-blue-100 border-blue-500 text-blue-700" : "bg-white border-slate-200 text-slate-500"}`}
-                                            >
-                                                Lineal
-                                            </button>
-                                            <button
-                                                onClick={() => setCurrentOverride({ ...currentOverride, escala: { ...currentOverride.escala, tipo: "tramos" } })}
-                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${currentOverride.escala.tipo === "tramos" ? "bg-indigo-100 border-indigo-500 text-indigo-700" : "bg-white border-slate-200 text-slate-500"}`}
-                                            >
-                                                Tramos
-                                            </button>
-                                        </div>
-
-                                        {currentOverride.escala.tipo === 'lineal' ? (
-                                            <div className="grid grid-cols-3 gap-4">
-                                                <div>
-                                                    <label className="block text-sm font-medium text-slate-700 mb-1">Umbral (%)</label>
-                                                    <Input
-                                                        type="number"
-                                                        value={currentOverride.escala.umbral}
-                                                        onChange={(e) => setCurrentOverride({
-                                                            ...currentOverride,
-                                                            escala: { ...currentOverride.escala, umbral: e.target.value }
-                                                        })}
-                                                        className="bg-white"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-sm font-medium text-slate-700 mb-1">% Mínimo</label>
-                                                    <Input
-                                                        type="number" step="0.01"
-                                                        value={currentOverride.escala.minPct}
-                                                        onChange={(e) => setCurrentOverride({
-                                                            ...currentOverride,
-                                                            escala: { ...currentOverride.escala, minPct: e.target.value }
-                                                        })}
-                                                        className="bg-white"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-sm font-medium text-slate-700 mb-1">% Máximo (Cap)</label>
-                                                    <Input
-                                                        type="number" step="0.01"
-                                                        value={currentOverride.escala.maxPct}
-                                                        onChange={(e) => setCurrentOverride({
-                                                            ...currentOverride,
-                                                            escala: { ...currentOverride.escala, maxPct: e.target.value }
-                                                        })}
-                                                        className="bg-white"
-                                                    />
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            // Tramos Editor for Override
-                                            <div className="space-y-4">
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-xs font-bold uppercase text-slate-500">Niveles Personalizados</span>
-                                                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => {
-                                                        const newTramos = [...(currentOverride.escala.tramos || []), { gte: 90, pct: 1.0 }];
-                                                        setCurrentOverride({ ...currentOverride, escala: { ...currentOverride.escala, tramos: newTramos.sort((a, b) => a.gte - b.gte) } });
-                                                    }}>
-                                                        <Plus size={14} className="mr-1" /> Agregar
-                                                    </Button>
-                                                </div>
-                                                {(!currentOverride.escala.tramos || currentOverride.escala.tramos.length === 0) && (
-                                                    <div className="text-center text-xs text-slate-400 py-4 border border-dashed rounded bg-slate-50">Sin niveles definidos.</div>
+                                    {builderState.type === 'area' ? (
+                                        <select
+                                            className="w-full h-10 rounded-xl border-slate-200 bg-white text-sm font-medium focus:ring-2 focus:ring-blue-500/20 outline-none px-2 border"
+                                            value={builderState.targetId}
+                                            onChange={e => setBuilderState({ ...builderState, targetId: e.target.value })}
+                                        >
+                                            <option value="">-- Seleccionar --</option>
+                                            {catalogs.areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                        </select>
+                                    ) : (
+                                        <div className="relative" ref={searchRef}>
+                                            <div className="relative">
+                                                <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                                                <Input
+                                                    placeholder="Escribí para buscar..."
+                                                    className="pl-9 pr-8 h-10 rounded-xl bg-white border-slate-200"
+                                                    value={searchTerm}
+                                                    onChange={e => {
+                                                        setSearchTerm(e.target.value);
+                                                        setBuilderState({ ...builderState, targetId: '' }); // Clear selection on type
+                                                        setIsSearchOpen(true);
+                                                    }}
+                                                    onFocus={() => setIsSearchOpen(true)}
+                                                />
+                                                {searchTerm && (
+                                                    <button
+                                                        onClick={() => { setSearchTerm(''); setBuilderState({ ...builderState, targetId: '' }); }}
+                                                        className="absolute right-3 top-3 text-slate-300 hover:text-slate-500"
+                                                    >
+                                                        <X size={14} />
+                                                    </button>
                                                 )}
-                                                {(currentOverride.escala.tramos || []).map((t, i) => (
-                                                    <div key={i} className="flex gap-2 items-center bg-slate-50 p-2 rounded border border-slate-100">
-                                                        <span className="text-xs font-bold text-slate-500">Score &ge;</span>
-                                                        <Input
-                                                            type="number" className="w-14 h-8 text-center text-xs bg-white"
-                                                            value={t.gte}
-                                                            onChange={(e) => {
-                                                                const newTramos = [...currentOverride.escala.tramos];
-                                                                newTramos[i].gte = Number(e.target.value);
-                                                                setCurrentOverride({ ...currentOverride, escala: { ...currentOverride.escala, tramos: newTramos.sort((a, b) => a.gte - b.gte) } });
-                                                            }}
-                                                        />
-                                                        <span className="text-xs text-slate-400">%</span>
-                                                        <ChevronsRight size={14} className="text-slate-300" />
-                                                        <span className="text-xs font-bold text-slate-500">Paga</span>
-                                                        <Input
-                                                            type="number" step="0.1" className="w-14 h-8 text-center text-xs bg-white"
-                                                            value={t.pct}
-                                                            onChange={(e) => {
-                                                                const newTramos = [...currentOverride.escala.tramos];
-                                                                newTramos[i].pct = Number(e.target.value);
-                                                                setCurrentOverride({ ...currentOverride, escala: { ...currentOverride.escala, tramos: newTramos } });
-                                                            }}
-                                                        />
-                                                        <span className="text-xs text-slate-400">x</span>
-                                                        <button onClick={() => {
-                                                            const newTramos = currentOverride.escala.tramos.filter((_, idx) => idx !== i);
-                                                            setCurrentOverride({ ...currentOverride, escala: { ...currentOverride.escala, tramos: newTramos } });
-                                                        }} className="ml-auto text-slate-400 hover:text-red-500 p-1"><Trash2 size={14} /></button>
-                                                    </div>
-                                                ))}
                                             </div>
-                                        )}
+
+                                            {/* Results Dropdown */}
+                                            {isSearchOpen && (
+                                                <div className="absolute z-50 mt-1 w-full bg-white rounded-xl shadow-xl border border-slate-100 max-h-60 overflow-y-auto">
+                                                    {catalogs.empleados
+                                                        .filter(e => !searchTerm || e.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                                                        .slice(0, 100) // limit results
+                                                        .map(emp => (
+                                                            <button
+                                                                key={emp.id}
+                                                                onClick={() => {
+                                                                    setBuilderState({ ...builderState, targetId: emp.id, targetName: emp.name });
+                                                                    setSearchTerm(emp.name);
+                                                                    setIsSearchOpen(false);
+                                                                }}
+                                                                className={`w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors flex items-center justify-between group ${builderState.targetId === emp.id ? 'bg-blue-50 text-blue-700' : 'text-slate-600'}`}
+                                                            >
+                                                                <span className="font-medium truncate">{emp.name}</span>
+                                                                {builderState.targetId === emp.id && <span className="text-[10px] bg-blue-100 px-1.5 py-0.5 rounded text-blue-600 font-bold">LIGADO</span>}
+                                                            </button>
+                                                        ))
+                                                    }
+                                                    {catalogs.empleados.filter(e => !searchTerm || e.name.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 && (
+                                                        <div className="px-4 py-3 text-sm text-slate-400 text-center italic">
+                                                            No se encontraron empleados.
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <hr className="border-slate-100" />
+
+                            {/* 2. Params */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <div>
+                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Multiplicador Target</label>
+                                    <div className="flex items-center gap-2">
+                                        <Input
+                                            type="number" step="0.1"
+                                            className="text-2xl font-black w-24 h-12"
+                                            value={builderState.bonoTarget}
+                                            onChange={e => setBuilderState({ ...builderState, bonoTarget: e.target.value })}
+                                        />
+                                        <span className="text-sm font-medium text-slate-500">Sueldos Brutos</span>
+                                    </div>
+                                    <p className="text-xs text-slate-400 mt-2">Bono base al 100% de cumplimiento.</p>
+                                </div>
+
+                                <div>
+                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Modelo de Cálculo</label>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => setBuilderState({ ...builderState, escala: { ...builderState.escala, tipo: 'lineal' } })}
+                                            className={`px-4 py-2 rounded-xl text-sm font-bold border ${builderState.escala.tipo === 'lineal' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-400'}`}>
+                                            Lineal (Proporcional)
+                                        </button>
+                                        <button
+                                            onClick={() => setBuilderState({ ...builderState, escala: { ...builderState.escala, tipo: 'tramos' } })}
+                                            className={`px-4 py-2 rounded-xl text-sm font-bold border ${builderState.escala.tipo === 'tramos' ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-400'}`}>
+                                            Por Tramos
+                                        </button>
                                     </div>
                                 </div>
                             </div>
-                        )}
 
-                        <DialogFooter>
-                            <Button variant="outline" onClick={() => setIsOverrideModalOpen(false)}>Cancelar</Button>
-                            <Button onClick={handleSaveOverride} className="bg-blue-600 hover:bg-blue-700">Guardar Excepción</Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
+                            {/* 3. Scale Config */}
+                            <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100">
+                                {builderState.escala.tipo === 'lineal' ? (
+                                    <div className="grid grid-cols-3 gap-6">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Umbral Mínimo (%)</label>
+                                            <Input
+                                                type="number" className="bg-white font-bold"
+                                                value={builderState.escala.umbral}
+                                                onChange={e => setBuilderState({ ...builderState, escala: { ...builderState.escala, umbral: e.target.value } })}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Pago Mínimo</label>
+                                            <Input
+                                                type="number" step="0.01" className="bg-white font-bold"
+                                                value={builderState.escala.minPct}
+                                                onChange={e => setBuilderState({ ...builderState, escala: { ...builderState.escala, minPct: e.target.value } })}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Pago Máximo</label>
+                                            <Input
+                                                type="number" step="0.01" className="bg-white font-bold"
+                                                value={builderState.escala.maxPct}
+                                                onChange={e => setBuilderState({ ...builderState, escala: { ...builderState.escala, maxPct: e.target.value } })}
+                                            />
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        <div className="flex justify-between items-center">
+                                            <span className="font-bold text-slate-700 text-sm">Escalones de Pago</span>
+                                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => {
+                                                const newT = [...(builderState.escala.tramos || []), { gte: 90, pct: 1.0 }];
+                                                setBuilderState({ ...builderState, escala: { ...builderState.escala, tramos: newT.sort((a, b) => a.gte - b.gte) } })
+                                            }}>+ Agregar Nivel</Button>
+                                        </div>
+                                        {(builderState.escala.tramos || []).map((t, i) => (
+                                            <div key={i} className="flex items-center gap-3">
+                                                <span className="text-xs font-bold text-slate-400">Score &ge;</span>
+                                                <Input type="number" className="w-16 h-8 text-center bg-white" value={t.gte} onChange={e => {
+                                                    const newT = [...builderState.escala.tramos]; newT[i].gte = Number(e.target.value);
+                                                    setBuilderState({ ...builderState, escala: { ...builderState.escala, tramos: newT.sort((a, b) => a.gte - b.gte) } })
+                                                }} />
+                                                <span className="text-xs font-bold text-slate-400">%</span>
+                                                <ArrowRight size={14} className="text-slate-300" />
+                                                <span className="text-xs font-bold text-slate-400">Paga</span>
+                                                <Input type="number" step="0.1" className="w-16 h-8 text-center bg-white" value={t.pct} onChange={e => {
+                                                    const newT = [...builderState.escala.tramos]; newT[i].pct = Number(e.target.value);
+                                                    setBuilderState({ ...builderState, escala: { ...builderState.escala, tramos: newT } })
+                                                }} />
+                                                <span className="text-xs font-bold text-slate-400">x</span>
+                                                <button onClick={() => {
+                                                    const newT = builderState.escala.tramos.filter((_, idx) => idx !== i);
+                                                    setBuilderState({ ...builderState, escala: { ...builderState.escala, tramos: newT } })
+                                                }} className="ml-auto text-slate-300 hover:text-red-500"><Trash2 size={16} /></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Dynamic Explanation Box */}
+                                <div className="mt-8 pt-6 border-t border-slate-200/60 transition-all duration-300">
+                                    <h4 className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase mb-3">
+                                        <Layers size={12} /> Resumen de Regla
+                                    </h4>
+                                    <div className="bg-slate-50/80 p-4 rounded-lg border-l-4 border-blue-500 shadow-sm">
+                                        {renderDynamicExplanation(builderState.escala, builderState.bonoTarget)}
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+
+                        {/* RIGHT: Simulator (Cols 4) */}
+                        <div className="lg:col-span-4 border-l border-slate-100 pl-8 flex flex-col h-full">
+                            <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-6">
+                                <Calculator className="text-indigo-500" size={18} /> Simulador
+                            </h3>
+
+                            <div className="bg-indigo-950 text-white rounded-2xl p-6 shadow-xl flex-1 flex flex-col">
+                                <p className="text-xs text-indigo-300 mb-4 font-medium uppercase tracking-wide">Probar esta regla en vivo</p>
+
+                                <div className="space-y-5 mb-auto">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-indigo-300 uppercase block mb-1">Score Logrado</label>
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="number"
+                                                value={simData.score}
+                                                onChange={e => setSimData({ ...simData, score: Number(e.target.value) })}
+                                                className="bg-indigo-900/50 w-full rounded-lg px-3 py-2 font-bold text-white outline-none focus:ring-1 focus:ring-indigo-400"
+                                            />
+                                            <span className="text-sm font-bold">%</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-indigo-300 uppercase block mb-1">Sueldo Base</label>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm font-bold text-indigo-400">$</span>
+                                            <input
+                                                type="number"
+                                                value={simData.sueldo}
+                                                onChange={e => setSimData({ ...simData, sueldo: Number(e.target.value) })}
+                                                className="bg-indigo-900/50 w-full rounded-lg px-3 py-2 font-bold text-white outline-none focus:ring-1 focus:ring-indigo-400"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="mt-8 pt-6 border-t border-indigo-800/50">
+                                    <div className="flex justify-between items-end mb-2">
+                                        <span className="text-xs font-bold text-indigo-300 uppercase">Bono Estimado</span>
+                                        <span className="text-xs text-indigo-300 font-mono">{(simRes.percentageOfTarget * 100).toFixed(0)}% del Base</span>
+                                    </div>
+                                    <div className="text-3xl font-black text-emerald-400 tracking-tight text-right">
+                                        $ {simRes.monto.toLocaleString('es-AR')}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="mt-8">
+                                <Button onClick={handleSaveBuilder} className="w-full h-14 text-lg font-bold bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/20 rounded-2xl">
+                                    <Save className="mr-2" /> Guardar Regla
+                                </Button>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                {/* --- LIST (Bottom) --- */}
+                <div className="space-y-6">
+                    <h3 className="text-xl font-bold text-slate-800 px-2 border-l-4 border-blue-500 pl-4">
+                        Reglas Guardadas ({config.overrides?.length || 0})
+                    </h3>
+
+                    {(!config.overrides || !config.overrides.length) && (
+                        <div className="border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center bg-white/50">
+                            <p className="text-slate-400 font-medium">No hay reglas definidas.</p>
+                            <p className="text-sm text-slate-400 mt-1">Utilizá el panel superior para crear la primera regla.</p>
+                        </div>
+                    )}
+
+                    <div className="space-y-4">
+                        {(config.overrides || []).map((rule, idx) => (
+                            <div key={idx} className={`bg-white p-6 rounded-2xl shadow-sm border border-slate-200/60 hover:shadow-md transition-all relative group flex flex-col md:flex-row gap-6`}>
+
+                                {/* 1. Icon & Main Info */}
+                                <div className="flex items-start gap-4 min-w-[200px]">
+                                    <div className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center font-bold text-xs border shadow-sm ${rule.type === 'area' ? 'bg-indigo-50 border-indigo-100 text-indigo-600' : 'bg-emerald-50 border-emerald-100 text-emerald-600'}`}>
+                                        <span className="text-[9px] opacity-60 uppercase tracking-wider">{rule.type === 'area' ? 'Area' : 'Emp'}</span>
+                                        <LayoutGrid size={20} className="mt-1" />
+                                    </div>
+                                    <div>
+                                        <h4 className="font-bold text-slate-800 text-lg leading-tight">{rule.targetName}</h4>
+                                        <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-full border border-slate-200">
+                                            <span className="text-xs font-bold text-slate-500 uppercase">Target</span>
+                                            <span className="text-sm font-black text-slate-800">x{rule.bonoTarget}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* 2. Detailed Config */}
+                                <div className="flex-1 border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    {rule.escala.tipo === 'lineal' ? (
+                                        <>
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Modelo Lineal</label>
+                                                <div className="text-sm font-medium text-blue-600">Proporcional</div>
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Umbral Mín.</label>
+                                                <div className="text-sm font-bold text-slate-700">{rule.escala.umbral}%</div>
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Rango Pago</label>
+                                                <div className="text-sm font-bold text-slate-700">
+                                                    Min: <span className="text-slate-900">{rule.escala.minPct}x</span>
+                                                    <span className="mx-2 text-slate-300">|</span>
+                                                    Max: <span className="text-slate-900">{rule.escala.maxPct}x</span>
+                                                </div>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="col-span-3">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-2">Escala por Tramos</label>
+                                            <div className="flex flex-wrap gap-2">
+                                                {(rule.escala.tramos || []).map((t, i) => (
+                                                    <div key={i} className="flex items-center text-xs bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-1 rounded">
+                                                        <span className="font-bold">Score &ge; {t.gte}%</span>
+                                                        <ArrowRight size={12} className="mx-1 opacity-50" />
+                                                        <span className="font-bold">x{t.pct}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 3. Actions */}
+                                <div className="flex md:flex-col gap-2 border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-4 justify-end">
+                                    <Button onClick={() => handleRecalculateRule(rule)} variant="ghost" size="sm" className="bg-slate-50 hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 justify-start">
+                                        <RefreshCw size={16} className="mr-2" /> Recalcular
+                                    </Button>
+                                    <Button onClick={() => handleEditRule(idx)} variant="ghost" size="sm" className="bg-slate-50 hover:bg-blue-50 text-slate-400 hover:text-blue-600 justify-start">
+                                        <Edit2 size={16} className="mr-2" /> Editar
+                                    </Button>
+                                    <Button onClick={() => handleDeleteRule(idx)} variant="ghost" size="sm" className="bg-slate-50 hover:bg-rose-50 text-slate-400 hover:text-rose-600 justify-start">
+                                        <Trash2 size={16} className="mr-2" /> Borrar
+                                    </Button>
+                                </div>
+
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* --- EDIT MODAL --- */}
+                {editModal.isOpen && editModal.data && (
+                    <Dialog open={true} onOpenChange={() => setEditModal({ ...editModal, isOpen: false })}>
+                        <DialogContent className="max-w-2xl overflow-hidden p-0 gap-0 rounded-2xl">
+                            <div className="bg-slate-50/50 px-5 py-3 border-b border-slate-100 flex justify-between items-center">
+                                <DialogTitle className="text-base font-bold text-slate-700 flex items-center gap-2">
+                                    <Edit2 size={16} className="text-blue-600" />
+                                    Editar Regla
+                                </DialogTitle>
+                            </div>
+
+                            <div className="flex flex-col">
+                                {/* Top Section: Inputs */}
+                                <div className="p-5 space-y-4">
+                                    {/* 1. Target (Read Only) */}
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
+                                            {editModal.data.type === 'area' ? 'Área / Puesto' : 'Empleado'}
+                                        </label>
+                                        <div className="relative">
+                                            <Input
+                                                disabled
+                                                value={editModal.data.targetName}
+                                                className="bg-slate-50 border-slate-200 font-bold text-slate-600 h-9 text-xs pl-3"
+                                            />
+                                            <div className="absolute right-2 top-2">
+                                                <span className="text-[9px] font-bold bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded uppercase">
+                                                    Fijo
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* 2. Target Multiplier */}
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Multiplicador Target</label>
+                                        <div className="flex items-center gap-2">
+                                            <div className="relative w-24">
+                                                <Input
+                                                    type="number" step="0.1"
+                                                    className="text-lg font-black h-9 bg-white border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all text-center pr-6"
+                                                    value={editModal.data.bonoTarget}
+                                                    onChange={e => setEditModal({
+                                                        ...editModal,
+                                                        data: { ...editModal.data, bonoTarget: e.target.value }
+                                                    })}
+                                                />
+                                                <span className="absolute right-3 top-2.5 text-xs font-bold text-slate-300">x</span>
+                                            </div>
+                                            <span className="text-xs font-bold text-slate-500">Sueldos Brutos</span>
+                                        </div>
+                                    </div>
+
+                                    <hr className="border-slate-100" />
+
+                                    {/* 3. Scale Configuration & Model Type */}
+                                    <div className="space-y-3">
+                                        <div className="flex justify-between items-center">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Modelo de Cálculo</label>
+                                            <div className="flex gap-1 bg-slate-100/50 p-1 rounded-lg border border-slate-200 w-fit">
+                                                <button
+                                                    onClick={() => setEditModal({ ...editModal, data: { ...editModal.data, escala: { ...editModal.data.escala, tipo: 'lineal' } } })}
+                                                    className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${editModal.data.escala.tipo === 'lineal' ? 'bg-white shadow-sm text-blue-700 ring-1 ring-black/5' : 'text-slate-400 hover:text-slate-600'}`}>
+                                                    Lineal
+                                                </button>
+                                                <button
+                                                    onClick={() => setEditModal({ ...editModal, data: { ...editModal.data, escala: { ...editModal.data.escala, tipo: 'tramos' } } })}
+                                                    className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${editModal.data.escala.tipo === 'tramos' ? 'bg-white shadow-sm text-indigo-700 ring-1 ring-black/5' : 'text-slate-400 hover:text-slate-600'}`}>
+                                                    Por Tramos
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-slate-50/50 rounded-xl p-4 border border-slate-100">
+                                            {editModal.data.escala.tipo === 'lineal' ? (
+                                                <div className="grid grid-cols-3 gap-4">
+                                                    <div>
+                                                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1.5">Umbral (%)</label>
+                                                        <Input
+                                                            type="number" className="bg-white font-bold h-9 text-xs text-center border-slate-200 focus:border-blue-500"
+                                                            value={editModal.data.escala.umbral}
+                                                            onChange={e => setEditModal({ ...editModal, data: { ...editModal.data, escala: { ...editModal.data.escala, umbral: e.target.value } } })}
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1.5">Mínimo (x)</label>
+                                                        <Input
+                                                            type="number" step="0.01" className="bg-white font-bold h-9 text-xs text-center border-slate-200 focus:border-blue-500"
+                                                            value={editModal.data.escala.minPct}
+                                                            onChange={e => setEditModal({ ...editModal, data: { ...editModal.data, escala: { ...editModal.data.escala, minPct: e.target.value } } })}
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1.5">Máximo (x)</label>
+                                                        <Input
+                                                            type="number" step="0.01" className="bg-white font-bold h-9 text-xs text-center border-slate-200 focus:border-blue-500"
+                                                            value={editModal.data.escala.maxPct}
+                                                            onChange={e => setEditModal({ ...editModal, data: { ...editModal.data, escala: { ...editModal.data.escala, maxPct: e.target.value } } })}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-3">
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <span className="font-bold text-slate-600 text-xs">Escalones</span>
+                                                        <Button size="icon" variant="ghost" className="h-6 w-6 text-blue-600 hover:bg-blue-50" onClick={() => {
+                                                            const newT = [...(editModal.data.escala.tramos || []), { gte: 90, pct: 1.0 }];
+                                                            setEditModal({ ...editModal, data: { ...editModal.data, escala: { ...editModal.data.escala, tramos: newT.sort((a, b) => a.gte - b.gte) } } })
+                                                        }}>
+                                                            <Plus size={14} />
+                                                        </Button>
+                                                    </div>
+                                                    <div className="space-y-1.5 h-32 overflow-y-auto pr-1">
+                                                        {(editModal.data.escala.tramos || []).map((t, i) => (
+                                                            <div key={i} className="flex items-center justify-between bg-white p-1.5 rounded-lg border border-slate-200">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="text-[9px] font-bold text-slate-400 uppercase w-8 text-right">Score &gt;</span>
+                                                                    <Input type="number" className="w-12 h-7 text-center bg-slate-50 border-transparent focus:bg-white focus:border-indigo-500 text-xs font-bold p-0" value={t.gte} onChange={e => {
+                                                                        const newT = [...editModal.data.escala.tramos]; newT[i].gte = Number(e.target.value);
+                                                                        setEditModal({ ...editModal, data: { ...editModal.data, escala: { ...editModal.data.escala, tramos: newT.sort((a, b) => a.gte - b.gte) } } })
+                                                                    }} />
+                                                                    <span className="text-xs text-slate-300 font-bold">%</span>
+                                                                </div>
+                                                                <ArrowRight size={10} className="text-slate-300" />
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="text-[9px] font-bold text-slate-400 uppercase">Paga</span>
+                                                                    <Input type="number" step="0.1" className="w-12 h-7 text-center bg-slate-50 border-transparent focus:bg-white focus:border-indigo-500 text-xs font-bold p-0" value={t.pct} onChange={e => {
+                                                                        const newT = [...editModal.data.escala.tramos]; newT[i].pct = Number(e.target.value);
+                                                                        setEditModal({ ...editModal, data: { ...editModal.data, escala: { ...editModal.data.escala, tramos: newT } } })
+                                                                    }} />
+                                                                    <span className="text-xs text-slate-300 font-bold">x</span>
+                                                                </div>
+                                                                <button onClick={() => {
+                                                                    const newT = editModal.data.escala.tramos.filter((_, idx) => idx !== i);
+                                                                    setEditModal({ ...editModal, data: { ...editModal.data, escala: { ...editModal.data.escala, tramos: newT } } })
+                                                                }} className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors"><Trash2 size={12} /></button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Bottom Section: Preview & Actions */}
+                                <div className="bg-slate-50/30 border-t border-slate-100 p-5">
+                                    <h4 className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase mb-3">
+                                        <Layers size={12} /> Vista Previa
+                                    </h4>
+                                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6">
+                                        {renderDynamicExplanation(editModal.data.escala, editModal.data.bonoTarget)}
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <Button variant="ghost" onClick={() => setEditModal({ ...editModal, isOpen: false })} className="flex-1 h-10 text-xs text-slate-500 font-bold hover:bg-slate-200/50">
+                                            Cancelar
+                                        </Button>
+                                        <Button onClick={handleSaveEdit} className="flex-1 h-10 text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-md shadow-blue-600/10 rounded-lg">
+                                            Guardar
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
+                        </DialogContent>
+                    </Dialog>
+                )}
 
             </div>
-        </div >
+        </div>
     );
 }

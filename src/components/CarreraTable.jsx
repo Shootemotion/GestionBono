@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { api } from "@/lib/api";
 import { toast } from "react-toastify";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Plus, Trash2, Building, Briefcase, Calendar } from "lucide-react";
 
-export default function CarreraTable({ empleadoId, canEdit, areas = [], sectores = [] }) {
+export default function CarreraTable({ empleadoId, canEdit, areas = [], sectores = [], initialData = null, autoOpen = false, onAutoOpenComplete }) {
   const [items, setItems] = useState([]);
   const [form, setForm] = useState({ puesto: "", area: "", sector: "", desde: "", hasta: "", motivo: "" });
   const [loading, setLoading] = useState(true);
@@ -33,6 +33,24 @@ export default function CarreraTable({ empleadoId, canEdit, areas = [], sectores
   };
 
   useEffect(() => { load(); }, [empleadoId]);
+
+  // Handle auto-open from redirection
+  const handledAutoOpen = useRef(false);
+  useEffect(() => {
+    if (autoOpen && initialData && !handledAutoOpen.current) {
+      setForm((prev) => ({
+        ...prev,
+        puesto: initialData.puesto || "",
+        area: initialData.area || "",
+        sector: initialData.sector || "",
+        desde: new Date().toISOString().split("T")[0], // Default to today
+        motivo: "Cambio de Estructura / Promoción",
+      }));
+      setOpen(true);
+      handledAutoOpen.current = true;
+      if (onAutoOpenComplete) onAutoOpenComplete();
+    }
+  }, [autoOpen, initialData, onAutoOpenComplete]);
 
   const onAdd = async () => {
     try {
@@ -184,14 +202,14 @@ export default function CarreraTable({ empleadoId, canEdit, areas = [], sectores
                 </select>
               </div>
               <div className="grid gap-2">
-                <label className="text-xs font-semibold uppercase text-slate-500">Sector</label>
+                <label className="text-xs font-semibold uppercase text-slate-500">Dependencia</label>
                 <select
                   className="flex h-10 w-full rounded-md border border-slate-300 bg-transparent px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
                   value={form.sector}
                   onChange={(e) => setForm(f => ({ ...f, sector: e.target.value }))}
                   disabled={!form.area}
                 >
-                  <option value="">Seleccionar Sector</option>
+                  <option value="">Seleccionar Dependencia</option>
                   {filteredSectores.map(s => (
                     <option key={s._id} value={s._id}>{s.nombre}</option>
                   ))}

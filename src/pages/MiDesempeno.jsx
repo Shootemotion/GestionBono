@@ -15,7 +15,7 @@ import {
   Target,
   Lightbulb,
   ChevronDown,
-
+  HelpCircle,
   ChevronUp,
   ChevronLeft,
   ChevronRight,
@@ -28,10 +28,14 @@ import {
   CheckCircle,
   Activity,
   Info,
+  Handshake,
+  TrendingUp,
   BarChart3,
-  Hourglass
+  Hourglass,
+  Trophy
 } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine, Legend } from "recharts";
+import { ReporteFinal } from "@/components/ReporteFinal";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine, Legend, AreaChart, Area } from "recharts";
 
 // === UI helpers ===
 const StatusBadge = ({ status }) => {
@@ -43,7 +47,9 @@ const StatusBadge = ({ status }) => {
     "CLOSED": "bg-emerald-50 text-emerald-700 border-emerald-200",
     "PENDIENTE": "bg-amber-50 text-amber-700 border-amber-200",
     "DRAFT": "bg-amber-50 text-amber-700 border-amber-200",
-    "VENCIDO": "bg-rose-50 text-rose-700 border-rose-200"
+    "VENCIDO": "bg-rose-50 text-rose-700 border-rose-200",
+    "FUTURO": "bg-slate-50 text-slate-400 border-slate-200",
+    "ACTUAL": "bg-blue-50 text-blue-700 border-blue-200"
   };
 
   const labels = {
@@ -54,7 +60,9 @@ const StatusBadge = ({ status }) => {
     "CLOSED": "Finalizado",
     "PENDIENTE": "Borrador",
     "DRAFT": "Borrador",
-    "VENCIDO": "Vencido"
+    "VENCIDO": "Vencido",
+    "FUTURO": "Futuro",
+    "ACTUAL": "En Curso"
   };
 
   return (
@@ -84,6 +92,15 @@ function getAccumulatedValue(obj, metaId, currentPeriod, currentValue) {
     }
   }
   return total;
+  return total;
+}
+
+function getCierreLabel(meta) {
+  const rule = meta.reglaCierre || "promedio";
+  if (rule === "promedio") return "Promedio";
+  if (rule === "cierre_unico") return "Cierre Único";
+  if (rule === "umbral_periodos") return `Umbral (${meta.umbralPeriodos || "?"} per.)`;
+  return rule.charAt(0).toUpperCase() + rule.slice(1);
 }
 
 // === Objective Card Component (Refined) ===
@@ -190,22 +207,30 @@ const ObjectiveCard = ({ obj, currentPeriod, expanded, onToggle }) => {
                   return (
                     <div key={idx} className="pb-3 border-b border-slate-50 last:border-0 last:pb-0">
                       <div className="text-sm text-slate-700 font-medium mb-1">{meta.nombre || "Meta sin descripción"}</div>
-                      <div className="flex flex-wrap gap-2 text-[10px] text-slate-500">
-                        <span className="bg-slate-100 px-2 py-1 rounded">
-                          Esperado: {meta.esperado !== null ? meta.esperado : "N/A"} {meta.unidad}
+                      <div className="flex flex-wrap gap-2 text-[10px] text-slate-500 items-center">
+                        <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-slate-600 font-semibold">
+                          Meta: {meta.esperado !== null ? meta.esperado : "N/A"} {meta.unidad}
                         </span>
+
+                        {/* Closure Rule - ALWAYS VISIBLE */}
+                        <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-100 font-semibold">
+                          {getCierreLabel(meta)}
+                        </span>
+
                         {isAcumulativo && (
-                          <span className="bg-purple-50 text-purple-700 px-2 py-1 rounded border border-purple-100">
-                            Acumulado: {valorEvaluado}
+                          <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded border border-purple-100 font-semibold">
+                            Acumulativo
                           </span>
                         )}
-                        {obj.metas?.[idx]?.reglaCierre && (
-                          <span className="bg-indigo-50 text-indigo-700 px-2 py-1 rounded border border-indigo-100">
-                            Cierre: {obj.metas?.[idx]?.reglaCierre}
+
+                        {meta.permiteOver && (
+                          <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-100 font-semibold">
+                            Over
                           </span>
                         )}
-                        {obj.metas?.[idx]?.reconoceEsfuerzo && (
-                          <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-100">Reconoce Esfuerzo</span>
+
+                        {meta.reconoceEsfuerzo && (
+                          <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100 font-semibold">Reconoce Esfuerzo</span>
                         )}
                       </div>
                     </div>
@@ -265,11 +290,12 @@ export default function MiDesempeno() {
   const [activeTab, setActiveTab] = useState("obj"); // "obj" | "comp"
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [viewPeriod, setViewPeriod] = useState(null); // For chart interaction
+  const [showGraph, setShowGraph] = useState(false); // Collapsible graph state
+  const [showFinalReport, setShowFinalReport] = useState(false);
 
   // Year Selection Logic
   const [selectedYear, setSelectedYear] = useState(() => {
-    const now = new Date();
-    return now.getMonth() >= 10 ? now.getFullYear() + 1 : now.getFullYear();
+    return new Date().getFullYear();
   });
 
 
@@ -302,7 +328,7 @@ export default function MiDesempeno() {
   const fetchFeedbacks = useCallback(async () => {
     if (!empleadoId) return;
     try {
-      const res = await api(`/feedbacks/empleado/${empleadoId}`);
+      const res = await api(`/feedbacks/empleado/${empleadoId}?year=${selectedYear}`);
       const fetched = Array.isArray(res) ? res : [];
 
 
@@ -354,39 +380,39 @@ export default function MiDesempeno() {
 
 
 
+  // Helper to convert period to a comparable month index (1-12) based on Fiscal Year (Sep-Aug)
+  const getPeriodMonth = useCallback((periodStr) => {
+    if (!periodStr) return 0;
+    if (periodStr === "Q1") return 3;   // Sep-Nov
+    if (periodStr === "Q2") return 6;   // Dec-Feb
+    if (periodStr === "Q3") return 9;   // Mar-May
+    if (periodStr === "FINAL") return 12; // Jun-Aug
+
+    let suffix = periodStr;
+    if (periodStr.length > 4 && !isNaN(periodStr.slice(0, 4))) {
+      suffix = periodStr.slice(4);
+    }
+
+    if (suffix.startsWith("M")) {
+      const m = parseInt(suffix.slice(1));
+      return m >= 9 ? m - 8 : m + 4;
+    }
+    if (suffix.startsWith("Q")) {
+      const q = parseInt(suffix.slice(1));
+      return q * 3;
+    }
+    if (suffix.startsWith("S")) {
+      const s = parseInt(suffix.slice(1));
+      return s * 6;
+    }
+    if (suffix === "FINAL" || suffix.endsWith("FINAL")) return 12;
+    return 12;
+  }, []);
+
   // Calcular resultados para el periodo seleccionado (USANDO LOGICA MANAGER)
   const periodResults = useMemo(() => {
     if (!data || !selectedFeedback) return { objetivos: [], aptitudes: [], scores: { obj: 0, comp: 0, global: 0 } };
     const p = selectedFeedback.periodo;
-
-    // Helper to convert period to a comparable month index (1-12) based on Fiscal Year (Sep-Aug)
-    const getPeriodMonth = (periodStr) => {
-      if (!periodStr) return 0;
-      if (periodStr === "Q1") return 3;   // Sep-Nov
-      if (periodStr === "Q2") return 6;   // Dec-Feb
-      if (periodStr === "Q3") return 9;   // Mar-May
-      if (periodStr === "FINAL") return 12; // Jun-Aug
-
-      let suffix = periodStr;
-      if (periodStr.length > 4 && !isNaN(periodStr.slice(0, 4))) {
-        suffix = periodStr.slice(4);
-      }
-
-      if (suffix.startsWith("M")) {
-        const m = parseInt(suffix.slice(1));
-        return m >= 9 ? m - 8 : m + 4;
-      }
-      if (suffix.startsWith("Q")) {
-        const q = parseInt(suffix.slice(1));
-        return q * 3;
-      }
-      if (suffix.startsWith("S")) {
-        const s = parseInt(suffix.slice(1));
-        return s * 6;
-      }
-      if (suffix === "FINAL" || suffix.endsWith("FINAL")) return 12;
-      return 12;
-    };
 
     const feedbackLimit = getPeriodMonth(p);
     const previousLimit = feedbackLimit - 3;
@@ -394,6 +420,8 @@ export default function MiDesempeno() {
     // Objetivos
     let totalObjScore = 0;
     let totalObjWeight = 0;
+    let maxActiveObjWeight = 0;
+    const timeFraction = Math.min(feedbackLimit / 12, 1);
     const objetivos = [];
 
     data.objetivos?.forEach(obj => {
@@ -416,6 +444,9 @@ export default function MiDesempeno() {
         score = isCumulative
           ? Math.max(...progresos, 0)
           : Math.round(progresos.reduce((a, b) => a + b, 0) / progresos.length);
+
+        const potentialFactor = isCumulative ? timeFraction : 1;
+        maxActiveObjWeight += (obj.peso || 0) * potentialFactor;
       }
 
       const hasPermiteOver = obj.metas?.some(m => m.permiteOver) || obj.hitos?.some(h => h.metas?.some(m => m.permiteOver));
@@ -427,7 +458,8 @@ export default function MiDesempeno() {
       objetivos.push({
         ...obj,
         hitoActual: hitoPeriodo, // For display in card
-        scorePeriodo: effectiveScore // Calculated score up to this period
+        scorePeriodo: effectiveScore, // Calculated score up to this period (Weighted by PermiteOver)
+        rawScore: score // The raw progress (0-100+) for display
       });
     });
 
@@ -471,6 +503,14 @@ export default function MiDesempeno() {
     const displayComp = scoreComp;
     const displayGlobal = global;
 
+    // Calculate Max Possible (Context for user)
+    // For Objectives: Sum of weights of ACTIVE objectives * 70 (Max Contribution) / 100 (Total Weight Base)
+    // For Competencies: If there are ANY active competencies, Max is 30 (since it's an average).
+    // For Objectives: Sum of weights of ACTIVE objectives * 70 (Max Contribution) / 100 (Total Weight Base)
+    // For Cumulative objectives, Max Contribution is weighted by time passed (e.g. Q1 = 25% of annual).
+    const maxObj = (maxActiveObjWeight / 100) * 70;
+    const maxComp = compCount > 0 ? 30 : 0; // Fixed 30% potential if any data exists
+
     return {
       objetivos,
       aptitudes,
@@ -478,9 +518,63 @@ export default function MiDesempeno() {
         obj: displayObj,
         comp: displayComp,
         global: displayGlobal
-      }
+      },
+      maxScores: {
+        obj: maxObj,
+        comp: maxComp,
+        global: maxObj + maxComp
+      },
+      sparklineData: (() => {
+        // Generate historical data for sparklines
+        const timeline = ["Q1", "Q2", "Q3", "FINAL"];
+        return timeline.map(tPeriod => {
+          const limit = getPeriodMonth(tPeriod);
+          // limit must be <= current feedback limit to show history up to this point? 
+          // Or show FULL history available? User probably wants to see evolution.
+          // Let's show full available history from 'data'.
+
+          const relevantLimit = getPeriodMonth(tPeriod);
+
+          // Calc Obj
+          let tObjScore = 0;
+          let tObjWeight = 0;
+          data.objetivos?.forEach(o => {
+            const rh = o.hitos?.filter(h => getPeriodMonth(h.periodo) <= relevantLimit) || [];
+            if (rh.length > 0) {
+              const isCum = o.metas?.some(m => m.acumulativa || m.modoAcumulacion === 'acumulativo');
+              const prog = rh.map(h => h.actual ?? 0);
+              const sc = isCum ? Math.max(...prog, 0) : Math.round(prog.reduce((a, b) => a + b, 0) / prog.length);
+              const hasOver = o.metas?.some(m => m.permiteOver);
+              const eff = hasOver ? sc : Math.min(sc, 100);
+              tObjScore += eff * (o.peso || 0);
+            }
+          });
+          const rawObj = tObjScore / 100;
+
+          // Calc Comp
+          let tCompScore = 0;
+          let tCompCount = 0;
+          data.aptitudes?.forEach(a => {
+            const rh = a.hitos?.filter(h => getPeriodMonth(h.periodo) <= relevantLimit) || [];
+            const vals = rh.map(h => h.actual).filter(v => v !== null);
+            if (vals.length > 0) {
+              tCompScore += Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+              tCompCount++;
+            }
+          });
+          const rawComp = tCompCount > 0 ? (tCompScore / tCompCount) : 0;
+
+          return {
+            name: tPeriod === "FINAL" ? "Fin" : tPeriod,
+            obj: rawObj * 0.7, // As weighted
+            comp: rawComp * 0.3,
+            global: (rawObj * 0.7) + (rawComp * 0.3)
+          };
+        });
+      })()
     };
-  }, [data, selectedFeedback]);
+
+  }, [data, selectedFeedback, getPeriodMonth]);
 
   // Auto-select first item when results change
   useEffect(() => {
@@ -644,7 +738,6 @@ export default function MiDesempeno() {
 
     // Check global visibility inside renderDetailView
     const showScores = ["SENT", "PENDING_HR", "CLOSED", "ACKNOWLEDGED"].includes(selectedFeedback?.estado);
-
     const metaLabel = activeTab === 'obj' ? `Meta: ${maxScore}%` : `Meta: ${maxScore}%`;
 
     return (
@@ -664,146 +757,227 @@ export default function MiDesempeno() {
           {item.descripcion && <p className="text-slate-500 text-sm mt-2">{item.descripcion}</p>}
         </div>
 
-        {/* Evolution Graph */}
-        <div className="h-72 w-full bg-slate-50 rounded-xl border border-slate-100 p-4">
-          <h4 className="text-xs font-bold text-slate-400 uppercase mb-4">Evolución Anual vs Meta</h4>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={graphData}
-              margin={{ top: 20, right: 30, left: 0, bottom: 0 }}
-              onClick={(data) => {
-                if (data && data.activeLabel) {
-                  setViewPeriod(data.activeLabel);
-                }
-              }}
-            >
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
-              <YAxis hide domain={[0, maxScore]} />
-              <Tooltip
-                cursor={{ fill: 'transparent' }}
-                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                formatter={(value, name, entry) => {
-                  return [
-                    entry.payload.isVisible ? `${Math.round(value)}%` : '--',
-                    name === 'score' ? 'Resultado Ponderado' : metaLabel
-                  ];
-                }}
-                labelFormatter={(label) => `Periodo: ${label}`}
-              />
-              <ReferenceLine
-                y={maxScore}
-                stroke="#10b981"
-                strokeDasharray="3 3"
-                label={{
-                  position: 'right',
-                  value: metaLabel,
-                  fill: '#10b981',
-                  fontSize: 10
-                }}
-              />
-              <Bar dataKey="score" radius={[4, 4, 0, 0]} maxBarSize={50} style={{ cursor: 'pointer' }}>
-                {graphData.map((entry, index) => (
-                  <Cell
-                    key={`cell-${index}`}
-                    fill={entry.isCurrent ? (activeTab === 'obj' ? '#2563eb' : '#d97706') : '#cbd5e1'}
-                    className="transition-all duration-300 hover:opacity-80"
+        {/* Evolution Graph (Collapsible) */}
+        <div className="bg-slate-50 rounded-xl border border-slate-100 overflow-hidden">
+          <button
+            onClick={() => setShowGraph(!showGraph)}
+            className="w-full flex items-center justify-between p-4 text-xs font-semibold text-slate-500 uppercase hover:bg-slate-100 transition-colors"
+          >
+            <span>Evolución Anual vs Meta</span>
+            {showGraph ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+
+          {showGraph && (
+            <div className="h-48 w-full p-4 pt-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={graphData}
+                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                  onClick={(data) => {
+                    if (data && data.activeLabel) {
+                      setViewPeriod(data.activeLabel);
+                    }
+                  }}
+                >
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#94a3b8' }} />
+                  <YAxis hide domain={[0, maxScore]} />
+                  <Tooltip
+                    cursor={{ fill: 'transparent' }}
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '11px' }}
+                    formatter={(value, name, entry) => {
+                      return [
+                        entry.payload.isVisible ? `${Math.round(value)}%` : '--',
+                        name === 'score' ? 'Resultado Ponderado' : metaLabel
+                      ];
+                    }}
+                    labelFormatter={(label) => `Periodo: ${label}`}
                   />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+                  <ReferenceLine
+                    y={maxScore}
+                    stroke="#10b981"
+                    strokeDasharray="3 3"
+                    label={{
+                      position: 'right',
+                      value: `${maxScore}%`,
+                      fill: '#10b981',
+                      fontSize: 9
+                    }}
+                  />
+                  <Bar dataKey="score" radius={[2, 2, 0, 0]} maxBarSize={30} style={{ cursor: 'pointer' }}>
+                    {graphData.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={entry.isCurrent ? (activeTab === 'obj' ? '#2563eb' : '#d97706') : '#cbd5e1'}
+                        className="transition-all duration-300 hover:opacity-80"
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
 
-        {/* Current Period Detail */}
-        <div className="bg-slate-50 rounded-xl border border-slate-200 p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h4 className="font-bold text-slate-700 flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-slate-400" />
-              Detalle {displayPeriod}
-            </h4>
-            <div className="text-2xl font-black text-slate-800">
-              {showScores ? (displayHito?.actual ?? "—") : "--"}%
+        {/* Current Period Detail (V6.6 Clean) */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 overflow-hidden">
+          {/* Header - Single Score Focus */}
+          <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100">
+            <div>
+              <h4 className="font-bold text-slate-800 flex items-center gap-2 text-base">
+                <Calendar className="w-5 h-5 text-blue-600" />
+                Detalle {displayPeriod}
+              </h4>
+              <div className="text-xs text-slate-500 mt-1">Desglose de objetivos y resultados</div>
             </div>
+
+            {showScores ? (
+              <div className="flex flex-col items-end">
+                <span className="text-3xl font-extrabold text-blue-600 tracking-tight">
+                  {displayHito?.actual ?? 0}%
+                </span>
+                <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mt-1">Resultado del Periodo</span>
+              </div>
+            ) : (
+              <span className="text-2xl text-slate-300 font-bold">--</span>
+            )}
           </div>
 
-          {/* Metas (Only for Objectives) */}
-          {activeTab === 'obj' && (
-            <div className="space-y-6 mb-6">
-              {displayHito?.metas?.map((meta, idx) => {
-                // Find definition in item.metas to get full config
+          {/* Metas List (Polished) */}
+          <div className="space-y-4">
+            {activeTab === 'obj' && displayHito?.metas?.length > 0 ? (
+              displayHito.metas.map((meta, idx) => {
                 const metaDef = item.metas?.find(m => m._id === (meta.metaId || meta._id)) || item.metas?.[idx];
-
                 const isAcumulativo = metaDef?.modoAcumulacion === "acumulativo";
                 const valorEvaluado = isAcumulativo
                   ? getAccumulatedValue(item, metaDef?._id, displayPeriod, meta.resultado)
                   : meta.resultado;
+                const target = meta.esperado ?? metaDef?.target ?? 0;
+                const rawCompliance = target > 0 ? (valorEvaluado / target) * 100 : 0;
+                const clampedCompliance = Math.min(Math.max(rawCompliance, 0), 100);
 
                 return (
-                  <div key={idx} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                    {/* Header */}
-                    <div className="bg-slate-50/50 p-3 border-b border-slate-100 flex justify-between items-center">
-                      <div className="font-bold text-slate-700 text-sm">{metaDef?.nombre || meta.nombre}</div>
-                      <Badge variant="outline" className="bg-white text-slate-500 border-slate-200 text-[10px]">
-                        Peso: {metaDef?.peso ?? 0}%
-                      </Badge>
-                    </div>
-
-                    <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                      {/* Config */}
-                      <div className="space-y-2">
-                        <div className="font-bold text-slate-400 uppercase text-[10px]">Configuración</div>
-                        <div className="grid grid-cols-2 gap-y-1 text-slate-600">
-                          <span>Unidad:</span> <span className="font-medium">{metaDef?.unidad || meta.unidad}</span>
-                          <span>Seguimiento:</span> <span className="font-medium capitalize">{metaDef?.modoAcumulacion?.replace('_', ' ') || "Por Período"}</span>
-                          <span>Cierre:</span> <span className="font-medium capitalize">{metaDef?.reglaCierre?.replace('_', ' ') || "Promedio"}</span>
+                  <div key={idx} className="bg-slate-50/50 border border-slate-200/60 rounded-xl p-4 transition-all hover:bg-white hover:shadow-md group">
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex-1 min-w-0 pr-6">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="text-sm font-bold text-slate-700 truncate">{metaDef?.nombre || meta.nombre}</span>
+                          <Badge variant="outline" className="text-[9px] h-5 px-1.5 bg-white text-slate-500 border-slate-200">
+                            Peso: {metaDef?.peso ?? 0}%
+                          </Badge>
+                          <span className="text-[9px] bg-indigo-50 border border-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-medium">
+                            {getCierreLabel(metaDef || meta)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                          <Target className="w-3 h-3 text-slate-400" />
+                          <span>Meta: <span className="font-semibold text-slate-700">{metaDef?.operador || "="} {target} {metaDef?.unidad}</span></span>
                         </div>
                       </div>
 
-                      {/* Objetivo */}
-                      <div className="space-y-2">
-                        <div className="font-bold text-slate-400 uppercase text-[10px]">Objetivo</div>
-                        <div className="bg-slate-50 p-2 rounded border border-slate-100 flex flex-col items-center justify-center text-center h-full">
-                          <div className="text-lg font-bold text-slate-700">
-                            {metaDef?.operador || ""} {meta.esperado}
+                      <div className="text-right min-w-[3rem]">
+                        {showScores ? (
+                          <div className="flex flex-col items-end">
+                            <span className={`text-xl font-bold leading-none ${valorEvaluado >= target ? 'text-emerald-600' : 'text-slate-700'}`}>
+                              {valorEvaluado ?? "--"}
+                            </span>
+                            <span className="text-[9px] text-slate-400 uppercase font-medium mt-1">Resultado</span>
                           </div>
-                          <div className="text-[10px] text-slate-400">Valor Esperado</div>
-                        </div>
+                        ) : (
+                          <span className="text-slate-300">--</span>
+                        )}
                       </div>
+                    </div>
 
-                      {/* Resultado */}
-                      <div className="space-y-2">
-                        <div className="font-bold text-slate-400 uppercase text-[10px]">Resultado</div>
-                        <div className={`p-2 rounded border flex flex-col items-center justify-center text-center h-full ${valorEvaluado >= meta.esperado ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-amber-50 border-amber-100 text-amber-700'}`}>
-                          <div className="text-lg font-bold">
-                            {showScores ? (valorEvaluado ?? "—") : "--"}
-                          </div>
-                          <div className="text-[10px] opacity-70">Obtenido</div>
+                    {/* Config Details (V6.8) */}
+                    <div className="grid grid-cols-3 gap-2 py-2 mt-2 border-t border-slate-100 text-[10px]">
+                      <div>
+                        <span className="block text-slate-400 font-bold uppercase mb-0.5">Configuración</span>
+                        <div className="text-slate-600 font-medium truncate" title={metaDef?.unidad}>U: {metaDef?.unidad || "Numérico"}</div>
+                        <div className="text-slate-600 font-medium truncate" title={metaDef?.modoAcumulacion}>Modo: {metaDef?.modoAcumulacion === "acumulativo" ? "Acumulado" : "Por Periodo"}</div>
+                      </div>
+                      <div>
+                        <span className="block text-slate-400 font-bold uppercase mb-0.5">Objetivo</span>
+                        <div className="text-slate-600 font-medium">{metaDef?.operador || "="} {target}</div>
+                        <div className="text-slate-400">Tolerancia: {metaDef?.tolerancia ?? 0}</div>
+                      </div>
+                      <div>
+                        <span className="block text-slate-400 font-bold uppercase mb-0.5">Opciones</span>
+                        <div className="flex flex-col gap-0.5">
+                          {metaDef?.reconoceEsfuerzo && (
+                            <div className="flex items-center gap-1 text-amber-600 font-medium">
+                              <Handshake className="w-3 h-3" /> Esfuerzo
+                            </div>
+                          )}
+                          {metaDef?.permiteOver && (
+                            <div className="flex items-center gap-1 text-emerald-600 font-medium">
+                              <TrendingUp className="w-3 h-3" /> Over
+                            </div>
+                          )}
+                          {!metaDef?.reconoceEsfuerzo && !metaDef?.permiteOver && <span className="text-slate-400">-</span>}
                         </div>
                       </div>
                     </div>
 
-                    {/* Options Badges */}
-                    <div className="px-4 pb-3 flex gap-2">
-                      {metaDef?.reconoceEsfuerzo && (
-                        <Badge variant="secondary" className="text-[10px] bg-blue-50 text-blue-600 hover:bg-blue-100">Reconoce Esfuerzo</Badge>
-                      )}
-                      {metaDef?.permiteOverAchievement && (
-                        <Badge variant="secondary" className="text-[10px] bg-purple-50 text-purple-600 hover:bg-purple-100">Over-achievement</Badge>
-                      )}
-                    </div>
+                    {/* Slim Progress Bar */}
+                    {showScores && (
+                      <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mt-2">
+                        <div
+                          className={`h-full rounded-full transition-all duration-700 ease-out ${valorEvaluado >= target ? 'bg-emerald-500' : 'bg-blue-600'}`}
+                          style={{ width: `${clampedCompliance}%` }}
+                        />
+                      </div>
+                    )}
+
+                    {/* History Strip (V6.7) */}
+                    {showScores && (
+                      <div className="flex items-center gap-2 overflow-x-auto pb-1 mt-3 no-scrollbar">
+                        {(() => {
+                          const currentPeriodMonth = getPeriodMonth(displayPeriod);
+                          const historyHitos = item.hitos
+                            ?.filter(h => getPeriodMonth(h.periodo) <= currentPeriodMonth)
+                            .sort((a, b) => getPeriodMonth(a.periodo) - getPeriodMonth(b.periodo)) || [];
+
+                          if (historyHitos.length === 0) return null;
+
+                          return historyHitos.map((h, hIdx) => {
+                            const hMeta = h.metas?.find(m => m.metaId === (metaDef?._id || meta.metaId) || m._id === (meta.metaId || meta._id));
+                            const hVal = hMeta?.resultado;
+                            const isCurrentH = h.periodo === displayPeriod;
+
+                            // If no history value, skip or show dash? let's show dash.
+                            const displayVal = hVal !== undefined && hVal !== null ? hVal : "-";
+
+                            return (
+                              <div key={hIdx} className={`flex flex-col items-center justify-center px-2.5 py-1.5 rounded-lg border min-w-[3.5rem] transition-colors ${isCurrentH ? 'bg-blue-50 border-blue-200 shadow-sm' : 'bg-white border-slate-100'}`}>
+                                <span className={`text-[9px] font-bold uppercase tracking-wider mb-0.5 ${isCurrentH ? 'text-blue-600' : 'text-slate-400'}`}>
+                                  {h.periodo}
+                                </span>
+                                <span className={`text-xs font-bold leading-none ${typeof displayVal === 'number' ? (displayVal >= target ? 'text-emerald-600' : 'text-slate-600') : 'text-slate-300'}`}>
+                                  {displayVal}
+                                </span>
+                              </div>
+                            )
+                          });
+                        })()}
+                      </div>
+                    )}
                   </div>
                 );
-              })}
-            </div>
-          )}
-
-          {/* Comments */}
-          <div className="bg-white p-4 rounded-lg border border-slate-200">
-            <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">Comentario del Evaluador</label>
-            <p className="text-sm text-slate-600 italic">
-              {displayHito?.comentario || "Sin comentarios."}
-            </p>
+              })
+            ) : (
+              <div className="text-center py-8 text-slate-400 italic text-sm">
+                {activeTab === 'obj' ? "No hay metas detalladas para este hito." : "Las competencias no tienen desglose de metas."}
+              </div>
+            )}
           </div>
+        </div>
+
+        {/* Comments */}
+        <div className="bg-white p-4 rounded-lg border border-slate-200">
+          <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">Comentario del Evaluador</label>
+          <p className="text-sm text-slate-600 italic">
+            {displayHito?.comentario || "Sin comentarios."}
+          </p>
         </div>
       </div>
     );
@@ -816,7 +990,7 @@ export default function MiDesempeno() {
       id: "Q1",
       label: "Noviembre",
       sub: "Inicio",
-      date: `${selectedYear - 1}-11-01`,
+      date: `${selectedYear}-11-01`,
       actionMonth: "Diciembre",
       deadlines: { manager: "1-10", employee: "10-20", hr: "20-30" }
     },
@@ -824,7 +998,7 @@ export default function MiDesempeno() {
       id: "Q2",
       label: "Febrero",
       sub: "Seguimiento",
-      date: `${selectedYear}-02-01`,
+      date: `${selectedYear + 1}-02-01`,
       actionMonth: "Marzo",
       deadlines: { manager: "1-10", employee: "10-20", hr: "20-30" }
     },
@@ -832,7 +1006,7 @@ export default function MiDesempeno() {
       id: "Q3",
       label: "Mayo",
       sub: "Seguimiento",
-      date: `${selectedYear}-05-01`,
+      date: `${selectedYear + 1}-05-01`,
       actionMonth: "Junio",
       deadlines: { manager: "1-10", employee: "10-20", hr: "20-30" }
     },
@@ -840,7 +1014,7 @@ export default function MiDesempeno() {
       id: "FINAL",
       label: "Agosto",
       sub: "Cierre Anual",
-      date: `${selectedYear}-08-30`,
+      date: `${selectedYear + 1}-08-30`,
       actionMonth: "Septiembre",
       deadlines: { manager: "1-10", employee: "10-20", hr: "20-30" }
     }
@@ -878,7 +1052,22 @@ export default function MiDesempeno() {
               <p className="text-slate-400 text-lg">Seguimiento de evaluaciones y feedback continuo</p>
             </div>
             <div className="hidden md:block text-right">
-              <div className="text-sm text-slate-400 uppercase tracking-wider font-medium mb-1">Año de Desempeño</div>
+
+              {/* REPORT BUTTON */}
+              {(feedbacks.some(f => f.periodo === "FINAL" && !f.isPlaceholder) || data?.evaluaciones?.some(e => e.periodo === "FINAL")) && (
+                <div className="mb-4">
+                  <Button
+                    size="sm"
+                    className="bg-white/10 hover:bg-white/20 text-white border border-white/20 shadow-lg backdrop-blur-sm"
+                    onClick={() => setShowFinalReport(true)}
+                  >
+                    <Trophy className="w-4 h-4 mr-2 text-yellow-300" />
+                    Ver Reporte Final
+                  </Button>
+                </div>
+              )}
+
+              <div className="text-sm text-slate-400 uppercase tracking-wider font-medium mb-1">AÑO</div>
               <div className="flex items-center justify-end gap-3 text-white">
                 <button
                   onClick={() => setSelectedYear(y => y - 1)}
@@ -896,422 +1085,594 @@ export default function MiDesempeno() {
                   <ChevronRight className="w-6 h-6" />
                 </button>
               </div>
+              <div className="text-xs text-slate-400 mt-1 font-medium">
+                Periodo: Sept-{String(selectedYear).slice(-2)} a Ago-{String(selectedYear + 1).slice(-2)}
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       <div className="max-w-[80%] mx-auto px-4 md:px-8 -mt-16 relative z-20">
-        <div className="grid grid-cols-1 lg:grid-cols-[250px_1fr] gap-8">
-
-          {/* SIDEBAR NAVIGATION (Sticky) */}
-          <div className="hidden lg:block space-y-2 sticky top-24 h-fit">
-            <div className="bg-white/80 backdrop-blur-sm p-2 rounded-2xl border border-slate-200/60 shadow-sm">
-              <button
-                onClick={() => scrollToSection(sectionFeedbackRef)}
-                className="w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-slate-600 hover:bg-blue-50 hover:text-blue-700 transition-all font-medium"
-              >
-                <LayoutDashboard className="w-5 h-5" />
-                Resultado Feedback
-              </button>
-              <button
-                onClick={() => scrollToSection(sectionDetailsRef)}
-                className="w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-slate-600 hover:bg-blue-50 hover:text-blue-700 transition-all font-medium"
-              >
-                <ListChecks className="w-5 h-5" />
-                Objetivos y Competencias
-              </button>
-              <button
-                onClick={() => scrollToSection(sectionValidationRef)}
-                className="w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-slate-600 hover:bg-blue-50 hover:text-blue-700 transition-all font-medium"
-              >
-                <FileSignature className="w-5 h-5" />
-                Conformidad
-              </button>
+        {!loading && (!data || (!data.objetivos?.length && !data.aptitudes?.length)) ? (
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-12 text-center flex flex-col items-center justify-center min-h-[400px]">
+            <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-6">
+              <Calendar className="w-10 h-10 text-slate-300" />
             </div>
+            <h2 className="text-xl font-bold text-slate-800 mb-2">No hay Evaluaciones generadas para este Periodo</h2>
+            <p className="text-slate-500 max-w-md mx-auto">
+              No se encontraron objetivos ni competencias asignadas para el año fiscal seleccionado ({selectedYear}).
+            </p>
           </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-[250px_1fr] gap-8">
 
-          {/* MAIN CONTENT (Scrollable) */}
-          <div className="space-y-12">
-
-            {/* SECTION 0: FEEDBACK FLOW */}
-
-
-
-            {/* SECTION 1: FEEDBACK RESULTS (Timeline + Summary) */}
-            <div ref={sectionFeedbackRef} className="scroll-mt-32">
-              {/* Timeline Card */}
-              <div className="bg-white rounded-2xl shadow-xl border border-slate-200/60 p-8 mb-8">
-                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-8 flex items-center gap-2">
-                  <Calendar className="w-4 h-4" /> Cronograma Anual
-                </h3>
-
-                <div className="relative flex items-center justify-between px-4 md:px-12">
-                  <div className="absolute left-0 right-0 top-3 h-0.5 bg-slate-100 -z-0 mx-8 md:mx-16"></div>
-                  {timelineItems.map((p) => {
-                    const fb = feedbacks.find(f => f.periodo === p.id);
-                    const isSelected = selectedFeedback?.periodo === p.id;
-                    const isDone = fb?.estado === "SENT" || fb?.estado === "REALIZADO" || fb?.estado === "PENDING_HR" || fb?.estado === "ACKNOWLEDGED" || fb?.estado === "CLOSED";
-                    const isFuture = !fb || fb.isPlaceholder;
-
-                    let statusColor = "bg-white border-slate-300 text-slate-400";
-                    if (isDone) statusColor = "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/30";
-                    else if (isSelected) statusColor = "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-600/30 scale-110";
-                    else if (!isFuture) statusColor = "bg-white border-amber-400 text-amber-500";
-
-                    return (
-                      <button
-                        key={p.id}
-                        onClick={() => {
-                          const found = feedbacks.find(f => f.periodo === p.id);
-                          if (found) setSelectedFeedback(found);
-                        }}
-                        className="relative z-10 flex flex-col items-center group focus:outline-none"
-                      >
-                        <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${statusColor} ${isSelected ? 'scale-125' : 'group-hover:scale-110'}`}>
-                          {isDone ? <CheckCircle2 className="w-4 h-4" /> : <div className={`w-2 h-2 rounded-full ${isSelected ? 'bg-white' : 'bg-current'}`} />}
-                        </div>
-                        <div className={`mt-4 text-center transition-all ${isSelected ? 'transform translate-y-1' : ''}`}>
-                          <div className={`text-sm font-bold ${isSelected ? 'text-blue-700' : 'text-slate-700'}`}>{p.label}</div>
-                          <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">{p.sub}</div>
-                          <div className="mt-1 px-2 py-0.5 bg-slate-50 rounded text-[9px] text-slate-500 border border-slate-100 whitespace-nowrap group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
-                            Rev: {p.actionMonth}
-                          </div>
-
-                          {/* Hover Tooltip for Deadlines */}
-                          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 bg-slate-800 text-white text-xs rounded-lg p-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
-                            <div className="font-bold mb-1 border-b border-slate-600 pb-1">Plazos {p.actionMonth}</div>
-                            <div className="grid grid-cols-1 gap-1 text-[10px]">
-                              <div className="flex justify-between"><span className="text-slate-300">Líder:</span> <span>Hasta el {p.deadlines.manager.split('-')[1]}</span></div>
-                              <div className="flex justify-between"><span className="text-slate-300">Empleado:</span> <span>Hasta el {p.deadlines.employee.split('-')[1]}</span></div>
-                              <div className="flex justify-between"><span className="text-slate-300">RRHH:</span> <span>Hasta el {p.deadlines.hr.split('-')[1]}</span></div>
-                            </div>
-                            <div className="absolute bottom-[-4px] left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-800 rotate-45"></div>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+            {/* SIDEBAR NAVIGATION (Sticky) - Only show if data exists */}
+            <div className="hidden lg:block space-y-2 sticky top-24 h-fit">
+              <div className="bg-white/80 backdrop-blur-sm p-2 rounded-2xl border border-slate-200/60 shadow-sm">
+                <button
+                  onClick={() => scrollToSection(sectionFeedbackRef)}
+                  className="w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-slate-600 hover:bg-blue-50 hover:text-blue-700 transition-all font-medium"
+                >
+                  <LayoutDashboard className="w-5 h-5" />
+                  Resultado Feedback
+                </button>
+                <button
+                  onClick={() => scrollToSection(sectionDetailsRef)}
+                  className="w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-slate-600 hover:bg-blue-50 hover:text-blue-700 transition-all font-medium"
+                >
+                  <ListChecks className="w-5 h-5" />
+                  Objetivos y Competencias
+                </button>
+                <button
+                  onClick={() => scrollToSection(sectionValidationRef)}
+                  className="w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-slate-600 hover:bg-blue-50 hover:text-blue-700 transition-all font-medium"
+                >
+                  <FileSignature className="w-5 h-5" />
+                  Conformidad
+                </button>
               </div>
-
-              {selectedFeedback ? (
-                <div className="space-y-6">
-                  {/* Header Feedback */}
-                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 relative overflow-hidden">
-                    <div className="flex justify-between items-start mb-6">
-                      <div>
-                        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
-                          <MessageSquare className="w-6 h-6 text-blue-600" />
-                          Feedback {selectedFeedback.periodo}
-                        </h2>
-                        <div className="flex flex-col mt-1 ml-9">
-                          <span className="text-sm text-slate-500">
-                            {selectedFeedback.isPlaceholder
-                              ? "Este periodo aún no ha sido evaluado."
-                              : `Recibido el ${selectedFeedback.submittedToEmployeeAt ? new Date(selectedFeedback.submittedToEmployeeAt).toLocaleDateString() : "—"}`
-                            }
-                          </span>
-                          {!selectedFeedback.isPlaceholder && (
-                            <span className="text-xs font-bold text-slate-400 uppercase mt-1">
-                              Evaluado por: <span className="text-slate-600">{evaluatorName}</span>
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <StatusBadge status={(() => {
-                        // 1. If definitive status (not draft/pending/placeholder), show it
-                        if (selectedFeedback.estado !== "DRAFT" && selectedFeedback.estado !== "PENDIENTE" && !selectedFeedback.isPlaceholder) {
-                          return selectedFeedback.estado;
-                        }
-
-                        // 2. Date-based logic for Draft/Pending/Placeholder
-                        const item = timelineItems.find(t => t.id === selectedFeedback.periodo);
-                        if (!item) return "PENDIENTE";
-
-                        const now = new Date();
-                        const startDate = new Date(item.date);
-                        // Approximate deadline: start + 2 months (e.g., Nov 1 -> Jan 1) to cover the action month
-                        const deadline = new Date(startDate);
-                        deadline.setMonth(deadline.getMonth() + 2);
-
-                        if (now > deadline) return "VENCIDO";
-                        if (now < startDate) return "FUTURO";
-
-                        return "PENDIENTE";
-                      })()} />
-                    </div>
-
-                    {!selectedFeedback.isPlaceholder && (
-                      <div className="bg-slate-50/80 p-6 rounded-xl border border-slate-200/60">
-                        <label className="text-xs font-bold text-blue-600 uppercase mb-3 block flex items-center gap-2">
-                          <UserCircle2 className="w-4 h-4" /> Comentarios del Líder
-                        </label>
-                        <p className="text-slate-700 text-sm whitespace-pre-wrap leading-relaxed">
-                          {selectedFeedback.comentario || "Sin comentarios."}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Summary Scores */}
-                  {selectedFeedback && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {(() => {
-                        const showScores = ["SENT", "PENDING_HR", "CLOSED", "ACKNOWLEDGED"].includes(selectedFeedback.estado);
-
-                        return (
-                          <>
-                            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center">
-                              <div className="text-sm text-slate-500 font-medium mb-1">Score Objetivos</div>
-                              <div className={`text-3xl font-black ${showScores ? "text-blue-600" : "text-slate-300"}`}>
-                                {showScores ? `${Math.round(periodResults.scores.obj)}%` : "--"}
-                              </div>
-                            </div>
-                            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center">
-                              <div className="text-sm text-slate-500 font-medium mb-1">Score Competencias</div>
-                              <div className={`text-3xl font-black ${showScores ? "text-amber-500" : "text-slate-300"}`}>
-                                {showScores ? `${Math.round(periodResults.scores.comp)}%` : "--"}
-                              </div>
-                            </div>
-                            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-6 rounded-2xl shadow-lg shadow-blue-600/20 flex flex-col items-center justify-center text-white">
-                              <div className="text-sm text-blue-100 font-medium mb-1">Score Global</div>
-                              <div className="text-3xl font-black">
-                                {showScores ? `${Math.round(periodResults.scores.global)}%` : "--"}
-                              </div>
-                            </div>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="p-12 text-center text-slate-400 bg-white rounded-2xl border border-dashed">
-                  Seleccioná un periodo para ver el detalle.
-                </div>
-              )}
             </div>
 
-            {/* SECTION 2: DETAILED VIEW (Redesigned) */}
-            <div ref={sectionDetailsRef} className="scroll-mt-32">
-              {!selectedFeedback ? (
-                <div className="p-12 text-center text-slate-400 bg-white rounded-2xl border border-dashed">
-                  No hay detalles disponibles para este periodo.
-                </div>
-              ) : (
-                <div className="flex flex-col lg:flex-row gap-6 h-[800px]">
-                  {/* LEFT COLUMN: LIST */}
-                  <div className="w-full lg:w-1/3 flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                    {/* TABS */}
-                    <div className="flex border-b border-slate-100">
-                      <button
-                        onClick={() => setActiveTab('obj')}
-                        className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'obj' ? 'text-blue-600 bg-blue-50/50 border-b-2 border-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
-                      >
-                        Objetivos
-                      </button>
-                      <button
-                        onClick={() => setActiveTab('comp')}
-                        className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'comp' ? 'text-amber-600 bg-amber-50/50 border-b-2 border-amber-600' : 'text-slate-500 hover:bg-slate-50'}`}
-                      >
-                        Competencias
-                      </button>
-                    </div>
+            {/* MAIN CONTENT (Scrollable) */}
+            <div className="space-y-12">
 
-                    {/* LIST ITEMS */}
-                    <div className="flex-1 overflow-y-auto p-2 space-y-2 bg-slate-50/30">
-                      {activeTab === 'obj' ? (
-                        periodResults.objetivos.length > 0 ? (
-                          periodResults.objetivos.map(obj => (
-                            <button
-                              key={obj._id}
-                              onClick={() => setSelectedItemId(obj._id)}
-                              className={`w-full text-left p-4 rounded-xl border transition-all ${selectedItemId === obj._id ? 'bg-white border-blue-200 shadow-md ring-1 ring-blue-100' : 'bg-white border-slate-100 hover:border-blue-100 hover:shadow-sm'}`}
-                            >
-                              <div className="flex justify-between items-start mb-2">
-                                <Badge variant="outline" className="bg-slate-50 text-slate-500 border-slate-200 text-[10px]">
-                                  {obj.peso}% Peso
-                                </Badge>
-                                {["SENT", "PENDING_HR", "CLOSED", "ACKNOWLEDGED"].includes(selectedFeedback?.estado) ? (
-                                  <span className={`text-sm font-bold ${obj.scorePeriodo > 0 ? 'text-blue-600' : 'text-slate-300'}`}>
-                                    {Math.round((obj.scorePeriodo * obj.peso) / 100)}%
-                                  </span>
-                                ) : (
-                                  <span className="text-sm font-bold text-slate-300">--</span>
-                                )}
-                              </div>
-                              <div className="text-sm font-bold text-slate-800 line-clamp-2">{obj.nombre}</div>
-                            </button>
-                          ))
-                        ) : (
-                          <div className="p-8 text-center text-slate-400 text-sm italic">No hay objetivos.</div>
-                        )
-                      ) : (
-                        periodResults.aptitudes.length > 0 ? (
-                          periodResults.aptitudes.map(apt => (
-                            <button
-                              key={apt._id}
-                              onClick={() => setSelectedItemId(apt._id)}
-                              className={`w-full text-left p-4 rounded-xl border transition-all ${selectedItemId === apt._id ? 'bg-white border-amber-200 shadow-md ring-1 ring-amber-100' : 'bg-white border-slate-100 hover:border-amber-100 hover:shadow-sm'}`}
-                            >
-                              <div className="flex justify-between items-start mb-2">
-                                <Badge variant="outline" className="bg-slate-50 text-slate-500 border-slate-200 text-[10px]">
-                                  Competencia
-                                </Badge>
-                                {["SENT", "PENDING_HR", "CLOSED", "ACKNOWLEDGED"].includes(selectedFeedback?.estado) ? (
-                                  <span className={`text-sm font-bold ${apt.scorePeriodo > 0 ? 'text-amber-600' : 'text-slate-300'}`}>
-                                    {Math.round(apt.scorePeriodo)}%
-                                  </span>
-                                ) : (
-                                  <span className="text-sm font-bold text-slate-300">--</span>
-                                )}
-                              </div>
-                              <div className="text-sm font-bold text-slate-800 line-clamp-2">{apt.nombre}</div>
-                            </button>
-                          ))
-                        ) : (
-                          <div className="p-8 text-center text-slate-400 text-sm italic">No hay competencias.</div>
-                        )
-                      )}
-                    </div>
-                  </div>
+              {/* SECTION 0: FEEDBACK FLOW */}
 
-                  {/* RIGHT COLUMN: DETAILS */}
-                  <div className="w-full lg:w-2/3 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 overflow-y-auto">
-                    {renderDetailView()}
-                  </div>
-                </div>
-              )}
-            </div>
 
-            {/* SECTION 3: VALIDATION */}
-            <div ref={sectionValidationRef} className="scroll-mt-32">
-              {!selectedFeedback || selectedFeedback.isPlaceholder ? (
-                <div className="p-12 text-center text-slate-400 bg-white rounded-2xl border border-dashed">
-                  No hay validación disponible para este periodo.
-                </div>
-              ) : (
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8">
-                  <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2 text-lg">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                    Conformidad y Validación
+
+              {/* SECTION 1: FEEDBACK RESULTS (Timeline + Summary) */}
+              <div ref={sectionFeedbackRef} className="scroll-mt-32">
+                {/* Timeline Card */}
+                <div className="bg-white rounded-2xl shadow-xl border border-slate-200/60 p-8 mb-8">
+                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-8 flex items-center gap-2">
+                    <Calendar className="w-4 h-4" /> Cronograma Anual
                   </h3>
 
-                  <div className="space-y-6 mb-8 pb-8 border-b border-slate-100">
-                    <div>
-                      <label className="text-sm font-medium text-slate-700 mb-2 block">Comentarios para RRHH</label>
-                      <textarea
-                        className="w-full h-32 rounded-xl border border-slate-200 p-4 text-sm focus:ring-2 focus:ring-blue-500/20 outline-none transition-all resize-none bg-slate-50 focus:bg-white"
-                        placeholder="Escribí tus comentarios sobre este feedback..."
-                        value={localComment}
-                        onChange={(e) => setLocalComment(e.target.value)}
-                        disabled={selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado}
-                      />
-                    </div>
+                  <div className="relative flex items-center justify-between px-4 md:px-12">
+                    <div className="absolute left-0 right-0 top-3 h-0.5 bg-slate-100 -z-0 mx-8 md:mx-16"></div>
+                    {timelineItems.map((p) => {
+                      const fb = feedbacks.find(f => f.periodo === p.id);
+                      const isSelected = selectedFeedback?.periodo === p.id;
+                      const isDone = fb?.estado === "SENT" || fb?.estado === "REALIZADO" || fb?.estado === "PENDING_HR" || fb?.estado === "ACKNOWLEDGED" || fb?.estado === "CLOSED";
+                      const isFuture = !fb || fb.isPlaceholder;
 
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-100">
-                      <div className="flex gap-3 w-full sm:w-auto">
+                      let statusColor = "bg-white border-slate-300 text-slate-400";
+                      if (isDone) statusColor = "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/30";
+                      else if (isSelected) statusColor = "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-600/30 scale-110";
+                      else if (!isFuture) statusColor = "bg-white border-amber-400 text-amber-500";
+
+                      return (
                         <button
-                          onClick={() => setLocalAck("ACK")}
-                          disabled={selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado}
-                          className={`flex-1 sm:flex-none px-4 py-2.5 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${localAck === "ACK"
-                            ? "bg-emerald-100 text-emerald-700 ring-2 ring-emerald-500 ring-offset-2"
-                            : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200"
-                            }`}
+                          key={p.id}
+                          onClick={() => {
+                            const found = feedbacks.find(f => f.periodo === p.id);
+                            if (found) setSelectedFeedback(found);
+                          }}
+                          className="relative z-10 flex flex-col items-center group focus:outline-none"
                         >
-                          <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${localAck === "ACK" ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-400"}`}>
-                            {localAck === "ACK" && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                          <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${statusColor} ${isSelected ? 'scale-125' : 'group-hover:scale-110'}`}>
+                            {isDone ? <CheckCircle2 className="w-4 h-4" /> : <div className={`w-2 h-2 rounded-full ${isSelected ? 'bg-white' : 'bg-current'}`} />}
                           </div>
-                          Estoy de acuerdo
-                        </button>
-                        <button
-                          onClick={() => setLocalAck("CONTEST")}
-                          disabled={selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado}
-                          className={`flex-1 sm:flex-none px-4 py-2.5 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${localAck === "CONTEST"
-                            ? "bg-rose-100 text-rose-700 ring-2 ring-rose-500 ring-offset-2"
-                            : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200"
-                            }`}
-                        >
-                          <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${localAck === "CONTEST" ? "border-rose-600 bg-rose-600 text-white" : "border-slate-400"}`}>
-                            {localAck === "CONTEST" && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
-                          </div>
-                          En desacuerdo
-                        </button>
-                      </div>
-
-                      <Button
-                        onClick={handleSaveResponse}
-                        disabled={selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado || !localAck}
-                        className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 px-8 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado ? "Enviado" : "Enviar a RRHH"}
-                      </Button>
-                    </div>
-
-                    {selectedFeedback.estado === "CLOSED" && (
-                      <div className="mt-4 p-4 bg-slate-50 text-slate-500 text-sm rounded-xl flex items-center gap-3 border border-slate-100">
-                        <Lock className="w-5 h-5" />
-                        <span>Este feedback está cerrado y no se puede modificar.</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* FEEDBACK FLOW MOVED HERE */}
-                  <div className="pt-8">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2">
-                      <span className="w-3 h-3 bg-slate-400 rounded-full" /> Estado del Proceso
-                    </h4>
-                    <div className="relative px-4 md:px-12">
-                      <div className="absolute left-0 right-0 top-4 h-0.5 bg-slate-100 -z-0 mx-8 md:mx-16"></div>
-                      <div className="flex justify-between relative z-10">
-                        {[
-                          { label: "Borrador", status: "DRAFT", date: selectedFeedback.createdAt, icon: FileEdit, deadlineKey: "manager" },
-                          { label: "Enviado a Vos", status: "SENT", date: selectedFeedback.submittedToEmployeeAt, icon: Send, deadlineKey: "employee" },
-                          { label: "Tu Respuesta", status: "PENDING_HR", date: selectedFeedback.empleadoAck?.fecha, icon: Users, deadlineKey: "hr" },
-                          { label: "Finalizado", status: "CLOSED", date: selectedFeedback.closedAt, icon: CheckCircle, deadlineKey: null }
-                        ].map((step, idx) => {
-                          const order = { "DRAFT": 0, "SENT": 1, "PENDING_HR": 2, "CLOSED": 3 };
-                          const currentStep = order[selectedFeedback.estado] ?? 0;
-                          const isCompleted = idx <= currentStep;
-                          const Icon = step.icon;
-
-                          // Get deadline info
-                          const periodItem = timelineItems.find(t => t.id === selectedFeedback.periodo);
-                          const deadlineRange = step.deadlineKey && periodItem ? periodItem.deadlines[step.deadlineKey] : null;
-                          const actionMonth = periodItem?.actionMonth;
-
-                          return (
-                            <div key={idx} className="flex flex-col items-center text-center gap-2">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all border-2 ${isCompleted ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-300'}`}>
-                                <Icon className="w-4 h-4" />
-                              </div>
-                              <div className="flex flex-col">
-                                <span className={`text-xs font-bold ${isCompleted ? 'text-slate-700' : 'text-slate-400'}`}>{step.label}</span>
-                                {step.date && isCompleted && (
-                                  <span className="text-[10px] text-slate-500 font-medium">
-                                    {new Date(step.date).toLocaleDateString()}
-                                  </span>
-                                )}
-                                {!isCompleted && deadlineRange && (
-                                  <span className="text-[10px] text-amber-600 font-medium bg-amber-50 px-1.5 py-0.5 rounded mt-1 border border-amber-100">
-                                    {deadlineRange} {actionMonth?.slice(0, 3)}
-                                  </span>
-                                )}
-                              </div>
+                          <div className={`mt-4 text-center transition-all ${isSelected ? 'transform translate-y-1' : ''}`}>
+                            <div className={`text-sm font-bold ${isSelected ? 'text-blue-700' : 'text-slate-700'}`}>{p.label}</div>
+                            <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">{p.sub}</div>
+                            <div className="mt-1 px-2 py-0.5 bg-slate-50 rounded text-[9px] text-slate-500 border border-slate-100 whitespace-nowrap group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
+                              Rev: {p.actionMonth}
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+
+                            {/* Hover Tooltip for Deadlines */}
+                            <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 bg-slate-800 text-white text-xs rounded-lg p-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                              <div className="font-bold mb-1 border-b border-slate-600 pb-1">Plazos {p.actionMonth}</div>
+                              <div className="grid grid-cols-1 gap-1 text-[10px]">
+                                <div className="flex justify-between"><span className="text-slate-300">Líder:</span> <span>Hasta el {p.deadlines.manager.split('-')[1]}</span></div>
+                                <div className="flex justify-between"><span className="text-slate-300">Empleado:</span> <span>Hasta el {p.deadlines.employee.split('-')[1]}</span></div>
+                                <div className="flex justify-between"><span className="text-slate-300">RRHH:</span> <span>Hasta el {p.deadlines.hr.split('-')[1]}</span></div>
+                              </div>
+                              <div className="absolute bottom-[-4px] left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-800 rotate-45"></div>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
-              )}
-            </div>
 
+                {selectedFeedback ? (
+                  <div className="space-y-6">
+                    {/* Header Feedback */}
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 relative overflow-hidden">
+                      <div className="flex justify-between items-start mb-6">
+                        <div>
+                          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
+                            <MessageSquare className="w-6 h-6 text-blue-600" />
+                            Feedback {selectedFeedback.periodo}
+                          </h2>
+                          <div className="flex flex-col mt-1 ml-9">
+                            <span className="text-sm text-slate-500">
+                              {selectedFeedback.isPlaceholder
+                                ? "Este periodo aún no ha sido evaluado."
+                                : `Recibido el ${selectedFeedback.submittedToEmployeeAt ? new Date(selectedFeedback.submittedToEmployeeAt).toLocaleDateString() : "—"}`
+                              }
+                            </span>
+                            {!selectedFeedback.isPlaceholder && (
+                              <span className="text-xs font-bold text-slate-400 uppercase mt-1">
+                                Evaluado por: <span className="text-slate-600">{evaluatorName}</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <StatusBadge status={(() => {
+                          // 1. If definitive status (not draft/pending/placeholder), show it
+                          if (selectedFeedback.estado !== "DRAFT" && selectedFeedback.estado !== "PENDIENTE" && !selectedFeedback.isPlaceholder) {
+                            return selectedFeedback.estado;
+                          }
+
+                          // 2. Date-based logic for Draft/Pending/Placeholder
+                          const item = timelineItems.find(t => t.id === selectedFeedback.periodo);
+                          if (!item) return "PENDIENTE";
+
+                          const now = new Date();
+                          const startDate = new Date(item.date);
+
+                          // Work Window Check (3 months before feedback start)
+                          const workStartDate = new Date(startDate);
+                          workStartDate.setMonth(workStartDate.getMonth() - 3);
+
+                          // Approximate deadline: start + 2 months
+                          const deadline = new Date(startDate);
+                          deadline.setMonth(deadline.getMonth() + 2);
+
+                          if (now > deadline) return "VENCIDO";
+                          if (now >= workStartDate) return "ACTUAL"; // Inside working or feedback window
+
+                          return "FUTURO";
+                        })()} />
+                      </div>
+
+                      {!selectedFeedback.isPlaceholder && (
+                        <div className="bg-slate-50/80 p-6 rounded-xl border border-slate-200/60">
+                          <label className="text-xs font-bold text-blue-600 uppercase mb-3 block flex items-center gap-2">
+                            <UserCircle2 className="w-4 h-4" /> Comentarios del Líder
+                          </label>
+                          <p className="text-slate-700 text-sm whitespace-pre-wrap leading-relaxed">
+                            {selectedFeedback.comentario || "Sin comentarios."}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Summary Scores (V3 KPI Tiles) */}
+                    <div className="mt-6 mb-2">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {(() => {
+                          const showScores = ["SENT", "PENDING_HR", "CLOSED", "ACKNOWLEDGED"].includes(selectedFeedback.estado);
+
+                          return (
+                            <>
+                              {/* Objectives Tile (Modern Violet) */}
+                              <div className="relative bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-col justify-between overflow-visible group hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
+                                {/* Custom Tooltip */}
+                                <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] py-1.5 px-3 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 shadow-xl">
+                                  Suma de pesos de objetivos iniciados
+                                  <div className="absolute bottom-[-4px] left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-800 rotate-45"></div>
+                                </div>
+
+                                <div className="flex justify-between items-start mb-4">
+                                  <div className="flex items-center gap-2">
+                                    <div className="p-2 bg-violet-50 rounded-lg text-violet-600">
+                                      <Target className="w-4 h-4" />
+                                    </div>
+                                    <div>
+                                      <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide">Objetivos</h3>
+                                      <span className="text-[10px] text-slate-400 font-medium">Peso: 70%</span>
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <div className="text-3xl font-black text-slate-800 tracking-tight">
+                                      {showScores ? `${Number(periodResults.scores.obj).toFixed(1)}%` : "--"}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <div className="flex justify-between items-center text-[10px]">
+                                    <span className="text-slate-500 font-medium bg-slate-100 px-2 py-0.5 rounded-md">
+                                      Max Posible {selectedFeedback.periodo}: <span className="font-bold text-violet-600">{showScores ? `${Number(periodResults.maxScores?.obj ?? 70).toFixed(1)}%` : "--"}</span>
+                                    </span>
+                                  </div>
+                                  {/* Progress Bar: Score relative to Max */}
+                                  <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                    <div
+                                      className="h-full bg-violet-500 rounded-full transition-all duration-1000 ease-out"
+                                      style={{ width: `${Math.min(((periodResults.scores.obj || 0) / (periodResults.maxScores?.obj || 1)) * 100, 100)}%` }}
+                                    ></div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Competencies Tile (Modern Teal) */}
+                              <div className="relative bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-col justify-between overflow-visible group hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
+                                {/* Custom Tooltip */}
+                                <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] py-1.5 px-3 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 shadow-xl">
+                                  Competencias evaluadas hasta la fecha
+                                  <div className="absolute bottom-[-4px] left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-800 rotate-45"></div>
+                                </div>
+
+                                <div className="flex justify-between items-start mb-4">
+                                  <div className="flex items-center gap-2">
+                                    <div className="p-2 bg-teal-50 rounded-lg text-teal-600">
+                                      <Lightbulb className="w-4 h-4" />
+                                    </div>
+                                    <div>
+                                      <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide">Competencias</h3>
+                                      <span className="text-[10px] text-slate-400 font-medium">Peso: 30%</span>
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <div className="text-3xl font-black text-slate-800 tracking-tight">
+                                      {showScores ? `${Number(periodResults.scores.comp).toFixed(1)}%` : "--"}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <div className="flex justify-between items-center text-[10px]">
+                                    <span className="text-slate-500 font-medium bg-slate-100 px-2 py-0.5 rounded-md">
+                                      Max Posible {selectedFeedback.periodo}: <span className="font-bold text-teal-600">{showScores ? `${Number(periodResults.maxScores?.comp ?? 30).toFixed(1)}%` : "--"}</span>
+                                    </span>
+                                  </div>
+                                  {/* Progress Bar */}
+                                  <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                    <div
+                                      className="h-full bg-teal-500 rounded-full transition-all duration-1000 ease-out"
+                                      style={{ width: `${Math.min(((periodResults.scores.comp || 0) / (periodResults.maxScores?.comp || 1)) * 100, 100)}%` }}
+                                    ></div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Global Tile (Titanium Dark) */}
+                              <div className="relative bg-slate-900 rounded-2xl border border-slate-700 shadow-xl p-5 flex flex-col justify-between overflow-visible group hover:-translate-y-1 transition-all duration-300">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+
+                                {/* Custom Tooltip */}
+                                <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-white text-slate-900 font-bold text-[10px] py-1.5 px-3 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 shadow-xl">
+                                  Nota Final Ponderada
+                                  <div className="absolute bottom-[-4px] left-1/2 -translate-x-1/2 w-2 h-2 bg-white rotate-45"></div>
+                                </div>
+
+                                <div className="flex justify-between items-start mb-4 relative z-10">
+                                  <div className="flex items-center gap-2">
+                                    <div className="p-2 bg-slate-800 rounded-lg text-blue-400">
+                                      <LayoutDashboard className="w-4 h-4" />
+                                    </div>
+                                    <div>
+                                      <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wide">Global</h3>
+                                      <span className="text-[10px] text-slate-500 font-medium">Final</span>
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <div className="text-3xl font-black text-white tracking-tight">
+                                      {showScores ? `${Number(periodResults.scores.global).toFixed(1)}%` : "--"}
+                                    </div>
+                                    {/* Achievement Badge */}
+                                    {showScores && periodResults.scores.global >= 50 && (
+                                      <div className="inline-flex items-center bg-emerald-500/20 text-emerald-300 text-[9px] font-bold px-1.5 py-0.5 rounded border border-emerald-500/30 mt-1 uppercase tracking-wider backdrop-blur-sm">
+                                        <CheckCircle2 className="w-3 h-3 mr-1" /> Objetivos Logrados
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="space-y-2 relative z-10">
+                                  <div className="flex justify-between items-center text-[10px]">
+                                    <span className="text-slate-400 font-medium bg-slate-800/50 px-2 py-0.5 rounded-md border border-slate-700">
+                                      Max Posible {selectedFeedback.periodo}: <span className="font-bold text-blue-400">{showScores ? `${Number((periodResults.maxScores?.obj ?? 70) + (periodResults.maxScores?.comp ?? 30)).toFixed(1)}%` : "--"}</span>
+                                    </span>
+                                  </div>
+
+                                  {/* Progress Bar with 50% Marker */}
+                                  <div className="relative h-1.5 w-full bg-slate-800 rounded-full mt-2">
+                                    {/* 50% Marker */}
+                                    {(() => {
+                                      const max = (periodResults.maxScores?.obj ?? 70) + (periodResults.maxScores?.comp ?? 30) || 100;
+                                      const pos = (50 / max) * 100;
+                                      if (pos <= 100) return (
+                                        <>
+                                          <div className="absolute top-[-4px] w-0.5 h-3.5 bg-slate-400 z-20 shadow-sm" style={{ left: `${pos}%` }}></div>
+                                          <div className="absolute bottom-[-14px] text-[8px] font-bold text-slate-500 -translate-x-1/2 whitespace-nowrap" style={{ left: `${pos}%` }}>Min 50%</div>
+                                        </>
+                                      );
+                                      return null;
+                                    })()}
+
+                                    <div
+                                      className="absolute top-0 left-0 h-full bg-blue-500 rounded-full transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(59,130,246,0.5)] z-10"
+                                      style={{ width: `${Math.min(((periodResults.scores.global || 0) / ((periodResults.maxScores?.obj ?? 70) + (periodResults.maxScores?.comp ?? 30) || 1)) * 100, 100)}%` }}
+                                    ></div>
+                                  </div>
+
+                                  {/* Spacer for legend */}
+                                  <div className="h-2"></div>
+                                </div>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-12 text-center text-slate-400 bg-white rounded-2xl border border-dashed">
+                    Seleccioná un periodo para ver el detalle.
+                  </div>
+                )}
+              </div>
+
+              {/* SECTION 2: DETAILED VIEW (Redesigned) */}
+              <div ref={sectionDetailsRef} className="scroll-mt-32">
+                {!selectedFeedback ? (
+                  <div className="p-12 text-center text-slate-400 bg-white rounded-2xl border border-dashed">
+                    No hay detalles disponibles para este periodo.
+                  </div>
+                ) : (
+                  <div className="flex flex-col lg:flex-row gap-6 h-[800px]">
+                    {/* LEFT COLUMN: LIST */}
+                    <div className="w-full lg:w-1/3 flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                      {/* TABS */}
+                      <div className="flex border-b border-slate-100">
+                        <button
+                          onClick={() => setActiveTab('obj')}
+                          className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'obj' ? 'text-blue-600 bg-blue-50/50 border-b-2 border-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
+                        >
+                          Objetivos
+                        </button>
+                        <button
+                          onClick={() => setActiveTab('comp')}
+                          className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'comp' ? 'text-amber-600 bg-amber-50/50 border-b-2 border-amber-600' : 'text-slate-500 hover:bg-slate-50'}`}
+                        >
+                          Competencias
+                        </button>
+                      </div>
+
+                      {/* LIST ITEMS (Refined V3) */}
+                      <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50">
+                        {activeTab === 'obj' ? (
+                          periodResults.objetivos.length > 0 ? (
+                            periodResults.objetivos.map(obj => (
+                              <button
+                                key={obj._id}
+                                onClick={() => setSelectedItemId(obj._id)}
+                                className={`w-full text-left rounded-lg border transition-all group overflow-hidden ${selectedItemId === obj._id
+                                  ? 'bg-white border-indigo-200 shadow-md ring-1 ring-indigo-50 relative z-10'
+                                  : 'bg-white border-slate-200 hover:border-indigo-200 hover:shadow-sm'
+                                  }`}
+                              >
+                                <div className="p-3 pb-2 flex justify-between items-start gap-2">
+                                  <div className={`text-sm font-semibold line-clamp-2 ${selectedItemId === obj._id ? 'text-indigo-900' : 'text-slate-700'}`}>
+                                    {obj.nombre}
+                                  </div>
+                                </div>
+
+                                {/* Detailed Metrics Footer */}
+                                <div className={`px-3 py-2 grid grid-cols-3 gap-1 text-[10px] font-medium border-t ${selectedItemId === obj._id ? 'bg-indigo-50/50 text-indigo-700 border-indigo-100' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
+                                  <div className="flex flex-col">
+                                    <span className="text-[9px] opacity-70">Peso</span>
+                                    <span className="font-bold">{obj.peso}%</span>
+                                  </div>
+                                  <div className="flex flex-col text-center border-l border-slate-200/50">
+                                    <span className="text-[9px] opacity-70">Pond</span>
+                                    <span className="font-bold">{Number((obj.scorePeriodo * (obj.peso || 0)) / 100).toFixed(1)}%</span>
+                                  </div>
+                                  <div className="flex flex-col text-right border-l border-slate-200/50">
+                                    <span className="text-[9px] opacity-70">Avance</span>
+                                    <span className="font-bold">{Number(obj.rawScore ?? 0).toFixed(1)}%</span>
+                                  </div>
+                                </div>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="p-8 text-center text-slate-400 text-sm italic">No hay objetivos.</div>
+                          )
+                        ) : (
+                          periodResults.aptitudes.length > 0 ? (
+                            periodResults.aptitudes.map(apt => (
+                              <button
+                                key={apt._id}
+                                onClick={() => setSelectedItemId(apt._id)}
+                                className={`w-full text-left rounded-lg border transition-all group overflow-hidden ${selectedItemId === apt._id
+                                  ? 'bg-white border-orange-200 shadow-md ring-1 ring-orange-50 relative z-10'
+                                  : 'bg-white border-slate-200 hover:border-orange-200 hover:shadow-sm'
+                                  }`}
+                              >
+                                <div className="p-3 pb-2 flex justify-between items-start gap-2">
+                                  <div className={`text-sm font-semibold line-clamp-2 ${selectedItemId === apt._id ? 'text-orange-900' : 'text-slate-700'}`}>
+                                    {apt.nombre}
+                                  </div>
+                                </div>
+
+                                {/* Dual Progress Footer (Tinted) */}
+                                <div className={`px-3 py-2 flex justify-between text-[10px] font-medium ${selectedItemId === apt._id ? 'bg-orange-50/50 text-orange-700' : 'bg-slate-50 text-slate-500'}`}>
+                                  <span>Impacto: <span className="font-bold">30%</span></span>
+                                  <span>Calif: <span className="font-bold">{Number(apt.scorePeriodo).toFixed(1)}%</span></span>
+                                </div>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="p-8 text-center text-slate-400 text-sm italic">No hay competencias.</div>
+                          )
+                        )}
+                      </div>
+                    </div>
+
+                    {/* RIGHT COLUMN: DETAILS */}
+                    <div className="w-full lg:w-2/3 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 overflow-y-auto">
+                      {renderDetailView()}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* SECTION 3: VALIDATION */}
+              <div ref={sectionValidationRef} className="scroll-mt-32">
+                {!selectedFeedback || selectedFeedback.isPlaceholder ? (
+                  <div className="p-12 text-center text-slate-400 bg-white rounded-2xl border border-dashed">
+                    No hay validación disponible para este periodo.
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8">
+                    <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2 text-lg">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                      Conformidad y Validación
+                    </h3>
+
+                    <div className="space-y-6 mb-8 pb-8 border-b border-slate-100">
+                      <div>
+                        <label className="text-sm font-medium text-slate-700 mb-2 block">Comentarios para RRHH</label>
+                        <textarea
+                          className="w-full h-32 rounded-xl border border-slate-200 p-4 text-sm focus:ring-2 focus:ring-blue-500/20 outline-none transition-all resize-none bg-slate-50 focus:bg-white"
+                          placeholder="Escribí tus comentarios sobre este feedback..."
+                          value={localComment}
+                          onChange={(e) => setLocalComment(e.target.value)}
+                          disabled={selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado}
+                        />
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-100">
+                        <div className="flex gap-3 w-full sm:w-auto">
+                          <button
+                            onClick={() => setLocalAck("ACK")}
+                            disabled={selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado}
+                            className={`flex-1 sm:flex-none px-4 py-2.5 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${localAck === "ACK"
+                              ? "bg-emerald-100 text-emerald-700 ring-2 ring-emerald-500 ring-offset-2"
+                              : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200"
+                              }`}
+                          >
+                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${localAck === "ACK" ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-400"}`}>
+                              {localAck === "ACK" && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                            </div>
+                            Estoy de acuerdo
+                          </button>
+                          <button
+                            onClick={() => setLocalAck("CONTEST")}
+                            disabled={selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado}
+                            className={`flex-1 sm:flex-none px-4 py-2.5 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${localAck === "CONTEST"
+                              ? "bg-rose-100 text-rose-700 ring-2 ring-rose-500 ring-offset-2"
+                              : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200"
+                              }`}
+                          >
+                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${localAck === "CONTEST" ? "border-rose-600 bg-rose-600 text-white" : "border-slate-400"}`}>
+                              {localAck === "CONTEST" && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                            </div>
+                            En desacuerdo
+                          </button>
+                        </div>
+
+                        <Button
+                          onClick={handleSaveResponse}
+                          disabled={selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado || !localAck}
+                          className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 px-8 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado ? "Enviado" : "Enviar a RRHH"}
+                        </Button>
+                      </div>
+
+                      {selectedFeedback.estado === "CLOSED" && (
+                        <div className="mt-4 p-4 bg-slate-50 text-slate-500 text-sm rounded-xl flex items-center gap-3 border border-slate-100">
+                          <Lock className="w-5 h-5" />
+                          <span>Este feedback está cerrado y no se puede modificar.</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* FEEDBACK FLOW MOVED HERE */}
+                    <div className="pt-8">
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2">
+                        <span className="w-3 h-3 bg-slate-400 rounded-full" /> Estado del Proceso
+                      </h4>
+                      <div className="relative px-4 md:px-12">
+                        <div className="absolute left-0 right-0 top-4 h-0.5 bg-slate-100 -z-0 mx-8 md:mx-16"></div>
+                        <div className="flex justify-between relative z-10">
+                          {[
+                            { label: "Borrador", status: "DRAFT", date: selectedFeedback.createdAt, icon: FileEdit, deadlineKey: "manager" },
+                            { label: "Enviado a Vos", status: "SENT", date: selectedFeedback.submittedToEmployeeAt, icon: Send, deadlineKey: "employee" },
+                            { label: "Tu Respuesta", status: "PENDING_HR", date: selectedFeedback.empleadoAck?.fecha, icon: Users, deadlineKey: "hr" },
+                            { label: "Finalizado", status: "CLOSED", date: selectedFeedback.closedAt, icon: CheckCircle, deadlineKey: null }
+                          ].map((step, idx) => {
+                            const order = { "DRAFT": 0, "SENT": 1, "PENDING_HR": 2, "CLOSED": 3 };
+                            const currentStep = order[selectedFeedback.estado] ?? 0;
+                            const isCompleted = idx <= currentStep;
+                            const Icon = step.icon;
+
+                            // Get deadline info
+                            const periodItem = timelineItems.find(t => t.id === selectedFeedback.periodo);
+                            const deadlineRange = step.deadlineKey && periodItem ? periodItem.deadlines[step.deadlineKey] : null;
+                            const actionMonth = periodItem?.actionMonth;
+
+                            return (
+                              <div key={idx} className="flex flex-col items-center text-center gap-2">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all border-2 ${isCompleted ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-300'}`}>
+                                  <Icon className="w-4 h-4" />
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className={`text-xs font-bold ${isCompleted ? 'text-slate-700' : 'text-slate-400'}`}>{step.label}</span>
+                                  {step.date && isCompleted && (
+                                    <span className="text-[10px] text-slate-500 font-medium">
+                                      {new Date(step.date).toLocaleDateString()}
+                                    </span>
+                                  )}
+                                  {!isCompleted && deadlineRange && (
+                                    <span className="text-[10px] text-amber-600 font-medium bg-amber-50 px-1.5 py-0.5 rounded mt-1 border border-amber-100">
+                                      {deadlineRange} {actionMonth?.slice(0, 3)}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+            </div>
           </div>
-        </div>
-      </div >
-    </div >
+        )}
+      </div>
+      {/* Reporte Final Modal */}
+      {/* Reporte Final Modal */}
+      <ReporteFinal
+        isOpen={showFinalReport}
+        onClose={() => setShowFinalReport(false)}
+        data={data}
+        empleado={data?.empleado}
+        anio={selectedYear}
+        scoreGlobal={periodResults?.sparklineData?.find(d => d.name === "Fin")?.global ?? 0}
+        evolutionData={periodResults?.sparklineData || []}
+      />
+    </div>
   );
 }
