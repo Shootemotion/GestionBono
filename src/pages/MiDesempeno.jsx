@@ -446,8 +446,9 @@ export default function MiDesempeno() {
           ? Math.max(...progresos, 0)
           : Math.round(progresos.reduce((a, b) => a + b, 0) / progresos.length);
 
-        const potentialFactor = isCumulative ? timeFraction : 1;
-        maxActiveObjWeight += (obj.peso || 0) * potentialFactor;
+        // Max Weight is FULL weight (Annual Potential), regardless of period
+        // This avoids "Result > Max" if user is over-performing in Q1
+        maxActiveObjWeight += (obj.peso || 0);
       }
 
       const hasPermiteOver = obj.metas?.some(m => m.permiteOver) || obj.hitos?.some(h => h.metas?.some(m => m.permiteOver));
@@ -512,6 +513,26 @@ export default function MiDesempeno() {
     const maxObj = (maxActiveObjWeight / 100) * 70;
     const maxComp = compCount > 0 ? 30 : 0; // Fixed 30% potential if any data exists
 
+    // Expected Scores Calculation
+    let expectedObjScore = 0;
+
+    data.objetivos?.forEach(obj => {
+      const isCumulative = obj.metas?.some(m => m.acumulativa || m.modoAcumulacion === 'acumulativo');
+      // For cumulative, expected is a fraction of the weight based on time.
+      // For non-cumulative (maintenance), expected is 100% of the weight always.
+      // If timeFraction > 1 (e.g. Q4 or something), clamp to 1? Assuming timeFraction is max 1.
+      const factor = isCumulative ? timeFraction : 1;
+
+      expectedObjScore += (obj.peso || 0) * factor;
+    });
+
+    // Normalize Expected to 70% scale
+    // If total active weight is less than 100, this might need adjustment, but assuming 100% weight distribution:
+    const expectedObjDisplay = (expectedObjScore / 100) * 70;
+
+    // Competencies: Expected is always 100% (perform at level) => 30% weighted
+    const expectedCompDisplay = compCount > 0 ? 30 : 0;
+
     return {
       objetivos,
       aptitudes,
@@ -524,6 +545,11 @@ export default function MiDesempeno() {
         obj: maxObj,
         comp: maxComp,
         global: maxObj + maxComp
+      },
+      expectedScores: { // [NEW] For "Esperado" reference
+        obj: expectedObjDisplay,
+        comp: expectedCompDisplay,
+        global: expectedObjDisplay + expectedCompDisplay
       },
       sparklineData: (() => {
         // Generate historical data for sparklines
@@ -574,6 +600,7 @@ export default function MiDesempeno() {
         });
       })()
     };
+
 
   }, [data, selectedFeedback, getPeriodMonth]);
 
@@ -1304,10 +1331,8 @@ export default function MiDesempeno() {
                                 </div>
 
                                 <div className="space-y-2">
-                                  <div className="flex justify-between items-center text-[10px]">
-                                    <span className="text-slate-500 font-medium bg-slate-100 px-2 py-0.5 rounded-md">
-                                      Max Posible {selectedFeedback.periodo}: <span className="font-bold text-violet-600">{showScores ? `${Number(periodResults.maxScores?.obj ?? 70).toFixed(1)}%` : "--"}</span>
-                                    </span>
+                                  <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 mb-1">
+                                    <span>Esperado {selectedFeedback.periodo}: <span className="text-slate-600">{Number(periodResults.expectedScores?.obj ?? 0).toFixed(1)}%</span></span>
                                   </div>
                                   {/* Progress Bar: Score relative to Max */}
                                   <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
@@ -1345,15 +1370,12 @@ export default function MiDesempeno() {
                                 </div>
 
                                 <div className="space-y-2">
-                                  <div className="flex justify-between items-center text-[10px]">
-                                    <span className="text-slate-500 font-medium bg-slate-100 px-2 py-0.5 rounded-md">
-                                      Max Posible {selectedFeedback.periodo}: <span className="font-bold text-teal-600">{showScores ? `${Number(periodResults.maxScores?.comp ?? 30).toFixed(1)}%` : "--"}</span>
-                                    </span>
+                                  <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 mb-1">
+                                    <span>Esperado {selectedFeedback.periodo}: <span className="text-slate-600">{Number(periodResults.expectedScores?.comp ?? 0).toFixed(1)}%</span></span>
                                   </div>
-                                  {/* Progress Bar */}
-                                  <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-2">
                                     <div
-                                      className="h-full bg-teal-500 rounded-full transition-all duration-1000 ease-out"
+                                      className="h-full bg-teal-500 rounded-full transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(20,184,166,0.5)]"
                                       style={{ width: `${Math.min(((periodResults.scores.comp || 0) / (periodResults.maxScores?.comp || 1)) * 100, 100)}%` }}
                                     ></div>
                                   </div>
@@ -1394,10 +1416,8 @@ export default function MiDesempeno() {
                                 </div>
 
                                 <div className="space-y-2 relative z-10">
-                                  <div className="flex justify-between items-center text-[10px]">
-                                    <span className="text-slate-400 font-medium bg-slate-800/50 px-2 py-0.5 rounded-md border border-slate-700">
-                                      Max Posible {selectedFeedback.periodo}: <span className="font-bold text-blue-400">{showScores ? `${Number((periodResults.maxScores?.obj ?? 70) + (periodResults.maxScores?.comp ?? 30)).toFixed(1)}%` : "--"}</span>
-                                    </span>
+                                  <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 mb-1.5 px-0.5">
+                                    <span>Esperado {selectedFeedback.periodo}: <span className="text-blue-400">{Number(periodResults.expectedScores?.global ?? 0).toFixed(1)}%</span></span>
                                   </div>
 
                                   {/* Progress Bar with 50% Marker */}
