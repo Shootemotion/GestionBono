@@ -47,7 +47,6 @@ export const calculateAll = async (req, res, next) => {
         if (!config) return res.status(400).json({ message: "No hay configuración para este año." });
 
         // 2. Get Active Employees
-        // 2. Get Active Employees (Only need IDs initially)
         const filter = {};
         if (targetId) {
             if (type === 'empleado') {
@@ -55,6 +54,10 @@ export const calculateAll = async (req, res, next) => {
             } else if (type === 'area') {
                 filter.area = targetId;
             }
+        } else {
+            // If manual calculation, respect strict filter or allow both?
+            // Let's use robust filter here too
+            filter.estadoLaboral = { $in: ["ACTIVO", "VINCULADO"] };
         }
 
         const empleadosDocs = await Empleado.find(filter, '_id').lean();
@@ -68,36 +71,25 @@ export const calculateAll = async (req, res, next) => {
         const debugs = [];
 
         // 3. Bulk Compute Metrics (Efficient)
-        // This function already fetches Plantillas, Overrides, Evals, etc. in bulk
         const metricsList = await computeForEmployees(empIds, anio);
 
         // 4. Process each metric result and save
         for (const metrics of metricsList) {
             if (!metrics) continue;
 
-            const emp = metrics.empleado; // computedForEmployees returns populated employee object inside
-
-            // 3b. Check FINAL Feedback (Must be fetched or filtered from metrics.feedbacks?)
-            // metrics.feedbacks contains all feedbacks for the employee. 
-            // We need to check if a FINAL non-DRAFT feedback exists to proceed with bonus generation?
-            // The original logic fetched specific Feedback doc. 
-            // Let's use the one in metrics if available, or fetch strictly if needed.
-            // Ideally metrics should return it. metrics.feedbacks is available.
+            const emp = metrics.empleado;
 
             const safeFeedbacks = Array.isArray(metrics.feedbacks) ? metrics.feedbacks : [];
-            // Original logic: period="FINAL", estado in [SENT, PENDING_HR, CLOSED, ACKNOWLEDGED]
             const feedback = safeFeedbacks.find(f =>
                 f.periodo === "FINAL" &&
                 ["SENT", "PENDING_HR", "CLOSED", "ACKNOWLEDGED", "CONFIRMADO", "SIGNED"].includes(f.estado)
             );
 
             if (!feedback) {
-                // if (targetId) debugs.push(`${emp.apellido}: Sin Feedback FINAL válido`);
                 continue;
             }
 
             // 5. Apply Rules (With Overrides)
-            // Priority: Empleado > Area > Global
             let activeConfig = { ...config.toObject() };
             let configSource = "GLOBAL";
 
@@ -147,33 +139,25 @@ export const calculateAll = async (req, res, next) => {
             let disqualified = false;
 
             // 1. Antigüedad al 31 de Agosto del año del bono
-            // Usamos emp_fechaIngreso. Si no tiene, asumimos reciente (0)
             if (emp.fechaIngreso) {
                 const ingreso = new Date(emp.fechaIngreso);
-                const fechaCorte = new Date(anio + 1, 7, 31); // 31 de Agosto del siguiente año (fin de ciclo)
+                const fechaCorte = new Date(anio + 1, 7, 31);
 
-                // Diferencia en meses
                 let months = (fechaCorte.getFullYear() - ingreso.getFullYear()) * 12 + (fechaCorte.getMonth() - ingreso.getMonth());
-                // Ajuste por día
                 if (fechaCorte.getDate() < ingreso.getDate()) months--;
 
                 if (months < 6) {
                     disqualified = true;
                     condiciones.push({ tipo: "ANTIGUEDAD", descripcion: `Menor a 6 meses (${months}m)`, impacto: "ANULA" });
                 } else if (months < 12) {
-                    // Proporcional 6-12 meses (según cuanto trabajó en el año fiscal? o desde ingreso?)
-                    // El requerimiento dice: "se proporciona a los meses trabajados". ASUMIENDO proporcional simple.
-                    // Si ingresó hace 9 meses, trabajó 9/12 del periodo? O desde enero?
-                    // Interpretación usual: Proporcional a tiempo en la empresa vs año complete.
-                    // Simplificación: factor = months / 12 (pero tope 1 si > 12)
                     factorTiempo = Math.min(1, months / 12);
                     condiciones.push({ tipo: "ANTIGUEDAD", descripcion: `Proporcional (${months} meses)`, impacto: "REDUCE" });
                 }
             }
 
             // 2. Incidencias del año Fiscal (1 Sep Anio - 31 Ago Anio+1)
-            const startYear = new Date(anio, 8, 1); // 1 de Septiembre del año seleccionado
-            const endYear = new Date(anio + 1, 7, 31); // 31 de Agosto del siguiente año
+            const startYear = new Date(anio, 8, 1);
+            const endYear = new Date(anio + 1, 7, 31);
             const incidencias = await Incidencia.find({
                 empleado: emp._id,
                 fecha: { $gte: startYear, $lte: endYear }
@@ -194,7 +178,6 @@ export const calculateAll = async (req, res, next) => {
             }
 
             // c) Inasistencias Injustificadas > 3
-            // (Asumimos que undefined means false/unjustified for backward compat or default)
             const inasistencias = incidencias.filter(i => i.tipo === "INASISTENCIA" && !i.justificada);
             if (inasistencias.length > 3) {
                 disqualified = true;
@@ -202,7 +185,6 @@ export const calculateAll = async (req, res, next) => {
             }
 
             // d) Licencias (Acumular días)
-            // Filter only LICENCIA
             const misLicencias = incidencias.filter(i => i.tipo === "LICENCIA" && i.fechaHasta);
             let totalDiasLicencia = 0;
 
@@ -235,20 +217,10 @@ export const calculateAll = async (req, res, next) => {
 
             // 3. Resultado final
             const sueldo = emp.sueldoBase?.monto || 0;
-            const bonoBase = sueldo * (activeConfig.bonoTarget || 0); // Target %
+            const bonoBase = sueldo * (activeConfig.bonoTarget || 0);
 
-            // Si descalificado -> 0
-            // Sino -> Base * PerformancePct * FactorTiempo
             const bonoFinal = disqualified ? 0 : (bonoBase * bonoPct * factorTiempo);
 
-            if (targetId) {
-                // debugs.push(`${emp.apellido}: Score=${globalScore} -> BonoPct=${bonoPct} (${calcMeta}) [Cfg: ${configSource}]`);
-            }
-
-            // 7. Save BonoAnual
-            // Use findOneAndUpdate but try to do it parallel if possible? 
-            // For safety, let's keep sequential save inside this loop or Promise.all the saves.
-            // Promise.all for saves is faster.
             results.push({
                 empleado: emp._id,
                 anio,
@@ -261,12 +233,11 @@ export const calculateAll = async (req, res, next) => {
                     },
                     bonoBase,
                     bonoFinal,
-                    condiciones // Guardamos el detalle
+                    condiciones
                 }
             });
         }
 
-        // Execute updates in parallel chunks to avoid overwhelming DB but faster than serial
         const savePromises = results.map(r =>
             BonoAnual.findOneAndUpdate(
                 { empleado: r.empleado, anio: r.anio },
@@ -280,7 +251,7 @@ export const calculateAll = async (req, res, next) => {
         res.json({
             count: results.length,
             message: "Cálculo finalizado",
-            debugs: debugs.slice(0, 10) // Return first 10 logs if targeted
+            debugs: debugs.slice(0, 10)
         });
     } catch (err) {
         next(err);
@@ -296,20 +267,16 @@ export const getResults = async (req, res, next) => {
         // 1. Get Config
         let config = await BonoConfig.findOne({ anio });
         if (!config) {
-            // Fallback default config if not saved yet
             config = new BonoConfig({
                 anio,
                 bonoTarget: 0,
                 escala: { tipo: "lineal", minPct: 0, maxPct: 1, umbral: 60, tramos: [] },
                 overrides: []
             });
-            // We don't save it, just use it for calculation
         }
 
-        // 2. Get All Active Employees (or filtered by area/sector if provided to optimize)
-        // For now, get all and let computeForEmployees handle it, or filter here.
-        // computeForEmployees expects IDs.
-        const empleadosDocs = await Empleado.find({ estadoLaboral: "VINCULADO" }, "_id").lean();
+        // 2. Get All Active Employees (Robust Filter)
+        const empleadosDocs = await Empleado.find({ estadoLaboral: { $in: ["ACTIVO", "VINCULADO"] } }, "_id").lean();
         const ids = empleadosDocs.map(e => e._id);
 
         if (ids.length === 0) return res.json([]);
@@ -318,7 +285,6 @@ export const getResults = async (req, res, next) => {
         const metrics = await computeForEmployees(ids, anio);
 
         // --- PRE-FETCH INCIDENCIAS FOR ALL EMPLOYEES (Optimization) ---
-        // Periodo Fiscal: 1 de Septiembre (Anio) al 31 de Agosto (Anio + 1)
         const startYear = new Date(anio, 8, 1);
         const endYear = new Date(anio + 1, 7, 31);
         const allIncidencias = await Incidencia.find({
@@ -371,7 +337,7 @@ export const getResults = async (req, res, next) => {
             // 1. Antigüedad
             if (emp.fechaIngreso) {
                 const ingreso = new Date(emp.fechaIngreso);
-                const fechaCorte = new Date(anio + 1, 7, 31); // 31 Agosto del año siguiente
+                const fechaCorte = new Date(anio + 1, 7, 31);
                 let months = (fechaCorte.getFullYear() - ingreso.getFullYear()) * 12 + (fechaCorte.getMonth() - ingreso.getMonth());
                 if (fechaCorte.getDate() < ingreso.getDate()) months--;
 
@@ -412,14 +378,12 @@ export const getResults = async (req, res, next) => {
             licencias.forEach(l => {
                 const ini = new Date(l.fecha);
                 const fin = new Date(l.fechaHasta);
-                // Diferencia en días + 1 (inclusivo)
                 const diffTime = Math.abs(fin - ini);
                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
                 totalDiasLicencia += diffDays;
             });
 
             if (totalDiasLicencia > 60) {
-                // Descontar proporcionalmente todo el tiempo de licencia si supera el umbral
                 const factorDescuento = totalDiasLicencia / 365;
                 factorTiempo = Math.max(0, factorTiempo - factorDescuento);
                 condiciones.push({
@@ -434,7 +398,7 @@ export const getResults = async (req, res, next) => {
                 condiciones.push({
                     tipo: "DESEMPEÑO",
                     descripcion: `No alcanza objetivo global (${Math.round(globalScore)} < ${activeConfig.escala.umbral})`,
-                    impacto: "ANULA" // Or just info, but effectively it results in 0 bonus usually
+                    impacto: "ANULA"
                 });
             }
 
@@ -472,7 +436,7 @@ export const getResults = async (req, res, next) => {
                     competencias: m.scoreApt,
                     total: globalScore
                 },
-                condiciones, // NEW FIELD
+                condiciones,
                 feedbackComentario,
                 bonoBase,
                 bonoFinal,
@@ -497,5 +461,3 @@ export const getResults = async (req, res, next) => {
         next(err);
     }
 };
-
-

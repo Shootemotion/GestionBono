@@ -42,6 +42,7 @@ import {
 } from "recharts";
 
 // Helpers
+import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
 const nf = new Intl.NumberFormat("es-AR");
 const money = (n) =>
   new Intl.NumberFormat("es-AR", {
@@ -54,7 +55,7 @@ const money = (n) =>
 const COLORS = ["#10b981", "#f59e0b", "#ef4444", "#3b82f6"];
 
 export default function SeguimientoEjecutivo() {
-  const [anio, setAnio] = useState(2025);
+  const [anio, setAnio] = useState(getCurrentFiscalYear());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 

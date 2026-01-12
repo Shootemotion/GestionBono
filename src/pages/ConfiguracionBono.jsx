@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { getCurrentFiscalYear } from '@/lib/scoreHelpers';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { Save, Calculator, Plus, Trash2, Edit2, ChevronsRight, LayoutGrid, User, Layers, ArrowRight, Search, X, RefreshCw } from 'lucide-react';
@@ -13,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 
 export default function ConfiguracionBono() {
-    const [year, setYear] = useState(2025);
+    const [year, setYear] = useState(getCurrentFiscalYear());
     const [loading, setLoading] = useState(false);
     const [calculating, setCalculating] = useState(false);
 

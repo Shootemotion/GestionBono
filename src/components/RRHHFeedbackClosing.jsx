@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { api } from "@/lib/api";
 import { dashEmpleado } from "@/lib/dashboard";
-import { calculatePeriodScores } from "@/lib/scoreHelpers";
+import { calculatePeriodScores, getCurrentFiscalYear } from "@/lib/scoreHelpers";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -422,15 +422,23 @@ export default function RRHHFeedbackClosing() {
         useEffect(() => {
             const loadDash = async () => {
                 try {
-                    const year = new Date().getFullYear();
-                    const res = await dashEmpleado(emp.id, year);
+                    // Determine meaningful year from existing items or default to Current Fiscal Year
+                    let yearToFetch = getCurrentFiscalYear();
+
+                    // Try to find a real year from existing feedbacks
+                    const anyFeedback = Object.values(emp.items).find(f => !f.isVirtual && f.year);
+                    if (anyFeedback) {
+                        yearToFetch = anyFeedback.year;
+                    }
+
+                    const res = await dashEmpleado(emp.id, yearToFetch);
                     setDashData(res);
                 } catch (e) {
                     console.error("Error loading dash data for scores", e);
                 }
             };
             loadDash();
-        }, [emp.id]);
+        }, [emp.id, emp.items]);
 
         return (
             <div className="p-4 bg-slate-50/50 border-t border-slate-100 grid grid-cols-1 md:grid-cols-4 gap-4">

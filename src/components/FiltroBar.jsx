@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
 
 export default function FilterBar({ anio, setAnio }) {
   const [yearInput, setYearInput] = useState(anio);
@@ -13,7 +14,7 @@ export default function FilterBar({ anio, setAnio }) {
           className="w-full rounded-md border px-3 py-2 text-sm"
           value={yearInput}
           onChange={(e) => setYearInput(e.target.value)}
-          onBlur={() => setAnio(Number(yearInput) || new Date().getFullYear())}
+          onBlur={() => setAnio(Number(yearInput) || getCurrentFiscalYear())}
         />
       </div>
     </div>

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
@@ -154,7 +155,7 @@ export default function GanttView({
   hideAreaGroup = false,
   ganttGrouping = "sector_estado" // "sector_estado" | "estado_sector"
 }) {
-  const currentYear = anio || new Date().getFullYear();
+  const currentYear = anio || getCurrentFiscalYear();
   const columns = useMemo(() => buildColumns(currentYear), [currentYear]);
 
   const processedRows = useMemo(() => {

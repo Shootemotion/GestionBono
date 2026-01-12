@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { dashArea, dashSector } from "@/lib/dashboard";
+import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
@@ -169,12 +170,10 @@ export default function SeguimientoReferente() {
     (Array.isArray(user?.referenteAreas) && user.referenteAreas.length > 0)
   );
 
-  // Fiscal year logic: If before September (8), we are in the second half of the previous fiscal year
-  const today = new Date();
-  const currentFiscalYear = today.getMonth() >= 8 ? today.getFullYear() : today.getFullYear() - 1;
+  const currentYear = getCurrentFiscalYear();
 
   // estado
-  const [anio, setAnio] = useState(currentFiscalYear);
+  const [anio, setAnio] = useState(currentYear);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
 

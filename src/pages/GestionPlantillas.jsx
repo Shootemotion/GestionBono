@@ -8,6 +8,7 @@ import PlantillaModal from "@/components/PlantillaModal";
 import CloneModal from "@/components/CloneModal";
 import useCan from "@/hooks/useCan";
 import { api } from "@/lib/api";
+import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { XCircle } from "lucide-react";
@@ -86,7 +87,8 @@ export default function GestionPlantillasPage() {
   const { user } = useAuth();
   const nav = useNavigate();
 
-  const [year, setYear] = useState(2025);
+  const currentYear = getCurrentFiscalYear();
+  const [year, setYear] = useState(currentYear);
 
   const [empleados, setEmpleados] = useState([]); // empleados
 

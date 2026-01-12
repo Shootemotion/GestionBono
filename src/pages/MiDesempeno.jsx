@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { dashEmpleado } from "@/lib/dashboard";
+import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -294,7 +295,9 @@ export default function MiDesempeno() {
   const [showFinalReport, setShowFinalReport] = useState(false);
 
   // Year Selection Logic
-  const [selectedYear, setSelectedYear] = useState(2025);
+  const [selectedYear, setSelectedYear] = useState(() => {
+    return getCurrentFiscalYear();
+  });
 
 
 
