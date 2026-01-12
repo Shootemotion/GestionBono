@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useMemo } from "react";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 import {
   Target,
   BarChart3,

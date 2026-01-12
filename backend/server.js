@@ -32,7 +32,23 @@ dotenv.config();
 const app = express();
 
 // --- MIDDLEWARES GLOBALES ---
-app.use(cors());
+const whitelist = (process.env.CORS_ORIGIN || "").split(",").map(o => o.trim()).filter(Boolean);
+app.use(cors({
+  origin: (origin, callback) => {
+    // Permitir requests sin origen (como Postman o server-to-server)
+    if (!origin) return callback(null, true);
+    // En desarrollo, permitir todo si no hay whitelist definida
+    if (process.env.NODE_ENV !== 'production' && whitelist.length === 0) return callback(null, true);
+
+    if (whitelist.includes('*') || whitelist.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.warn(`Bloqueado por CORS: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+}));
 app.use(express.json());
 
 // Servir archivos subidos (acceso público sin JWT)
@@ -92,12 +108,28 @@ const errorHandler = (error, req, res, next) => {
   }
 
   // Fallback general
-  const status = error.statusCode || 500;
-  const message = error.message || 'Algo salió mal en el servidor.';
+  let status = error.statusCode || 500;
+  let message = error.message || 'Algo salió mal en el servidor.';
+
+  // Mongoose: Duplicate Key
+  if (error.code === 11000) {
+    status = 409;
+    const field = Object.keys(error.keyValue)[0];
+    message = `El valor de '${field}' ya existe en el sistema.`;
+  }
+
+  // Mongoose: Validation Error
+  if (error.name === 'ValidationError') {
+    status = 400;
+    const messages = Object.values(error.errors).map(val => val.message);
+    message = messages.join('. ') || 'Error de validación.';
+  }
+
   res.status(status).json({
     success: false,
     status,
     message,
+    // data: error.errors // Opcional, si el frontend lo usara
   });
 };
 app.use(errorHandler);

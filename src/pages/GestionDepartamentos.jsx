@@ -1,6 +1,6 @@
 // src/pages/GestionDepartamentos.jsx
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import Modal from "@/components/Modal.jsx";

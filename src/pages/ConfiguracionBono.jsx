@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 
 export default function ConfiguracionBono() {
-    const [year, setYear] = useState(new Date().getFullYear());
+    const [year, setYear] = useState(2025);
     const [loading, setLoading] = useState(false);
     const [calculating, setCalculating] = useState(false);
 

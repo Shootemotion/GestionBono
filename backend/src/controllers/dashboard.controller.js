@@ -12,6 +12,49 @@ const isValidObjectId = (v) => mongoose.Types.ObjectId.isValid(String(v));
 
 import Feedback from '../models/Feedback.model.js';
 
+/**
+ * Determines if a template is applicable to an employee based on:
+ * 1. Sticky Logic (History): If employee has evaluations for this template, it remains applicable even if inactive/scope changes.
+ * 2. Status: Must be active (unless sticky).
+ * 3. Scope: Must match employee's Area/Sector or be assigned directly.
+ */
+function isTemplateApplicable(p, empIdStr, areaIdStr, sectorIdStr, isAreaReferent, isSectorReferent, evals) {
+  const tplIdStr = String(p._id);
+
+  // 1. Sticky Logic: If employee has evaluations for this template, KEEP IT (History)
+  // Check if any evaluation exists for this employee + template
+  const hasHistory = evals.some(ev =>
+    (String(ev.empleado) === empIdStr || String(ev.empleado?._id) === empIdStr) &&
+    String(ev.plantillaId) === tplIdStr
+  );
+
+  if (hasHistory) return true;
+
+  // 2. If not sticky, it MUST be Active
+  if (!p.activo) return false;
+
+  // 3. Standard Scope Matching
+  if (!p.scopeType || !p.scopeId) return false;
+  const scopeIdStr = String(p.scopeId);
+
+  // Exclude inheritance if Referente (Bosses don't inherit team goals automatically)
+  if (p.scopeType === "area") {
+    // Sync with GestionPlantillas: Bosses SHOULD inherit area goals by default unless manually excluded
+    // if (isAreaReferent) return false; 
+    if (areaIdStr && scopeIdStr === areaIdStr) return true;
+  }
+
+  if (p.scopeType === "sector") {
+    // if (isSectorReferent) return false;
+    if (sectorIdStr && scopeIdStr === sectorIdStr) return true;
+  }
+
+  if (p.scopeType === "empleado" && scopeIdStr === empIdStr) return true;
+
+  return false;
+}
+
+
 export async function computeForEmployees(empleadoIds, anio) {
   if (!Array.isArray(empleadoIds) || empleadoIds.length === 0) return [];
   const ids = empleadoIds.map(asObjectId);
@@ -60,35 +103,15 @@ export async function computeForEmployees(empleadoIds, anio) {
       const isAreaReferent = e.area?.referentes?.some(r => String(r) === empIdStr);
       const isSectorReferent = e.sector?.referentes?.some(r => String(r) === empIdStr);
 
+      const empOverrides = overridesByEmp.get(empIdStr);
+
       const aplicables = plantillas.filter((p) => {
-        const tplIdStr = String(p._id);
+        // 0. Check Manual Override Inclusion first
+        // If there's an override that is NOT excluded, we force inclusion (Classic "Asignación Manual")
+        const ov = empOverrides ? empOverrides.get(String(p._id)) : null;
+        if (ov && !ov.excluido) return true;
 
-        // 1. Sticky Logic: If employee has evaluations for this template, KEEP IT (History)
-        const hasHistory = evals.some(ev =>
-          String(ev.empleado) === empIdStr && String(ev.plantillaId) === tplIdStr
-        );
-        if (hasHistory) return true;
-
-        // 2. If not sticky, it MUST be Active
-        if (!p.activo) return false;
-
-        // 3. Standard Scope Matching
-        if (!p.scopeType || !p.scopeId) return false;
-        const scopeIdStr = String(p.scopeId);
-
-        // Exclude inheritance if Referente
-        if (p.scopeType === "area") {
-          if (isAreaReferent) return false; // Don't inherit area goals
-          if (areaIdStr && scopeIdStr === areaIdStr) return true;
-        }
-
-        if (p.scopeType === "sector") {
-          if (isSectorReferent) return false; // Don't inherit sector goals
-          if (sectorIdStr && scopeIdStr === sectorIdStr) return true;
-        }
-
-        if (p.scopeType === "empleado" && scopeIdStr === empIdStr) return true;
-        return false;
+        return isTemplateApplicable(p, empIdStr, areaIdStr, sectorIdStr, isAreaReferent, isSectorReferent, evals);
       });
 
       const objetivosArr = [];
@@ -98,7 +121,7 @@ export async function computeForEmployees(empleadoIds, anio) {
       let sumPesoApt = 0,
         weightedAptScoreSum = 0;
 
-      const empOverrides = overridesByEmp.get(empIdStr);
+
 
       for (const p of aplicables) {
         const tplIdStr = String(p._id);
@@ -264,16 +287,6 @@ export async function computeForEmployees(empleadoIds, anio) {
       let scoreFinal = 0;
       let bono = null;
 
-      /* 
-       * LEGACY/PARTIAL CALCULATION (Disabled per user request: "Solo el de resultados de el ultimo feedback evaluado")
-       * If we wanted partials, we would uncomment this:
-       * 
-       * scoreObj = sumPesoObj > 0 ? weightedProgressSum / sumPesoObj : 0;
-       * scoreApt = sumPesoApt > 0 ? weightedAptScoreSum / sumPesoApt : 0;
-       * scoreFinal = Math.round((0.7 * scoreObj + 0.3 * scoreApt) * 10) / 10;
-       * bono = (objetivosArr.length > 0 || aptitudesArr.length > 0) ? `${scoreFinal}%` : null;
-       */
-
       // START OVERRIDE CHECK (If snapshot exists, it wins over our recalc)
       if (latestFeedback && latestFeedback.scores?.global != null) {
         scoreObj = latestFeedback.scores.obj ?? 0;
@@ -282,13 +295,6 @@ export async function computeForEmployees(empleadoIds, anio) {
         bono = `${scoreFinal}%`;
       }
 
-      if (process.env.NODE_ENV !== 'production' && Number(anio) === 1989) {
-        console.log(`DEBUG 1989: Emp ${empIdStr}`);
-        console.log(`- Plantillas Aplicables: ${aplicables.length}`);
-        console.log(`- Objetivos: ${objetivosArr.length}`);
-        console.log(`- Aptitudes: ${aptitudesArr.length}`);
-        if (objetivosArr.length > 0) console.log("Sample Obj:", objetivosArr[0].nombre);
-      }
 
       return {
         empleado: {
@@ -322,8 +328,8 @@ export async function dashByArea(req, res) {
     const { anio } = req.query;
     const user = req.user;
 
-    // 🔹 Si es director/RRHH y no se pasa areaId → traer todos
-    if ((!areaId || areaId === "null") && (user.rol === "directivo" || user.isRRHH)) {
+    // 🔹 Si es director/RRHH/Super y no se pasa areaId → traer todos
+    if ((!areaId || areaId === "null") && (user.rol === "directivo" || user.isRRHH || user.rol === "superadmin" || user.isSuper)) {
       const empleadosDocs = await Empleado.find({}, { _id: 1 }).lean();
       const ids = empleadosDocs.map((e) => e._id);
       const data = await computeForEmployees(ids, anio || new Date().getFullYear());
@@ -334,9 +340,15 @@ export async function dashByArea(req, res) {
       return res.status(400).json({ message: "areaId inválido" });
 
     // 🔹 Verificación solo para referentes
-    const esReferente = user.referenteAreas?.map(String).includes(String(areaId));
-    if (!esReferente) {
-      return res.status(403).json({ message: "No autorizado para esta área" });
+    // Si es SuperAdmin, Bypass check
+    if (user.rol === "superadmin" || user.isSuper) {
+      // Allow execution to proceed. But wait, we need to filter proper employees if a specific area IS passed.
+      // The logic below (lines 345) fetches employees by areaId. So we just need to bypass the "esReferente" check.
+    } else {
+      const esReferente = user.referenteAreas?.map(String).includes(String(areaId));
+      if (!esReferente) {
+        return res.status(403).json({ message: "No autorizado para esta área" });
+      }
     }
 
     // 🔹 Exclude Referentes from the list (Prevent self-evaluation in team view)
@@ -369,7 +381,7 @@ export const dashBySector = async (req, res) => {
     const { anio } = req.query;
     const user = req.user;
 
-    if ((!sectorId || sectorId === "null") && (user.rol === "directivo" || user.isRRHH)) {
+    if ((!sectorId || sectorId === "null") && (user.rol === "directivo" || user.isRRHH || user.rol === "superadmin" || user.isSuper)) {
       const empleadosDocs = await Empleado.find({}, { _id: 1 }).lean();
       const ids = empleadosDocs.map((e) => e._id);
       const data = await computeForEmployees(ids, anio || new Date().getFullYear());
@@ -378,7 +390,6 @@ export const dashBySector = async (req, res) => {
 
     if (!sectorId || !isValidObjectId(sectorId)) {
       return res.status(400).json({ message: "sectorId inválido" });
-
     }
 
     const sectorDoc = await Sector.findById(sectorId, "referentes").lean();
@@ -418,6 +429,8 @@ export const dashByEmpleado = async (req, res, next) => {
 
     const areaId = empleado.area ? (empleado.area._id ?? empleado.area) : null;
     const sectorId = empleado.sector ? (empleado.sector._id ?? empleado.sector) : null;
+    const areaIdStr = areaId ? String(areaId) : null;
+    const sectorIdStr = sectorId ? String(sectorId) : null;
 
     // 🔹 Traer TODAS las plantillas del año (Active & Inactive) para filtrar en memoria con Sticky Logic
     const plantillas = await Plantilla.find({
@@ -458,26 +471,12 @@ export const dashByEmpleado = async (req, res, next) => {
     for (const p of plantillas) {
       const tplIdStr = String(p._id);
 
-      // --- LOGIC: Sticky vs Scope vs Active ---
-      // 1. Sticky: Has evaluations?
-      const hasHistory = evals.some(ev => String(ev.plantillaId) === tplIdStr);
+      const isApp = isTemplateApplicable(p, empIdStr, areaIdStr, sectorIdStr, isAreaReferent, isSectorReferent, evals);
 
-      // 2. If NOT sticky, apply strict filters
-      if (!hasHistory) {
-        if (!p.activo) continue; // Must be active
-
-        // Scope Matching
-        let matchesScope = false;
-        if (p.scopeType === "empleado" && String(p.scopeId) === String(empleado._id)) matchesScope = true;
-        else if (p.scopeType === "area" && areaId && String(p.scopeId) === String(areaId)) matchesScope = true;
-        else if (p.scopeType === "sector" && sectorId && String(p.scopeId) === String(sectorId)) matchesScope = true;
-
-        if (!matchesScope) continue;
-
-        // Referente Exclusion (only if inheriting via scope)
-        if (p.scopeType === "area" && isAreaReferent) continue;
-        if (p.scopeType === "sector" && isSectorReferent) continue;
+      if (!isApp) {
+        continue;
       }
+
       // If Sticky (hasHistory), we SKIP scope/active checks and INCLUDE it.
       // ----------------------------------------
 
@@ -497,15 +496,6 @@ export const dashByEmpleado = async (req, res, next) => {
               ev.periodo === h.periodo
           );
 
-          if (p.tipo === "aptitud") {
-            console.log("DEBUG DASH APTITUD:", {
-              tplId: tplIdStr,
-              periodo: h.periodo,
-              found: !!evHito,
-              actual: evHito?.actual,
-              escala: evHito?.escala
-            });
-          }
 
           const metasCombinadas = (p.metas || []).map((m) => {
             const evaluada = evHito?.metasResultados?.find(
@@ -532,6 +522,7 @@ export const dashByEmpleado = async (req, res, next) => {
       );
 
       if (p.tipo === "objetivo") {
+
         const isCumulative = p.metas?.some(m => m.acumulativa || m.modoAcumulacion === 'acumulativo');
         const progresos = hitos.map((h) => h.actual ?? 0);
 
@@ -609,11 +600,6 @@ export const dashByEmpleado = async (req, res, next) => {
       .sort((a, b) => periodOrder.indexOf(b.periodo) - periodOrder.indexOf(a.periodo))
       .find(f => f.estado !== "DRAFT");
 
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`[BONUS DEBUG] Emp: ${empIdStr}`);
-      console.log(`- Latest Non-Draft: ${latestFeedback?.periodo || 'None'}`);
-      console.log(`- Scores:`, latestFeedback?.scores);
-    }
 
     // OVERRIDE if Latest Feedback exists and has valid scores
     if (latestFeedback && latestFeedback.scores?.global != null) {
@@ -637,6 +623,7 @@ export const dashByEmpleado = async (req, res, next) => {
       // Mostrar feedback siempre, sin depender de objetivos
       feedbacks: empFeedbacks,
       scoreObj, scoreApt, scoreFinal, bono,
+
     });
   } catch (err) {
     console.error("dashByEmpleado error:", err);

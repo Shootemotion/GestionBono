@@ -1,6 +1,6 @@
 // src/components/FormularioObjetivos.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 
@@ -27,7 +27,7 @@ export default function FormularioObjetivos({
   const [year, setYear] = useState(initialYear || currentYear);
   const [scopeType, setScopeType] = useState(initialScopeType || "area");
   const [scopeId, setScopeId] = useState(initialScopeId || "");
-  const [frecuencia, setFrecuencia] = useState("anual");
+  const [frecuencia, setFrecuencia] = useState("mensual");
   const [modoAcumulacion, setModoAcumulacion] = useState("periodo");
   const [peso, setPeso] = useState(0);
 
@@ -70,7 +70,7 @@ export default function FormularioObjetivos({
     setDescripcion(initialData.descripcion || "");
     setProceso(initialData.proceso || "");
     setEstado(initialData.activo ? "Activo" : "Inactivo");
-   
+
 
     setYear(initialData.year || currentYear);
 
@@ -85,7 +85,7 @@ export default function FormularioObjetivos({
           : initialData.empleadoId || initialData.scopeId || ""
     );
 
-    setFrecuencia(initialData.frecuencia || "anual");
+    setFrecuencia(initialData.frecuencia || "mensual");
     setModoAcumulacion(
       initialData.modoAcumulacion ||
       (initialData.acumulativo ? "acumulativo" : "periodo")
@@ -123,10 +123,7 @@ export default function FormularioObjetivos({
             m.tolerancia !== undefined && m.tolerancia !== null
               ? m.tolerancia
               : 0,
-          tolerancia:
-            m.tolerancia !== undefined && m.tolerancia !== null
-              ? m.tolerancia
-              : 0,
+
           reglaCierre: m.reglaCierre || "promedio",
           umbralPeriodos: m.umbralPeriodos || 0,
         }))
@@ -165,8 +162,6 @@ export default function FormularioObjetivos({
         esperado: "",
         pesoMeta: "",
         reconoceEsfuerzo: true,
-        permiteOver: false,
-        tolerancia: 0,
         permiteOver: false,
         tolerancia: 0,
         reglaCierre: "promedio",

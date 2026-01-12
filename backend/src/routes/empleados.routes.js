@@ -13,6 +13,7 @@ import { requireCap, requireCapOrSelf } from '../auth/auth.middleware.js';
 import { listCarrera, createCarrera, updateCarrera, deleteCarrera, getCarreraResumen } from "../controllers/carrera.controller.js";
 import { listCapacitaciones, createCapacitacion, updateCapacitacion, deleteCapacitacion, getCapacitacionesResumen } from "../controllers/capacitacion.controller.js";
 import { listDocumentos, createDocumento, deleteDocumento } from "../controllers/documento.controller.js";
+import { listIncidencias, createIncidencia, deleteIncidencia } from "../controllers/incidencias.controller.js";
 import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
@@ -252,7 +253,37 @@ router.get("/:id/documentos",
 router.post("/:id/documentos",
   requireCapOrSelf("nomina:editar"), assertObjectId, preloadEmpleado, uploadDoc.single("archivo"), createDocumento);
 
-router.delete("/:id/documentos/:docId",
-  requireCapOrSelf("nomina:editar"), assertObjectId, deleteDocumento);
+/* ========== INCIDENCIAS ========== */
+const storageInc = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const emp = req.empleado;
+    const legible = `${slugify(emp.apellido)}-${slugify(emp.nombre)}-${emp._id}`;
+    const dir = path.join(process.cwd(), "uploads", "empleados", legible, "incidencias");
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || ".pdf").toLowerCase();
+    cb(null, `inc-${Date.now()}${ext}`);
+  }
+});
+const uploadInc = multer({
+  storage: storageInc,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /\.(pdf|doc|docx|jpg|jpeg|png)$/i.test(file.originalname || "");
+    if (!ok) return cb(new Error("Formato no permitido"));
+    cb(null, true);
+  }
+});
+
+router.get("/:id/incidencias",
+  requireCapOrSelf("nomina:ver"), assertObjectId, listIncidencias);
+
+router.post("/:id/incidencias",
+  requireCap("nomina:editar"), assertObjectId, preloadEmpleado, uploadInc.single("archivo"), createIncidencia);
+
+router.delete("/:id/incidencias/:itemId",
+  requireCap("nomina:editar"), assertObjectId, deleteIncidencia);
 
 export default router;

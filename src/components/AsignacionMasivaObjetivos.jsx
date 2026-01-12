@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { objetivosAsignacionMasivaEmpleados } from '@/lib/objetivos';
-import { toast } from 'react-toastify';
+import { toast } from 'sonner';
 
 export default function AsignacionMasivaObjetivos({ anio, empleados = [], onDone, onClose }) {
   const [selected, setSelected] = useState(() => new Set());
@@ -122,7 +122,7 @@ export default function AsignacionMasivaObjetivos({ anio, empleados = [], onDone
               className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none"
               placeholder="Ej: Aumentar ventas"
               value={nombre}
-              onChange={(e)=>setNombre(e.target.value)}
+              onChange={(e) => setNombre(e.target.value)}
             />
           </div>
           <div className="space-y-1.5">
@@ -133,7 +133,7 @@ export default function AsignacionMasivaObjetivos({ anio, empleados = [], onDone
               max={100}
               className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none"
               value={peso}
-              onChange={(e)=>setPeso(Number(e.target.value))}
+              onChange={(e) => setPeso(Number(e.target.value))}
             />
           </div>
         </div>
@@ -144,7 +144,7 @@ export default function AsignacionMasivaObjetivos({ anio, empleados = [], onDone
             className="w-full min-h-24 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none"
             placeholder="Descripción detallada del objetivo"
             value={descripcion}
-            onChange={(e)=>setDescripcion(e.target.value)}
+            onChange={(e) => setDescripcion(e.target.value)}
           />
         </div>
 
@@ -155,7 +155,7 @@ export default function AsignacionMasivaObjetivos({ anio, empleados = [], onDone
               className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none"
               placeholder="Ej: Número de ventas"
               value={kpi}
-              onChange={(e)=>setKpi(e.target.value)}
+              onChange={(e) => setKpi(e.target.value)}
             />
           </div>
           <div className="space-y-1.5">
@@ -164,7 +164,7 @@ export default function AsignacionMasivaObjetivos({ anio, empleados = [], onDone
               className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none"
               placeholder="Ej: > 100 ventas"
               value={target}
-              onChange={(e)=>setTarget(e.target.value)}
+              onChange={(e) => setTarget(e.target.value)}
             />
           </div>
         </div>
@@ -176,7 +176,7 @@ export default function AsignacionMasivaObjetivos({ anio, empleados = [], onDone
               type="date"
               className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none"
               value={fechaLimite}
-              onChange={(e)=>setFechaLimite(e.target.value)}
+              onChange={(e) => setFechaLimite(e.target.value)}
             />
           </div>
           <div className="space-y-1.5">
@@ -184,7 +184,7 @@ export default function AsignacionMasivaObjetivos({ anio, empleados = [], onDone
             <select
               className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none"
               value={metodo}
-              onChange={(e)=>setMetodo(e.target.value)}
+              onChange={(e) => setMetodo(e.target.value)}
             >
               <option value="trimestral">Trimestral</option>
               <option value="semestral">Semestral</option>

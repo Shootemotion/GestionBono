@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
 import TraceabilityCard from "@/components/seguimiento/TraceabilityCard.jsx";
 import { api } from "@/lib/api";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 import { evaluarCumple, calcularResultadoGlobal } from "@/lib/evaluarCumple";
 
 export default function EvalModal({
@@ -56,18 +56,18 @@ export default function EvalModal({
           `/evaluaciones?plantillaId=${itemSeleccionado._id}&periodo=${localHito.periodo}`
         );
         const merged = (empleadosDelItem || []).map((emp) => {
-  const ev = evals.find((e) => String(e.empleado) === String(emp._id));
-  return {
-    ...emp,
-    estado: ev?.estado || "NO_ENVIADOS",
-    actual: ev?.actual ?? null,
-    escala: ev?.escala ?? null,
-    comentario: ev?.comentario ?? "",
-    comentarioManager: ev?.comentarioManager ?? "",
-    metasResultados: ev?.metasResultados ?? [],
-    evaluacionId: ev?._id || null,
-  };
-});
+          const ev = evals.find((e) => String(e.empleado) === String(emp._id));
+          return {
+            ...emp,
+            estado: ev?.estado || "NO_ENVIADOS",
+            actual: ev?.actual ?? null,
+            escala: ev?.escala ?? null,
+            comentario: ev?.comentario ?? "",
+            comentarioManager: ev?.comentarioManager ?? "",
+            metasResultados: ev?.metasResultados ?? [],
+            evaluacionId: ev?._id || null,
+          };
+        });
         setEmpleadosEstados(merged);
       } catch (err) {
         console.error("❌ Error mergeando empleados/evaluaciones:", err);
@@ -77,161 +77,161 @@ export default function EvalModal({
   }, [itemSeleccionado, localHito?.periodo, empleadosDelItem]);
   // 🔹 refrescar metas y comentarios al seleccionar empleado
   useEffect(() => {
-  if (selectedEmpleados.length === 1) {
-    const empId = selectedEmpleados[0];
-    const empEval = empleadosEstados.find((e) => e._id === empId);
+    if (selectedEmpleados.length === 1) {
+      const empId = selectedEmpleados[0];
+      const empEval = empleadosEstados.find((e) => e._id === empId);
 
-    if (empEval && empEval.evaluacionId) {
+      if (empEval && empEval.evaluacionId) {
+        setLocalHito((prev) => ({
+          ...prev,
+          estado: empEval.estado,
+          metas: empEval.metasResultados?.length ? empEval.metasResultados : prev.metas,
+          comentario: empEval.comentario ?? "",
+          actual: empEval.actual ?? prev.actual,
+          escala: empEval.escala ?? prev.escala ?? null,
+        }));
+        setComentarioManager(empEval.comentarioManager ?? "");
+      }
+    } else {
+      // No tiene evaluación previa → reset a borrador editable
       setLocalHito((prev) => ({
         ...prev,
-        estado: empEval.estado,
-       metas: empEval.metasResultados?.length ? empEval.metasResultados : prev.metas,
-        comentario: empEval.comentario ?? "",
-        actual: empEval.actual ?? prev.actual,
-        escala: empEval.escala ?? prev.escala ?? null,
+        estado: "MANAGER_DRAFT",
+        metas: itemSeleccionado?.metas || [],
+        comentario: "",
+        actual: null,
       }));
-      setComentarioManager(empEval.comentarioManager ?? "");
+      setComentarioManager("");
     }
-  } else {
-    // No tiene evaluación previa → reset a borrador editable
-    setLocalHito((prev) => ({
-      ...prev,
-      estado: "MANAGER_DRAFT",
-      metas: itemSeleccionado?.metas || [],
-      comentario: "",
-      actual: null,
-    }));
-    setComentarioManager("");
-  }
-}, [selectedEmpleados, empleadosEstados, itemSeleccionado]);  
+  }, [selectedEmpleados, empleadosEstados, itemSeleccionado]);
 
 
 
 
 
 
-const persistAndFlow = async (action) => {
-  if (!itemSeleccionado || !localHito) return;
+  const persistAndFlow = async (action) => {
+    if (!itemSeleccionado || !localHito) return;
 
-  // ¿Estoy evaluando una APTITUD?
-  const isAptitud =
-    (itemSeleccionado?._tipo === "aptitud") || (itemSeleccionado?.tipo === "aptitud");
+    // ¿Estoy evaluando una APTITUD?
+    const isAptitud =
+      (itemSeleccionado?._tipo === "aptitud") || (itemSeleccionado?.tipo === "aptitud");
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // 1) Calcular 'actual'
-  //    - Aptitud: escala (1..5) -> porcentaje (20..100)
-  //    - Objetivo: desde metas
-  // ────────────────────────────────────────────────────────────────────────────
-  let actualToSend = 0;
-  if (isAptitud) {
-    const escalaNum = Number(localHito?.escala ?? 0);
-    if (!escalaNum || escalaNum < 1 || escalaNum > 5) {
-      toast.error("Seleccioná una escala (1 a 5) antes de enviar.");
+    // ────────────────────────────────────────────────────────────────────────────
+    // 1) Calcular 'actual'
+    //    - Aptitud: escala (1..5) -> porcentaje (20..100)
+    //    - Objetivo: desde metas
+    // ────────────────────────────────────────────────────────────────────────────
+    let actualToSend = 0;
+    if (isAptitud) {
+      const escalaNum = Number(localHito?.escala ?? 0);
+      if (!escalaNum || escalaNum < 1 || escalaNum > 5) {
+        toast.error("Seleccioná una escala (1 a 5) antes de enviar.");
+        return;
+      }
+      actualToSend = Number((escalaNum * 20).toFixed(1));
+    } else {
+      const raw = calcularResultadoGlobal(localHito.metas ?? []);
+      actualToSend = Number.isFinite(raw) ? Number(raw.toFixed(1)) : 0;
+    }
+
+    console.debug(
+      "[persistAndFlow]",
+      { isAptitud, actualToSend, metas: localHito?.metas?.length ?? 0, escala: localHito?.escala }
+    );
+
+    setLocalHito((prev) => ({ ...prev, actual: actualToSend }));
+
+    // ────────────────────────────────────────────────────────────────────────────
+    // 2) Validaciones de selección
+    // ────────────────────────────────────────────────────────────────────────────
+    const empleados = applyToAll ? (empleadosDelItem || []).map((e) => e._id) : (selectedEmpleados || []);
+    if (empleados.length === 0) {
+      toast.error("⚠ Debes seleccionar al menos un empleado o usar 'Enviar a todos'");
       return;
     }
-    actualToSend = Number((escalaNum * 20).toFixed(1));
-  } else {
-    const raw = calcularResultadoGlobal(localHito.metas ?? []);
-    actualToSend = Number.isFinite(raw) ? Number(raw.toFixed(1)) : 0;
-  }
 
-  console.debug(
-    "[persistAndFlow]",
-    { isAptitud, actualToSend, metas: localHito?.metas?.length ?? 0, escala: localHito?.escala }
-  );
+    try {
+      setSaving(true);
 
-  setLocalHito((prev) => ({ ...prev, actual: actualToSend }));
+      // ──────────────────────────────────────────────────────────────────────────
+      // 3) Persistencia (POST + PUT) por empleado
+      // ──────────────────────────────────────────────────────────────────────────
+      for (const empId of empleados) {
+        const baseBody = {
+          empleado: empId,
+          plantillaId: itemSeleccionado._id,
+          year: Number(String(localHito?.periodo || "").slice(0, 4)),
+          periodo: localHito.periodo,
+          actual: actualToSend,
+          comentario: localHito.comentario ?? "",
+          comentarioManager: comentarioManager ?? "",
+          ...(isAptitud
+            ? { escala: Number(localHito?.escala ?? 0), metasResultados: [] }
+            : { metasResultados: Array.isArray(localHito.metas) ? localHito.metas : [] }),
+          estado: "MANAGER_DRAFT",
+        };
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // 2) Validaciones de selección
-  // ────────────────────────────────────────────────────────────────────────────
-  const empleados = applyToAll ? (empleadosDelItem || []).map((e) => e._id) : (selectedEmpleados || []);
-  if (empleados.length === 0) {
-    toast.error("⚠ Debes seleccionar al menos un empleado o usar 'Enviar a todos'");
-    return;
-  }
+        console.debug("[POST body]", baseBody);
+        await api("/evaluaciones", { method: "POST", body: baseBody });
 
-  try {
-    setSaving(true);
-
-    // ──────────────────────────────────────────────────────────────────────────
-    // 3) Persistencia (POST + PUT) por empleado
-    // ──────────────────────────────────────────────────────────────────────────
-    for (const empId of empleados) {
-      const baseBody = {
-        empleado: empId,
-        plantillaId: itemSeleccionado._id,
-        year: Number(String(localHito?.periodo || "").slice(0, 4)),
-        periodo: localHito.periodo,
-        actual: actualToSend,
-        comentario: localHito.comentario ?? "",
-        comentarioManager: comentarioManager ?? "",
-        ...(isAptitud
-          ? { escala: Number(localHito?.escala ?? 0), metasResultados: [] }
-          : { metasResultados: Array.isArray(localHito.metas) ? localHito.metas : [] }),
-        estado: "MANAGER_DRAFT",
-      };
-
-      console.debug("[POST body]", baseBody);
-      await api("/evaluaciones", { method: "POST", body: baseBody });
-
-      console.debug("[PUT body]", baseBody);
-      await api(
-        `/evaluaciones/${empId}/${itemSeleccionado._id}/${localHito.periodo}`,
-        { method: "PUT", body: baseBody }
-      );
-    }
-
-    console.debug(">> actualToSend", actualToSend, "metas", localHito.metas);
-
-    // ──────────────────────────────────────────────────────────────────────────
-    // 4) Flujo (submit, RRHH, cerrar, borrador)
-    // ──────────────────────────────────────────────────────────────────────────
-    if (action === "toEmployee") {
-      const evals = await api(
-        `/evaluaciones?plantillaId=${itemSeleccionado._id}&periodo=${localHito.periodo}`
-      );
-
-      const targetEvals = evals.filter((e) =>
-        applyToAll ? true : empleados.includes(String(e.empleado))
-      );
-
-      for (const ev of targetEvals) {
-        await api(`/evaluaciones/${ev._id}/submit-to-employee`, { method: "POST" });
-      }
-      toast.success("Enviado al empleado(s)");
-    } else if (action === "toHR") {
-      if (empleados.length === 1) {
-        const evals = await api(
-          `/evaluaciones?plantillaId=${itemSeleccionado._id}&periodo=${localHito.periodo}&empleado=${empleados[0]}`
+        console.debug("[PUT body]", baseBody);
+        await api(
+          `/evaluaciones/${empId}/${itemSeleccionado._id}/${localHito.periodo}`,
+          { method: "PUT", body: baseBody }
         );
-        if (evals[0]) {
-          await api(`/evaluaciones/${evals[0]._id}/submit-to-hr`, { method: "POST" });
-        }
       }
-      toast.success("Elevado a RRHH");
-    } else if (action === "close") {
-      if (empleados.length === 1) {
-        const evals = await api(
-          `/evaluaciones?plantillaId=${itemSeleccionado._id}&periodo=${localHito.periodo}&empleado=${empleados[0]}`
-        );
-        if (evals[0]) {
-          await api(`/evaluaciones/${evals[0]._id}/close`, { method: "POST" });
-        }
-      }
-      toast.success("Evaluación cerrada");
-    } else if (action === "draft") {
-      toast.success("Borrador guardado");
-    }
 
-    onClose();
-  } catch (err) {
-    console.error("persistAndFlow error", err);
-    toast.error("Error procesando la evaluación");
-  } finally {
-    setSaving(false);
-  }
-};
+      console.debug(">> actualToSend", actualToSend, "metas", localHito.metas);
+
+      // ──────────────────────────────────────────────────────────────────────────
+      // 4) Flujo (submit, RRHH, cerrar, borrador)
+      // ──────────────────────────────────────────────────────────────────────────
+      if (action === "toEmployee") {
+        const evals = await api(
+          `/evaluaciones?plantillaId=${itemSeleccionado._id}&periodo=${localHito.periodo}`
+        );
+
+        const targetEvals = evals.filter((e) =>
+          applyToAll ? true : empleados.includes(String(e.empleado))
+        );
+
+        for (const ev of targetEvals) {
+          await api(`/evaluaciones/${ev._id}/submit-to-employee`, { method: "POST" });
+        }
+        toast.success("Enviado al empleado(s)");
+      } else if (action === "toHR") {
+        if (empleados.length === 1) {
+          const evals = await api(
+            `/evaluaciones?plantillaId=${itemSeleccionado._id}&periodo=${localHito.periodo}&empleado=${empleados[0]}`
+          );
+          if (evals[0]) {
+            await api(`/evaluaciones/${evals[0]._id}/submit-to-hr`, { method: "POST" });
+          }
+        }
+        toast.success("Elevado a RRHH");
+      } else if (action === "close") {
+        if (empleados.length === 1) {
+          const evals = await api(
+            `/evaluaciones?plantillaId=${itemSeleccionado._id}&periodo=${localHito.periodo}&empleado=${empleados[0]}`
+          );
+          if (evals[0]) {
+            await api(`/evaluaciones/${evals[0]._id}/close`, { method: "POST" });
+          }
+        }
+        toast.success("Evaluación cerrada");
+      } else if (action === "draft") {
+        toast.success("Borrador guardado");
+      }
+
+      onClose();
+    } catch (err) {
+      console.error("persistAndFlow error", err);
+      toast.error("Error procesando la evaluación");
+    } finally {
+      setSaving(false);
+    }
+  };
 
 
   // 🚫 Si algún seleccionado no está en NO_ENVIADOS => bloqueo
@@ -245,11 +245,11 @@ const persistAndFlow = async (action) => {
       <div className="space-y-6">
         {console.debug("[Modal Render] actual en UI:", localHito?.actual, "metas:", localHito?.metas)}
         {/* Header con nombre + resultado global */}
-       <div className="flex items-center justify-between">
-  <h2 className="font-semibold text-lg">{itemSeleccionado?.nombre}</h2>
-  <div className="text-2xl font-bold text-primary">
-    {localHito?.actual != null ? `${localHito.actual.toFixed(1)}%` : "—"}
-  </div>
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-lg">{itemSeleccionado?.nombre}</h2>
+          <div className="text-2xl font-bold text-primary">
+            {localHito?.actual != null ? `${localHito.actual.toFixed(1)}%` : "—"}
+          </div>
         </div>
 
         {/* 🔹 Estado global / trazabilidad */}
@@ -272,20 +272,19 @@ const persistAndFlow = async (action) => {
             {["NO_ENVIADOS", "PENDING_EMPLOYEE", "PENDING_HR", "CLOSED"].map((t) => (
               <button
                 key={t}
-                className={`px-3 py-1 rounded-md transition ${
-                  estadoTab === t
+                className={`px-3 py-1 rounded-md transition ${estadoTab === t
                     ? "bg-primary text-primary-foreground shadow"
                     : "hover:bg-muted"
-                }`}
+                  }`}
                 onClick={() => setEstadoTab(t)}
               >
                 {t === "NO_ENVIADOS"
                   ? "No enviados"
                   : t === "PENDING_EMPLOYEE"
-                  ? "Enviados"
-                  : t === "PENDING_HR"
-                  ? "En RRHH"
-                  : "Cerrados"}
+                    ? "Enviados"
+                    : t === "PENDING_HR"
+                      ? "En RRHH"
+                      : "Cerrados"}
               </button>
             ))}
           </div>
@@ -298,24 +297,24 @@ const persistAndFlow = async (action) => {
                   <input
                     type="checkbox"
                     checked={selectedEmpleados.includes(emp._id)}
-                
-onChange={(ev) => {
+
+                    onChange={(ev) => {
                       if (ev.target.checked) {
                         setSelectedEmpleados((prev) => [...prev, emp._id]);
 
-// 🔹 Si ya tiene evaluación → hidratar todo el hito
-  if (emp.evaluacionId) {
-     setLocalHito((prev) => ({
-       ...prev,
-      metas: emp.metasResultados?.length > 0 ? emp.metasResultados : prev.metas,
-       comentario: emp.comentario ?? prev.comentario ?? "",
-       actual: emp.actual ?? prev.actual,
-      estado: emp.estado ?? prev.estado, // ahora se carga el flujo real
-     }));
-     if (emp.comentarioManager) {
-       setComentarioManager(emp.comentarioManager);
-     }
-   }
+                        // 🔹 Si ya tiene evaluación → hidratar todo el hito
+                        if (emp.evaluacionId) {
+                          setLocalHito((prev) => ({
+                            ...prev,
+                            metas: emp.metasResultados?.length > 0 ? emp.metasResultados : prev.metas,
+                            comentario: emp.comentario ?? prev.comentario ?? "",
+                            actual: emp.actual ?? prev.actual,
+                            estado: emp.estado ?? prev.estado, // ahora se carga el flujo real
+                          }));
+                          if (emp.comentarioManager) {
+                            setComentarioManager(emp.comentarioManager);
+                          }
+                        }
 
 
 
@@ -330,12 +329,12 @@ onChange={(ev) => {
 
 
                   />
-           
- {emp.nombre} {emp.apellido} –{" "}
+
+                  {emp.nombre} {emp.apellido} –{" "}
                   <span className="italic text-gray-500">{emp.estado}</span>
                   {emp.actual != null && (
                     <span className="ml-2 text-xs font-medium text-primary">
-                    {emp.actual.toFixed(1)}%
+                      {emp.actual.toFixed(1)}%
                     </span>
                   )}
 
@@ -347,14 +346,13 @@ onChange={(ev) => {
           </div>
         </div>
 
-      {/* 🔹 Tabs: en aptitudes no mostramos "metas" */}
-       <div className="flex gap-2 border-b pb-2 text-sm">
-         {(isAptitud ? ["detalle", "flujo"] : ["detalle", "metas", "flujo"]).map((t) => (
+        {/* 🔹 Tabs: en aptitudes no mostramos "metas" */}
+        <div className="flex gap-2 border-b pb-2 text-sm">
+          {(isAptitud ? ["detalle", "flujo"] : ["detalle", "metas", "flujo"]).map((t) => (
             <button
               key={t}
-              className={`px-3 py-1 rounded-md transition ${
-                tab === t ? "bg-primary text-primary-foreground shadow" : "hover:bg-muted"
-              }`}
+              className={`px-3 py-1 rounded-md transition ${tab === t ? "bg-primary text-primary-foreground shadow" : "hover:bg-muted"
+                }`}
               onClick={() => setTab(t)}
             >
               {t === "detalle" ? "📄 Detalle" : t === "metas" ? "🎯 Metas" : "🔄 Flujo"}
@@ -386,8 +384,8 @@ onChange={(ev) => {
           </div>
         )}
 
-    {/* METAS (solo objetivos) */}
-       {!isAptitud && tab === "metas" && (
+        {/* METAS (solo objetivos) */}
+        {!isAptitud && tab === "metas" && (
           <div className="grid gap-3">
             {(localHito.metas || []).map((m, idx) => (
               <div key={`${m.nombre}-${idx}`} className="border rounded-md p-3 bg-background shadow-sm">
@@ -435,11 +433,10 @@ onChange={(ev) => {
                     />
                     {m.resultado !== null && (
                       <p
-                        className={`text-xs mt-1 font-medium ${
-                          evaluarCumple(m.resultado, m.esperado, m.operador, m.unidad)
+                        className={`text-xs mt-1 font-medium ${evaluarCumple(m.resultado, m.esperado, m.operador, m.unidad)
                             ? "text-green-600"
                             : "text-red-600"
-                        }`}
+                          }`}
                       >
                         {evaluarCumple(m.resultado, m.esperado, m.operador, m.unidad)
                           ? "✔ Cumplido"
@@ -452,8 +449,8 @@ onChange={(ev) => {
             ))}
           </div>
         )}
-  {/* ESCALA (solo aptitudes) */}
-       {isAptitud && tab === "detalle" && (
+        {/* ESCALA (solo aptitudes) */}
+        {isAptitud && tab === "detalle" && (
           <div className="grid gap-3">
             <div className="border rounded-md p-3 bg-background shadow-sm">
               <label className="text-xs text-muted-foreground">Escala de evaluación</label>
@@ -520,9 +517,8 @@ onChange={(ev) => {
                   persistAndFlow("toEmployee");
                 }}
                 disabled={saving || invalidSelection}
-                className={`${
-                  invalidSelection ? "bg-gray-400 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-700"
-                } text-white`}
+                className={`${invalidSelection ? "bg-gray-400 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-700"
+                  } text-white`}
               >
                 Enviar al empleado
               </Button>

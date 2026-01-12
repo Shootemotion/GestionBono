@@ -167,3 +167,28 @@ export const deleteFeedback = async (req, res) => {
         res.status(500).json({ message: "Error al eliminar feedback" });
     }
 };
+
+export const getPendingNotifications = async (req, res) => {
+    try {
+        const empleadoId = req.user?.empleadoId || req.user?.empleado?._id;
+
+        if (!empleadoId) {
+            return res.json([]);
+        }
+
+        // Buscar feedbacks ENVIADOS al empleado pero que este NO respondió aún
+        const pending = await Feedback.find({
+            empleado: empleadoId,
+            estado: "SENT",
+            $or: [
+                { empleadoAck: { $exists: false } },
+                { "empleadoAck.estado": null }
+            ]
+        }).select("periodo year estado submittedToEmployeeAt");
+
+        res.json(pending);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Error al obtener notificaciones" });
+    }
+};

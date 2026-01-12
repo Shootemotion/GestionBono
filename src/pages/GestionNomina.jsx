@@ -1,6 +1,6 @@
-// src/pages/GestionNomina.jsx
 import { useState, useEffect, useMemo } from "react";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
+import { Users } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import Modal from "@/components/Modal.jsx";
@@ -208,6 +208,70 @@ function GestionEstructura() {
     return sortDir === "desc" ? sorted.reverse() : sorted;
   }, [empleados, filtro, terminoBusqueda, sortBy, sortDir]);
 
+  // Stats Dashboard
+  const stats = useMemo(() => {
+    const list = empleadosFiltrados;
+    const total = list.length;
+    const byGroup = {};
+    const byGender = { M: 0, F: 0 };
+
+    // Si filtro es "area", mostramos sectores. Si no, mostramos áreas.
+    const showingSectors = filtro.tipo === "area";
+    const groupLabel = showingSectors ? "Distribución por Sector" : "Distribución por Área";
+
+    list.forEach(e => {
+      let key = "Sin Definir";
+      if (showingSectors) {
+        key = e.sector?.nombre || "Sin Sector";
+      } else {
+        key = e.area?.nombre || "Sin Área";
+      }
+
+      if (!byGroup[key]) {
+        byGroup[key] = { count: 0, byGender: { M: 0, F: 0, X: 0 } };
+      }
+
+      byGroup[key].count++;
+
+      // Gender counting
+      const g = (e.genero || e.sexo || e.gender || "").toLowerCase().trim();
+      let isMale = false;
+      let isFemale = false;
+
+      if (["hombre", "masculino", "m", "varon", "varón", "male"].includes(g) || (g.startsWith("m") && !g.includes("mujer"))) {
+        isMale = true;
+      } else if (["mujer", "femenino", "f", "female", "fema"].includes(g) || g.includes("mujer")) {
+        isFemale = true;
+      }
+
+      if (isMale) {
+        byGender.M++;
+        byGroup[key].byGender.M++;
+      } else if (isFemale) {
+        byGender.F++;
+        byGroup[key].byGender.F++;
+      } else {
+        // Count 'Otro' or undefined as X
+        byGender.X = (byGender.X || 0) + 1;
+        byGroup[key].byGender.X++;
+      }
+    });
+
+    const groups = Object.entries(byGroup)
+      .map(([name, data]) => ({
+        name,
+        count: data.count,
+        byGender: data.byGender,
+        pct: total ? (data.count / total) * 100 : 0
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    return { total, groups, byGender, label: groupLabel };
+  }, [empleadosFiltrados, filtro.tipo]);
+
+
+
+
   // Fade del grid
   useEffect(() => {
     setGridVisible(false);
@@ -414,6 +478,126 @@ function GestionEstructura() {
 
           {/* Main: Nómina (su propio scroll) */}
           <main className="overflow-y-auto pl-2 pr-2">
+            {/* Dashboard Estadísticas */}
+            {stats.total > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 pt-1">
+                {/* Total Card */}
+                <div className="bg-gradient-to-br from-white to-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Nómina</p>
+                      <div className="p-2 rounded-full bg-blue-100 text-blue-600">
+                        <Users size={18} />
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-center justify-center py-2">
+                      <span className="text-5xl font-bold text-slate-800 tracking-tight">{stats.total}</span>
+                      <span className="text-sm font-medium text-slate-400 mt-1">colaboradores</span>
+                    </div>
+                  </div>
+
+                  {/* Desglose Género (Mini stats) */}
+                  <div className="grid grid-cols-2 gap-3 mt-auto pt-4 border-t border-slate-100">
+                    <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-sky-50/50 border border-sky-100/50">
+                      <p className="text-[10px] uppercase text-sky-600 font-bold mb-0.5">Mujeres</p>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-lg font-bold text-slate-700">{stats.byGender.F}</span>
+                        <span className="text-[10px] text-slate-400 font-medium">({stats.total ? ((stats.byGender.F / stats.total) * 100).toFixed(0) : 0}%)</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-slate-100/50 border border-slate-200/50">
+                      <p className="text-[10px] uppercase text-slate-600 font-bold mb-0.5">Hombres</p>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-lg font-bold text-slate-700">{stats.byGender.M}</span>
+                        <span className="text-[10px] text-slate-400 font-medium">({stats.total ? ((stats.byGender.M / stats.total) * 100).toFixed(0) : 0}%)</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Distribución Dinámica (Vertical) */}
+                <div className="md:col-span-2 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+                  <div className="flex items-center justify-between mb-4 z-10 relative">
+                    <h3 className="text-sm font-bold text-slate-700">{stats.label}</h3>
+                    {/* Legend */}
+                    <div className="flex items-center gap-3 text-[10px] font-medium text-slate-500">
+                      <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-sm bg-slate-500"></div> Masc.</div>
+                      <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-sm bg-sky-400"></div> Fem.</div>
+                      <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-sm bg-slate-300"></div> Otro</div>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 w-full overflow-x-auto custom-scrollbar relative">
+                    {/* Reference Grid Lines (Absolute) */}
+                    <div className="absolute inset-x-0 inset-y-0 flex flex-col justify-between pointer-events-none pb-12 pt-4 px-4">
+                      {(() => {
+                        const max = Math.max(...stats.groups.map(g => g.count), 5);
+                        return [1, 0.75, 0.5, 0.25, 0].map(pct => (
+                          <div key={pct} className="w-full border-b border-dashed border-slate-200 flex items-center h-0 relative">
+                            <span className="absolute left-0 -top-2 text-[9px] text-slate-400 font-medium">{Math.round(max * pct)}</span>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+
+                    <div className="flex items-end justify-around gap-2 mx-auto px-6 h-full pb-12 min-w-max">
+                      {(() => {
+                        const maxVal = Math.max(...stats.groups.map(g => g.count), 1);
+
+                        return stats.groups.map((g) => {
+                          const heightPct = (g.count / maxVal) * 100;
+                          const pctM = g.count ? (g.byGender.M / g.count) * 100 : 0;
+                          const pctF = g.count ? (g.byGender.F / g.count) * 100 : 0;
+                          const pctX = g.count ? ((g.byGender.X || 0) / g.count) * 100 : 0;
+
+                          return (
+                            <div key={g.name} className="flex flex-col items-center justify-end h-full min-w-[100px] group relative z-10 pt-4" title={`Total: ${g.count} colaboradores`}>
+
+                              {/* Barra Stacked */}
+                              <div className="w-[20px] rounded-t-sm bg-slate-100 flex flex-col-reverse overflow-hidden shadow-sm relative hover:opacity-90 transition-opacity cursor-help"
+                                style={{ height: `${heightPct}%` }}>
+
+                                {/* Segments */}
+                                {pctM > 0 && (
+                                  <div style={{ height: `${pctM}%` }} className="w-full bg-slate-500 relative group/seg border-t border-white/20">
+                                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/seg:opacity-100 transition-opacity text-[10px] text-white font-bold">{g.byGender.M}</div>
+                                  </div>
+                                )}
+                                {pctF > 0 && (
+                                  <div style={{ height: `${pctF}%` }} className="w-full bg-sky-400 relative group/seg border-t border-white/20">
+                                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/seg:opacity-100 transition-opacity text-[10px] text-white font-bold">{g.byGender.F}</div>
+                                  </div>
+                                )}
+                                {pctX > 0 && (
+                                  <div style={{ height: `${pctX}%` }} className="w-full bg-slate-300 relative group/seg border-t border-white/20">
+                                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/seg:opacity-100 transition-opacity text-[10px] text-slate-600 font-bold">{g.byGender.X || 0}</div>
+                                  </div>
+                                )}
+
+                                {/* Total Label Floating Top - Always Visible */}
+                                <span className="absolute -top-7 left-1/2 -translate-x-1/2 text-[11px] font-bold text-slate-700 bg-white shadow-sm border border-slate-100 px-1.5 py-0.5 rounded-md transform transition-transform group-hover:scale-110 z-20">
+                                  {g.count}
+                                </span>
+                              </div>
+
+                              {/* Label Horizontal */}
+                              <div className="mt-3 w-full px-1 text-center">
+                                <span
+                                  className="text-[10px] font-medium text-slate-500 block leading-tight truncate px-1 group-hover:text-blue-600 transition-colors cursor-help"
+                                  title={g.name}>
+                                  {g.name}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Barra de controles - sticky dentro del MAIN */}
             <div className="sticky top-0 z-40 pb-4">
               <div className="rounded-xl bg-white/80 backdrop-blur-md shadow-sm border border-slate-200/60 p-4">
@@ -482,6 +666,8 @@ function GestionEstructura() {
                 </div>
               </div>
             </div>
+
+
 
             {/* Grid de Cards (con fade) */}
             <div

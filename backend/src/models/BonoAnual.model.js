@@ -46,6 +46,12 @@ const bonoAnualSchema = new Schema({
     total: Number,                        // 0..100
   },
 
+  condiciones: [{
+    tipo: String, // "ANTIGUEDAD", "SANCION", "LICENCIA"
+    descripcion: String,
+    impacto: String, // "ANULA", "REDUCE", "OK"
+  }],
+
   feedback: {
     comentarioJefe: String,
     comentarioEmpleado: String,

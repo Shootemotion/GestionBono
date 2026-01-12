@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 import { dashArea, dashSector } from "@/lib/dashboard";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
@@ -158,7 +158,7 @@ export default function SeguimientoReferente() {
     (Array.isArray(user?.referenteSectors) && user.referenteSectors.length > 0)
   );
   const esDirector = user?.rol === "directivo" || user?.isRRHH === true;
-  const esSuperAdmin = user?.rol === "superadmin";
+  const esSuperAdmin = user?.rol === "superadmin" || user?.isSuper;
   const esVisor = user?.rol === "visor";
   const puedeVer = esReferente || esDirector || esSuperAdmin || esVisor;
 
@@ -169,10 +169,12 @@ export default function SeguimientoReferente() {
     (Array.isArray(user?.referenteAreas) && user.referenteAreas.length > 0)
   );
 
-  const currentYear = new Date().getFullYear();
+  // Fiscal year logic: If before September (8), we are in the second half of the previous fiscal year
+  const today = new Date();
+  const currentFiscalYear = today.getMonth() >= 8 ? today.getFullYear() : today.getFullYear() - 1;
 
   // estado
-  const [anio, setAnio] = useState(currentYear);
+  const [anio, setAnio] = useState(currentFiscalYear);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -499,9 +501,6 @@ export default function SeguimientoReferente() {
               setEmpQuery,
               empSelectedId,
               setEmpSelectedId,
-              empHints,
-              showEmpHints,
-              setShowEmpHints,
               empHints,
               showEmpHints,
               setShowEmpHints,

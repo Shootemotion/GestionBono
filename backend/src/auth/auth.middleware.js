@@ -59,12 +59,27 @@ function buildFullName(userDoc) {
   return apellido || nombre;
 }
 
+const userCache = new Map(); // cache simple en memoria
+const CACHE_TTL = 60 * 1000; // 1 minuto
+
 export const authenticateJWT = async (req, res, next) => {
   try {
     const auth = req.headers.authorization || "";
     const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
 
     if (token) {
+      // 1. Revisar caché
+      const now = Date.now();
+      if (userCache.has(token)) {
+        const cached = userCache.get(token);
+        if (now < cached.expiry) {
+          req.user = cached.user;
+          return next();
+        } else {
+          userCache.delete(token);
+        }
+      }
+
       const payload = jwt.verify(token, process.env.JWT_SECRET);
 
 
@@ -153,6 +168,9 @@ export const authenticateJWT = async (req, res, next) => {
         referenteAreas,
         referenteSectors
       };
+
+      // Guardar en caché
+      userCache.set(token, { user: req.user, expiry: Date.now() + CACHE_TTL });
 
       return next();
     }

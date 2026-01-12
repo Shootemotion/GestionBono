@@ -1,7 +1,7 @@
 // src/hooks/usePlantillas.js
 import { useState, useCallback, useEffect } from "react";
 import { api } from "@/lib/api";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 
 export default function usePlantillas({ year, scopeType, scopeId, tipoFiltro }) {
   const [plantillas, setPlantillas] = useState([]);

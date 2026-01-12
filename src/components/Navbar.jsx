@@ -24,8 +24,12 @@ import {
   UserCircle2,
   TrendingUp,
   Calculator,
-  Home
+  Home,
+  Bell
 } from 'lucide-react';
+
+
+// ... (existing helper components)
 
 // --- Subcomponentes para Dropdowns ---
 // Ahora controlado por props para evitar que queden abiertos varios a la vez
@@ -118,6 +122,37 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
     setActiveMenu(null);
     if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
   };
+
+  // Notificaciones
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  useEffect(() => {
+    if (user?.empleado?._id) {
+      const fetchNotif = async () => {
+        try {
+          const res = await api('/feedbacks/notifications');
+          if (Array.isArray(res)) {
+            setNotifications(res);
+          }
+        } catch (e) {
+          console.error("Error fetching notifications", e);
+        }
+      };
+      fetchNotif();
+      // Poll every 60s
+      const interval = setInterval(fetchNotif, 60000);
+      return () => clearInterval(interval);
+    }
+  }, [user]);
+
+  const handleNotificationClick = (notif) => {
+    setShowNotifications(false);
+    nav('/mi-desempeno');
+    // Optional: trigger scroll or selection via context/url params later
+  };
+
+  // ... (rest of existing Navbar logic)
 
 
   // ====== Avatar (misma lógica que EmpleadoCard) ======
@@ -445,6 +480,66 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
               <Button onClick={() => nav('/login')} variant="ghost" className="text-slate-600 hover:text-blue-600">
                 Ingresar
               </Button>
+            )}
+
+            {/* Notifications */}
+            {user?.empleado?._id && (
+              <div className="relative">
+                <button
+                  className="p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors relative focus:outline-none"
+                  onClick={() => setShowNotifications(!showNotifications)}
+                >
+                  <Bell size={20} />
+                  {notifications.length > 0 && (
+                    <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white animate-pulse"></span>
+                  )}
+                </button>
+
+                {showNotifications && (
+                  <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl ring-1 ring-black/5 z-50 animate-in fade-in zoom-in-95 duration-100 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-50 flex justify-between items-center">
+                      <h3 className="text-sm font-bold text-slate-800">Notificaciones</h3>
+                      {notifications.length > 0 && <span className="bg-rose-100 text-rose-600 text-[10px] font-bold px-2 py-0.5 rounded-full">{notifications.length}</span>}
+                    </div>
+
+                    <div className="max-h-60 overflow-y-auto">
+                      {notifications.length === 0 ? (
+                        <div className="p-6 text-center text-slate-400 text-xs">
+                          <CheckCircle className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                          No tenés notificaciones pendientes via.
+                        </div>
+                      ) : (
+                        notifications.map((notif, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => handleNotificationClick(notif)}
+                            className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 flex items-start gap-3"
+                          >
+                            <div className="mt-1 p-1.5 bg-blue-50 text-blue-600 rounded-full shrink-0">
+                              <Target size={14} />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-slate-700">Feedback {notif.periodo} disponible</p>
+                              <p className="text-xs text-slate-500 mt-0.5">
+                                Tenés una evaluación pendiente de respuesta por tu parte.
+                              </p>
+                              {/* Simple "XX days ago" logic for now */}
+                              <p className="text-[10px] text-slate-400 mt-1">
+                                {notif.submittedToEmployeeAt ? `Recibido el ${new Date(notif.submittedToEmployeeAt).toLocaleDateString()}` : "Reciente"}
+                              </p>
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Overlay to close when clicking outside */}
+                {showNotifications && (
+                  <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setShowNotifications(false)} />
+                )}
+              </div>
             )}
 
             {/* Mobile menu button */}

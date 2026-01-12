@@ -554,27 +554,43 @@ export default function GanttView({
 
       {hoverData && (
         <div
-          className="fixed z-50 bg-white border border-slate-200 shadow-xl rounded-lg p-3 w-64 text-xs pointer-events-none"
+          className="fixed z-50 bg-white/95 backdrop-blur-sm border border-slate-200/60 shadow-2xl ring-1 ring-slate-900/5 rounded-xl w-72 text-sm pointer-events-none transition-all duration-200 ease-out"
           style={{
-            top: tooltipPos.y - 10,
+            top: tooltipPos.y - 12,
             left: tooltipPos.x,
             transform: "translate(-50%, -100%)",
           }}
         >
-          <div className="font-bold text-slate-700 mb-1 border-b border-slate-100 pb-1 flex justify-between">
-            <span>
+          {/* Header */}
+          <div className="bg-slate-50/80 px-4 py-3 border-b border-slate-100 flex items-center justify-between rounded-t-xl backdrop-blur-md">
+            <span className="font-bold text-slate-800">
               {hoverData.empleado.nombre} {hoverData.empleado.apellido}
             </span>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${STATUS_CONFIG[hoverData.statusKey]?.color || 'bg-slate-100 text-slate-500'
+              }`}>
+              {STATUS_CONFIG[hoverData.statusKey]?.label}
+            </span>
           </div>
-          <div className="space-y-1 mt-2">
-            {hoverData.items.map((it, i) => (
-              <div key={i} className="flex items-start gap-1 text-slate-500">
-                <span className="mt-1 text-[6px]">●</span>
-                <span>{it.item.nombre}</span>
+
+          {/* Body */}
+          <div className="p-4 space-y-3">
+            <div className="max-h-[300px] overflow-y-auto pr-1 relative custom-scrollbar">
+              <div className="space-y-2.5">
+                {hoverData.items.map((it, i) => (
+                  <div key={i} className="flex items-start gap-2.5 group">
+                    <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0 group-hover:scale-125 transition-transform" />
+                    <span className="text-slate-600 font-medium leading-snug text-xs">
+                      {it.item.nombre}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
-          <div className="mt-2 pt-2 border-t border-slate-100 text-[10px] text-slate-400 text-center italic">
+
+          {/* Footer */}
+          <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50/50 rounded-b-xl flex items-center justify-center gap-1.5 text-[10px] text-slate-400 font-medium tracking-wide">
+            <div className="w-1.5 h-1.5 rounded-full bg-slate-300 animate-pulse"></div>
             Click para ver detalles
           </div>
         </div>

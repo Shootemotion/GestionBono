@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { API_ORIGIN } from "@/lib/api";
-import { Pencil, AlertTriangle } from "lucide-react";
+import { Pencil, AlertTriangle, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 /* ===================== Helpers ===================== */
@@ -51,6 +51,7 @@ export default function FormularioEmpleado({
   const [emailUser, setEmailUser] = useState("");
   const [emailDomain, setEmailDomain] = useState("@diagnos.com.ar");
   const [celular, setCelular] = useState("");
+  const [genero, setGenero] = useState("");
   const [fechaIngreso, setFechaIngreso] = useState("");
   const [domicilio, setDomicilio] = useState("");
   const [puesto, setPuesto] = useState("");
@@ -131,6 +132,17 @@ export default function FormularioEmpleado({
         setEmailDomain("@diagnos.com.ar");
       }
       setCelular(empleadoInicial.celular || "");
+
+      // Normalize Gender
+      const gRaw = (empleadoInicial.genero || empleadoInicial.sexo || "").toLowerCase().trim();
+      if (["masculino", "hombre", "varon", "m", "male"].includes(gRaw) || (gRaw.startsWith("m") && !gRaw.includes("mujer"))) {
+        setGenero("Masculino");
+      } else if (["femenino", "mujer", "f", "female"].includes(gRaw) || gRaw.includes("mujer")) {
+        setGenero("Femenino");
+      } else {
+        setGenero(empleadoInicial.genero || "");
+      }
+
       setDomicilio(empleadoInicial.domicilio || "");
       setFechaIngreso(
         empleadoInicial.fechaIngreso
@@ -155,7 +167,9 @@ export default function FormularioEmpleado({
       setCuil("");
       setEmailUser("");
       setEmailDomain("@diagnos.com.ar");
+      setEmailDomain("@diagnos.com.ar");
       setCelular("");
+      setGenero("");
       setDomicilio("");
       setFechaIngreso("");
       setPuesto("");
@@ -255,10 +269,9 @@ export default function FormularioEmpleado({
       apodo,
       dni,
       cuil,
-      dni,
-      cuil,
       email: `${emailUser}${emailDomain}`,
       celular,
+      genero,
       domicilio,
       fechaIngreso,
       puesto,
@@ -328,7 +341,7 @@ export default function FormularioEmpleado({
     "Jefe de Área Administrativa - Contable",
     "Jefe de Atención al Cliente y Sucursales",
     "Jefe de RRHH y Relaciones Institucionales",
-    "Auxiliares Maestranza",
+    "Auxiliar de Maestranza",
     "Auxiliar Logística y Mantenimiento",
     "Analista de Compras",
     "Analista Contabilidad y Control de Gestión",
@@ -354,45 +367,53 @@ export default function FormularioEmpleado({
   /* ======================== UI ======================== */
   const resumenErrores = Object.keys(errors).map((k) => fieldLabel[k]).filter(Boolean);
 
+  const SectionTitle = ({ children }) => (
+    <h3 className="text-sm font-semibold text-slate-800 border-b border-slate-100 pb-2 mb-4 mt-6 first:mt-0 uppercase tracking-wide">
+      {children}
+    </h3>
+  );
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} className="space-y-6 animate-in fade-in duration-300">
+
       {/* Resumen de errores */}
       {resumenErrores.length > 0 && (
-        <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700">
-          <strong>Revisá estos campos:</strong>{" "}
-          {resumenErrores.join(" • ")}
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 shadow-sm flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 shrink-0 text-red-500 mt-0.5" />
+          <div>
+            <strong className="block font-semibold mb-1">Revisá estos campos:</strong>
+            <p className="opacity-90">{resumenErrores.join(" • ")}</p>
+          </div>
         </div>
       )}
 
-      {/* HEADER: Foto a la izquierda + campos inline a la derecha */}
-      <div className="-mx-4 -mt-4 px-4 pt-4 pb-4 border-b bg-muted/20 rounded-t-xl">
-        <div className="grid gap-4 items-center grid-cols-[120px_1fr] sm:grid-cols-[160px_1fr]">
-          {/* Foto cuadrada */}
-          <label className="relative group cursor-pointer">
-            <div className="w-[120px] sm:w-[160px] aspect-square rounded-xl overflow-hidden ring-1 ring-border bg-background shadow-sm">
-              {previewFoto ? (
-                <img src={previewFoto} alt="Foto de perfil" className="h-full w-full object-cover" />
-              ) : (
-                <div className="h-full w-full grid place-items-center text-xs text-muted-foreground">
-                  Subir foto
-                </div>
-              )}
-            </div>
-            <div className="absolute inset-0 rounded-xl grid place-items-center text-[11px] font-medium text-foreground/90 bg-background/40 opacity-0 group-hover:opacity-100 transition-opacity">
-              Cambiar foto
-            </div>
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => setFoto(e.target.files?.[0] || null)}
-            />
-          </label>
+      {/* HEADER: Foto + Datos Principales */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col sm:flex-row gap-6 items-start">
+        {/* Foto */}
+        <label className="relative group cursor-pointer shrink-0 mx-auto sm:mx-0">
+          <div className="w-32 h-32 rounded-2xl overflow-hidden ring-4 ring-slate-50 bg-slate-100 shadow-inner flex items-center justify-center">
+            {previewFoto ? (
+              <img src={previewFoto} alt="Foto de perfil" className="h-full w-full object-cover" />
+            ) : (
+              <Users size={48} className="text-slate-300" />
+            )}
+          </div>
+          <div className="absolute inset-0 rounded-2xl flex items-center justify-center bg-black/50 text-white text-xs font-medium opacity-0 group-hover:opacity-100 transition-all">
+            <span className="flex items-center gap-1"><Pencil size={12} /> Cambiar</span>
+          </div>
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => setFoto(e.target.files?.[0] || null)}
+          />
+        </label>
 
-          {/* Lado derecho: Nombre, Apellido, PUESTO + CATEGORÍA */}
-          <div className="flex flex-col gap-2">
-            {/* NOMBRE + APELLIDO (inline) */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        {/* Campos Principales */}
+        <div className="flex-1 w-full space-y-4 pt-2">
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Nombre Completo</label>
+            <div className="flex flex-wrap items-center gap-4">
               <InlineEditable
                 refInput={refs.nombre}
                 value={nombre}
@@ -402,6 +423,7 @@ export default function FormularioEmpleado({
                 onChange={setNombre}
                 onBlur={() => setEditNombre(false)}
                 error={errors.nombre}
+                className="text-2xl font-bold text-slate-800"
               />
               <InlineEditable
                 refInput={refs.apellido}
@@ -412,239 +434,272 @@ export default function FormularioEmpleado({
                 onChange={setApellido}
                 onBlur={() => setEditApellido(false)}
                 error={errors.apellido}
-              />
-            </div>
-
-            {/* PUESTO + CATEGORÍA como chips editables */}
-            <div className="flex flex-wrap items-center gap-2 mt-1">
-              <InlineSelect
-                refSelect={refs.puesto}
-                label="Puesto"
-                value={puesto}
-                options={puestos}
-                placeholder="Seleccionar puesto"
-                editing={editPuesto}
-                onEdit={() => setEditPuesto(true)}
-                onChange={setPuesto}
-                onBlur={() => setEditPuesto(false)}
-                error={errors.puesto}
-              />
-              <InlineSelect
-                label="Categoría"
-                value={categoria}
-                options={opcionesCategoria}
-                placeholder="Seleccionar categoría"
-                editing={editCategoria}
-                onEdit={() => setEditCategoria(true)}
-                onChange={setCategoria}
-                onBlur={() => setEditCategoria(false)}
+                className="text-2xl font-bold text-slate-800"
               />
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Apodo */}
-      <div>
-        <label className="block text-sm font-medium text-muted-foreground">Apodo (opcional)</label>
-        <input
-          className={inputCls(false)}
-          value={apodo}
-          onChange={(e) => setApodo(e.target.value)}
-          placeholder="Ej: Leo, Gabi…"
-        />
-      </div>
-
-      {/* DNI / CUIL */}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <div>
-          <label className="block text-sm font-medium text-muted-foreground">DNI</label>
-          <input
-            ref={refs.dni}
-            className={inputCls(!!errors.dni)}
-            value={dni}
-            onChange={(e) => setDni(e.target.value)}
-            required
-            aria-invalid={!!errors.dni}
-            inputMode="numeric"
-          />
-          {errors.dni && <p className="mt-1 text-xs text-red-600">{errors.dni}</p>}
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-muted-foreground">CUIL</label>
-          <input
-            ref={refs.cuil}
-            className={inputCls(!!errors.cuil)}
-            value={cuil}
-            onChange={(e) => setCuil(e.target.value)}
-            required
-            aria-invalid={!!errors.cuil}
-            inputMode="numeric"
-            maxLength={11}
-          />
-          {errors.cuil && <p className="mt-1 text-xs text-red-600">{errors.cuil}</p>}
-        </div>
-      </div>
-
-      {/* Email / Celular */}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <div>
-          <label className="block text-sm font-medium text-muted-foreground">Fecha de ingreso</label>
-          <div className="relative">
-            <input
-              ref={refs.fechaIngreso}
-              type="date"
-              className={`${inputCls(!!errors.fechaIngreso)} pr-8`}
-              value={fechaIngreso}
-              onChange={(e) => setFechaIngreso(e.target.value)}
-              required
-              aria-invalid={!!errors.fechaIngreso}
+          <div className="flex flex-wrap items-center gap-3">
+            <InlineSelect
+              refSelect={refs.puesto}
+              label="Puesto"
+              value={puesto}
+              options={puestos}
+              placeholder="Definir puesto"
+              editing={editPuesto}
+              onEdit={() => setEditPuesto(true)}
+              onChange={setPuesto}
+              onBlur={() => setEditPuesto(false)}
+              error={errors.puesto}
             />
-            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">📅</span>
+            <span className="text-slate-300">|</span>
+            <InlineSelect
+              label="Categoría"
+              value={categoria}
+              options={opcionesCategoria}
+              placeholder="Definir categoría"
+              editing={editCategoria}
+              onEdit={() => setEditCategoria(true)}
+              onChange={setCategoria}
+              onBlur={() => setEditCategoria(false)}
+            />
           </div>
-          {errors.fechaIngreso && <p className="mt-1 text-xs text-red-600">{errors.fechaIngreso}</p>}
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-muted-foreground">Celular</label>
-          <input
-            className={inputCls(false)}
-            value={celular}
-            onChange={(e) => setCelular(e.target.value)}
-            placeholder="Ej: 11 1234 5678"
-          />
         </div>
       </div>
 
-      {/* DOMICILIO */}
-      <div>
-        <label className="block text-sm font-medium text-muted-foreground">Domicilio</label>
-        <input
-          ref={refs.domicilio}
-          className={inputCls(!!errors.domicilio)}
-          value={domicilio}
-          onChange={(e) => setDomicilio(e.target.value)}
-          placeholder="Ej: Calle 123, Piso 4, Depto A"
-          aria-invalid={!!errors.domicilio}
-        />
-        {errors.domicilio && <p className="mt-1 text-xs text-red-600">{errors.domicilio}</p>}
-      </div>
+      {/* DETALLES en Grid */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
 
-      {/* Fecha de ingreso */}
-      <div>
-        <label className="block text-sm font-medium text-muted-foreground">Email</label>
-        <div className="flex">
-          <input
-            ref={refs.email}
-            type="text"
-            className={`flex-1 rounded-l-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 ${!!errors.email
-              ? "border-red-500 focus-visible:ring-red-500 z-10"
-              : "border-border focus-visible:ring-ring"
-              }`}
-            value={emailUser}
-            onChange={(e) => setEmailUser(e.target.value)}
-            placeholder="usuario"
-            required
-            aria-invalid={!!errors.email}
-          />
-          <select
-            className="rounded-r-md border border-l-0 border-border bg-slate-50 px-2 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            value={emailDomain}
-            onChange={(e) => setEmailDomain(e.target.value)}
-          >
-            <option value="@diagnos.com.ar">@diagnos.com.ar</option>
-            <option value="@gmail.com">@gmail.com</option>
-            <option value="@hotmail.com">@hotmail.com</option>
-          </select>
+        {/* === Datos Personales === */}
+        <SectionTitle>Datos Personales</SectionTitle>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 mb-8">
+          <div className="col-span-1 md:col-span-2">
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">Apodo (Cómo le dicen)</label>
+            <input
+              className={inputCls(false)}
+              value={apodo}
+              onChange={(e) => setApodo(e.target.value)}
+              placeholder="Ej: Leo, Gabi..."
+            />
+          </div>
 
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">DNI <span className="text-red-500">*</span></label>
+            <input
+              ref={refs.dni}
+              className={inputCls(!!errors.dni)}
+              value={dni}
+              onChange={(e) => setDni(e.target.value)}
+              required
+              aria-invalid={!!errors.dni}
+              inputMode="numeric"
+              placeholder="Sin puntos"
+            />
+            {errors.dni && <p className="mt-1 text-xs text-red-500 font-medium flex items-center gap-1"><AlertTriangle size={10} /> {errors.dni}</p>}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">CUIL <span className="text-red-500">*</span></label>
+            <input
+              ref={refs.cuil}
+              className={inputCls(!!errors.cuil)}
+              value={cuil}
+              onChange={(e) => setCuil(e.target.value)}
+              required
+              aria-invalid={!!errors.cuil}
+              inputMode="numeric"
+              maxLength={11}
+              placeholder="11 dígitos sin guiones"
+            />
+            {errors.cuil && <p className="mt-1 text-xs text-red-500 font-medium flex items-center gap-1"><AlertTriangle size={10} /> {errors.cuil}</p>}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">Género</label>
+            <select
+              className={inputCls(false)}
+              value={genero}
+              onChange={(e) => setGenero(e.target.value)}
+            >
+              <option value="">Seleccionar...</option>
+              <option value="Masculino">Masculino</option>
+              <option value="Femenino">Femenino</option>
+              <option value="Otro">Otro</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">Celular</label>
+            <input
+              className={inputCls(false)}
+              value={celular}
+              onChange={(e) => setCelular(e.target.value)}
+              placeholder="Ej: 11 1234 5678"
+            />
+          </div>
         </div>
-        {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
-      </div>
 
-      {/* Área / Sector */}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <div>
-          <label className="block text-sm font-medium text-muted-foreground">Área</label>
-          <select
-            ref={refs.areaId}
-            className={inputCls(!!errors.areaId)}
-            value={areaId}
-            onChange={(e) => {
-              setAreaId(e.target.value);
-              setSectorId(""); // ⬅ Reseteamos manualmente al cambiar área
-            }}
-            required
-            aria-invalid={!!errors.areaId}
-          >
-            <option value="">{areas.length ? "Seleccione un área" : "No hay áreas"}</option>
-            {areas.map((a) => (
-              <option key={a._id} value={a._id}>
-                {a.nombre}
+        {/* === Contacto y Domicilio === */}
+        <SectionTitle>Contacto y Ubicación</SectionTitle>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 mb-8">
+          <div className="col-span-1 md:col-span-2">
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">Email Corporativo <span className="text-red-500">*</span></label>
+            <div className="flex shadow-sm rounded-lg">
+              <input
+                ref={refs.email}
+                type="text"
+                className={`flex-1 rounded-l-lg border-y border-l bg-slate-50 px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all ${!!errors.email
+                  ? "border-red-300 bg-red-50 text-red-900 placeholder:text-red-300 z-10"
+                  : "border-slate-200 text-slate-700"
+                  }`}
+                value={emailUser}
+                onChange={(e) => setEmailUser(e.target.value)}
+                placeholder="nombre.apellido"
+                required
+                aria-invalid={!!errors.email}
+              />
+              <select
+                className="rounded-r-lg border border-l-0 border-slate-200 bg-slate-100 px-3 py-2 text-sm font-medium text-slate-600 outline-none hover:bg-slate-200 cursor-pointer transition-colors"
+                value={emailDomain}
+                onChange={(e) => setEmailDomain(e.target.value)}
+              >
+                <option value="@diagnos.com.ar">@diagnos.com.ar</option>
+                <option value="@diagnoslab.com.ar">@diagnoslab.com.ar</option>
+                <option value="@gmail.com">@gmail.com</option>
+                <option value="@hotmail.com">@hotmail.com</option>
+              </select>
+            </div>
+            {errors.email && <p className="mt-1 text-xs text-red-500 font-medium flex items-center gap-1"><AlertTriangle size={10} /> {errors.email}</p>}
+          </div>
+
+          <div className="col-span-1 md:col-span-2">
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">Domicilio Real <span className="text-red-500">*</span></label>
+            <input
+              ref={refs.domicilio}
+              className={inputCls(!!errors.domicilio)}
+              value={domicilio}
+              onChange={(e) => setDomicilio(e.target.value)}
+              placeholder="Calle, Altura, Piso, Depto, Localidad"
+              aria-invalid={!!errors.domicilio}
+            />
+            {errors.domicilio && <p className="mt-1 text-xs text-red-500 font-medium flex items-center gap-1"><AlertTriangle size={10} /> {errors.domicilio}</p>}
+          </div>
+        </div>
+
+        {/* === Datos Laborales === */}
+        <SectionTitle>Información Laboral</SectionTitle>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">Fecha de Ingreso <span className="text-red-500">*</span></label>
+            <div className="relative">
+              <input
+                ref={refs.fechaIngreso}
+                type="date"
+                className={`${inputCls(!!errors.fechaIngreso)}`}
+                value={fechaIngreso}
+                onChange={(e) => setFechaIngreso(e.target.value)}
+                required
+                aria-invalid={!!errors.fechaIngreso}
+              />
+            </div>
+            {errors.fechaIngreso && <p className="mt-1 text-xs text-red-500 font-medium flex items-center gap-1"><AlertTriangle size={10} /> {errors.fechaIngreso}</p>}
+          </div>
+
+          <div>{/* Spacer or empty */}</div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">Área <span className="text-red-500">*</span></label>
+            <select
+              ref={refs.areaId}
+              className={`${inputCls(!!errors.areaId)} appearance-none`}
+              value={areaId}
+              onChange={(e) => {
+                setAreaId(e.target.value);
+                setSectorId("");
+              }}
+              required
+              aria-invalid={!!errors.areaId}
+            >
+              <option value="">Seleccioná un área</option>
+              {areas.map((a) => (
+                <option key={a._id} value={a._id}>
+                  {a.nombre}
+                </option>
+              ))}
+            </select>
+            {errors.areaId && <p className="mt-1 text-xs text-red-500 font-medium flex items-center gap-1"><AlertTriangle size={10} /> {errors.areaId}</p>}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">Dependencia (Sector)</label>
+            <select
+              ref={refs.sectorId}
+              className={`${inputCls(!!errors.sectorId)} appearance-none`}
+              value={sectorId}
+              onChange={(e) => setSectorId(e.target.value)}
+              aria-invalid={!!errors.sectorId}
+              disabled={!areaId || !sectoresDelArea.length}
+            >
+              <option value="">
+                {!areaId ? "Primero elegí un área..." : "Sin dependencia específica"}
               </option>
-            ))}
-          </select>
-          {errors.areaId && <p className="mt-1 text-xs text-red-600">{errors.areaId}</p>}
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-muted-foreground">Dependencias (Opcional)</label>
-          <select
-            ref={refs.sectorId}
-            className={inputCls(!!errors.sectorId)}
-            value={sectorId}
-            onChange={(e) => setSectorId(e.target.value)}
-            aria-invalid={!!errors.sectorId}
-            disabled={!areaId || !sectoresDelArea.length}
-          >
-            <option value="">
-              {!areaId ? "Elegí un área primero" : "Sin Dependencia / Ninguna"}
-            </option>
-            {sectoresDelArea.map((s) => (
-              <option key={s._id} value={s._id}>
-                {s.nombre}
-              </option>
-            ))}
-          </select>
-          {errors.sectorId && <p className="mt-1 text-xs text-red-600">{errors.sectorId}</p>}
+              {sectoresDelArea.map((s) => (
+                <option key={s._id} value={s._id}>
+                  {s.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
       </div>
 
       {/* Acciones */}
-      <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
-        <Button type="button" variant="outline" onClick={onCancelar}>
+      <div className="flex items-center justify-end gap-3 pt-6">
+        <Button type="button" variant="ghost" onClick={onCancelar} className="hover:bg-slate-100 text-slate-600">
           Cancelar
         </Button>
-        <Button type="submit">{empleadoInicial ? "Guardar cambios" : "Guardar"}</Button>
+        <Button type="submit" size="lg" className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-200 transition-all font-semibold px-8">
+          {empleadoInicial ? "Guardar Cambios" : "Crear Colaborador"}
+        </Button>
       </div>
 
       {/* Modal Detect Change */}
       {showChangeModal && (
-        <div className="absolute inset-0 z-50 rounded-xl bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95 duration-200">
-          <div className="h-12 w-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mb-4 shadow-sm">
-            <AlertTriangle size={24} />
-          </div>
-          <h3 className="text-lg font-bold text-slate-900 mb-1">Detectamos un cambio de posición</h3>
-          <p className="text-sm text-slate-500 mb-6 max-w-[280px]">
-            Has modificado el Área o Sector. <br />¿Cómo te gustaría proceder?
-          </p>
-          <div className="flex flex-col gap-3 w-full max-w-[260px]">
-            <Button onClick={confirmarCorreccion} className="w-full bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 shadow-sm">
-              Es una corrección (Actualizar)
-            </Button>
-            <div className="relative flex py-1 items-center">
-              <div className="flex-grow border-t border-slate-200"></div>
-              <span className="flex-shrink-0 mx-2 text-[10px] text-slate-400 font-medium uppercase">o</span>
-              <div className="flex-grow border-t border-slate-200"></div>
+        <div className="fixed inset-0 z-[999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 text-center">
+              <div className="h-14 w-14 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mb-5 mx-auto ring-4 ring-amber-50/50">
+                <AlertTriangle size={28} />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">Cambio de Posición</h3>
+              <p className="text-sm text-slate-500 mb-6 leading-relaxed">
+                Detectamos un cambio en el área o sector. <br />
+                ¿Es una corrección de un error o un movimiento real en la estructura?
+              </p>
+
+              <div className="space-y-3">
+                <Button onClick={confirmarCorreccion} variant="outline" className="w-full border-slate-200 hover:bg-slate-50 hover:text-slate-800 text-slate-600 font-medium">
+                  Es una corrección (Actualizar)
+                </Button>
+                <div className="relative flex py-1 items-center">
+                  <div className="flex-grow border-t border-slate-100"></div>
+                  <span className="flex-shrink-0 mx-3 text-[10px] text-slate-300 font-bold uppercase tracking-widest">Opción Rec.</span>
+                  <div className="flex-grow border-t border-slate-100"></div>
+                </div>
+                <Button onClick={confirmarCambioLaboral} className="w-full bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-100">
+                  Registrar como Cambio Laboral
+                </Button>
+              </div>
+
+              <button
+                onClick={() => setShowChangeModal(false)}
+                className="mt-6 text-xs text-slate-400 hover:text-slate-600 font-medium hover:underline"
+              >
+                Cancelar operación
+              </button>
             </div>
-            <Button onClick={confirmarCambioLaboral} className="w-full bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-200">
-              Es un cambio laboral
-            </Button>
           </div>
-          <button
-            onClick={() => setShowChangeModal(false)}
-            className="mt-6 text-xs text-slate-400 hover:text-slate-600 underline"
-          >
-            Cancelar
-          </button>
         </div>
       )}
 
@@ -652,23 +707,23 @@ export default function FormularioEmpleado({
   );
 }
 
-/* ------------ Componentes inline edit ----------------- */
-function InlineEditable({ value, placeholder, editing, onEdit, onChange, onBlur, error, refInput }) {
+/* ------------ Componentes inline edit (Estilizados) ----------------- */
+function InlineEditable({ value, placeholder, editing, onEdit, onChange, onBlur, error, refInput, className }) {
   if (editing) {
     return (
-      <div className="flex flex-col">
+      <div className="flex flex-col relative group">
         <input
           ref={refInput}
           autoFocus
-          className={`border-b bg-transparent outline-none text-base font-semibold px-1 py-0.5 min-w-[140px] ${error ? "border-red-500" : "border-input"
-            }`}
+          className={`border-b-2 bg-transparent outline-none px-1 py-0 min-w-[120px] transition-colors ${error ? "border-red-500 text-red-600 placeholder:text-red-300" : "border-blue-500 text-slate-800 placeholder:text-slate-300"
+            } ${className || "text-base font-medium"}`}
           placeholder={placeholder}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onBlur={onBlur}
           aria-invalid={!!error}
         />
-        {error && <span className="text-[11px] text-red-600 mt-1">{error}</span>}
+        {error && <span className="absolute -bottom-4 left-0 text-[10px] font-bold text-red-500 whitespace-nowrap">{error}</span>}
       </div>
     );
   }
@@ -676,11 +731,11 @@ function InlineEditable({ value, placeholder, editing, onEdit, onChange, onBlur,
     <button
       type="button"
       onClick={onEdit}
-      className="group inline-flex items-center gap-2 text-base font-semibold hover:underline underline-offset-4"
+      className={`group inline-flex items-center gap-2 hover:bg-slate-50 px-2 py-1 rounded-md transition-all -ml-2 ${className || "text-base font-medium text-slate-700"} ${!value ? "text-slate-300" : ""}`}
       title={`Editar ${placeholder?.toLowerCase() || "valor"}`}
     >
-      {value || <span className="text-muted-foreground">{placeholder}</span>}
-      <Pencil size={14} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground" />
+      {value || placeholder}
+      <Pencil size={14} className="opacity-0 group-hover:opacity-40 transition-opacity" />
     </button>
   );
 }
@@ -689,7 +744,7 @@ function InlineSelect({
   label,
   value,
   options = [],
-  placeholder = "Seleccionar…",
+  placeholder = "Seleccionar...",
   editing,
   onEdit,
   onChange,
@@ -699,11 +754,12 @@ function InlineSelect({
 }) {
   if (editing) {
     return (
-      <div className="flex flex-col">
+      <div className="flex flex-col relative">
         <select
           ref={refSelect}
           autoFocus
-          className={`rounded-full border px-3 py-1 text-sm bg-background ${error ? "border-red-500" : ""}`}
+          className={`rounded-lg border-2 px-3 py-1.5 text-xs font-medium bg-white shadow-sm outline-none transition-all ${error ? "border-red-500 focus:border-red-600" : "border-blue-100 focus:border-blue-500"
+            }`}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onBlur={onBlur}
@@ -716,7 +772,7 @@ function InlineSelect({
             </option>
           ))}
         </select>
-        {error && <span className="text-[11px] text-red-600 mt-1">{error}</span>}
+        {error && <span className="absolute -bottom-4 left-0 text-[10px] font-bold text-red-500 whitespace-nowrap">{error}</span>}
       </div>
     );
   }
@@ -725,12 +781,15 @@ function InlineSelect({
       type="button"
       onClick={onEdit}
       title={`Editar ${label}`}
-      className="group inline-flex items-center gap-2"
+      className="group inline-flex items-center gap-2 hover:bg-slate-50 px-2 py-1 rounded-full transition-all border border-transparent hover:border-slate-100"
     >
-      <span className={`text-[12px] rounded-full border px-2 py-0.5 bg-background shadow-sm ${error ? "border-red-500" : ""}`}>
-        {value || <span className="text-muted-foreground">{label}</span>}
+      <span className={`text-[11px] font-bold px-2.5 py-1 rounded-md ${value
+        ? "bg-blue-50 text-blue-700 border border-blue-100"
+        : "bg-slate-100 text-slate-400 border border-slate-200"
+        } ${error ? "bg-red-50 text-red-600 border-red-200" : ""}`}>
+        {value || label}
       </span>
-      <Pencil size={14} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground" />
+      {/* <Pencil size={12} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" /> */}
     </button>
   );
 }

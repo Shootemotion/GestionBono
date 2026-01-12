@@ -55,7 +55,7 @@ function generarPeriodos(year, frecuencia) {
 const plantillaSchema = new mongoose.Schema(
   {
     tipo: { type: String, enum: ["objetivo", "aptitud"], required: true },
-    year: { type: Number, required: true },
+    year: { type: Number, required: true, index: true },
 
     scopeType: {
       type: String,
@@ -160,11 +160,14 @@ const plantillaSchema = new mongoose.Schema(
 
     pesoBase: { type: Number, min: 0, max: 100, required: true },
 
-    activo: { type: Boolean, default: false },
+    activo: { type: Boolean, default: false, index: true },
     metadata: { type: mongoose.Schema.Types.Mixed },
   },
   { timestamps: true }
 );
+
+// Index for efficient scope filtering (e.g. find all templates for a specific Area)
+plantillaSchema.index({ scopeType: 1, scopeId: 1 });
 
 /* ---------------------------------------------------------
    MÉTODO DE INSTANCIA

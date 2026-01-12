@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { dashEmpleado } from "@/lib/dashboard";
 import { api } from "@/lib/api";
@@ -294,9 +294,7 @@ export default function MiDesempeno() {
   const [showFinalReport, setShowFinalReport] = useState(false);
 
   // Year Selection Logic
-  const [selectedYear, setSelectedYear] = useState(() => {
-    return new Date().getFullYear();
-  });
+  const [selectedYear, setSelectedYear] = useState(2025);
 
 
 
@@ -599,6 +597,13 @@ export default function MiDesempeno() {
   // Guardar respuesta (Ack/Comment)
   const handleSaveResponse = async () => {
     if (!selectedFeedback) return;
+
+    // Validar comentario obligatorio si está en desacuerdo
+    if (localAck === "CONTEST" && !localComment.trim()) {
+      toast.error("Para indicar desacuerdo, es obligatorio ingresar un comentario justificativo.");
+      return;
+    }
+
     if (!window.confirm("¿Seguro desea enviar su devolución? Una vez enviada no podrá modificarla.")) return;
     try {
       const payload = {
@@ -1054,7 +1059,7 @@ export default function MiDesempeno() {
             <div className="hidden md:block text-right">
 
               {/* REPORT BUTTON */}
-              {(feedbacks.some(f => f.periodo === "FINAL" && !f.isPlaceholder) || data?.evaluaciones?.some(e => e.periodo === "FINAL")) && (
+              {feedbacks.some(f => f.periodo === "FINAL" && f.estado === "CLOSED") && (
                 <div className="mb-4">
                   <Button
                     size="sm"

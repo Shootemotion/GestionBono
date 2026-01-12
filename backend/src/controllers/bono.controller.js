@@ -2,6 +2,7 @@ import BonoConfig from "../models/BonoConfig.model.js";
 import BonoAnual from "../models/BonoAnual.model.js";
 import Empleado from "../models/Empleado.model.js";
 import Feedback from "../models/Feedback.model.js";
+import Incidencia from "../models/Incidencia.model.js";
 import { mixGlobal, bonoLineal, bonoTramos, montoBono } from "../lib/bono.js";
 import { computeForEmployees } from "./dashboard.controller.js";
 
@@ -46,8 +47,8 @@ export const calculateAll = async (req, res, next) => {
         if (!config) return res.status(400).json({ message: "No hay configuración para este año." });
 
         // 2. Get Active Employees
+        // 2. Get Active Employees (Only need IDs initially)
         const filter = {};
-        // If targetId is provided, filter query
         if (targetId) {
             if (type === 'empleado') {
                 filter._id = targetId;
@@ -56,51 +57,58 @@ export const calculateAll = async (req, res, next) => {
             }
         }
 
-        const empleados = await Empleado.find(filter).populate("area").populate("sector");
+        const empleadosDocs = await Empleado.find(filter, '_id').lean();
+        const empIds = empleadosDocs.map(e => e._id);
+
+        if (empIds.length === 0) {
+            return res.json({ count: 0, message: "No se encontraron empleados para calcular." });
+        }
 
         const results = [];
-        const debugs = []; // Store simplified debug info for response
+        const debugs = [];
 
-        for (const emp of empleados) {
-            // 3. Get FINAL Feedback
-            const feedback = await Feedback.findOne({
-                empleado: emp._id,
-                year: anio,
-                periodo: "FINAL",
-                estado: { $in: ["SENT", "PENDING_HR", "CLOSED", "ACKNOWLEDGED"] } // Debe estar al menos enviado
-            });
+        // 3. Bulk Compute Metrics (Efficient)
+        // This function already fetches Plantillas, Overrides, Evals, etc. in bulk
+        const metricsList = await computeForEmployees(empIds, anio);
 
-            // Si no hay feedback final, no calculamos (o calculamos 0)
+        // 4. Process each metric result and save
+        for (const metrics of metricsList) {
+            if (!metrics) continue;
+
+            const emp = metrics.empleado; // computedForEmployees returns populated employee object inside
+
+            // 3b. Check FINAL Feedback (Must be fetched or filtered from metrics.feedbacks?)
+            // metrics.feedbacks contains all feedbacks for the employee. 
+            // We need to check if a FINAL non-DRAFT feedback exists to proceed with bonus generation?
+            // The original logic fetched specific Feedback doc. 
+            // Let's use the one in metrics if available, or fetch strictly if needed.
+            // Ideally metrics should return it. metrics.feedbacks is available.
+
+            const safeFeedbacks = Array.isArray(metrics.feedbacks) ? metrics.feedbacks : [];
+            // Original logic: period="FINAL", estado in [SENT, PENDING_HR, CLOSED, ACKNOWLEDGED]
+            const feedback = safeFeedbacks.find(f =>
+                f.periodo === "FINAL" &&
+                ["SENT", "PENDING_HR", "CLOSED", "ACKNOWLEDGED", "CONFIRMADO", "SIGNED"].includes(f.estado)
+            );
+
             if (!feedback) {
-                if (targetId) debugs.push(`${emp.apellido}: Sin Feedback FINAL`);
+                // if (targetId) debugs.push(`${emp.apellido}: Sin Feedback FINAL válido`);
                 continue;
             }
 
-            // 4. Calculate Scores
-            // Usamos la lógica centralizada del dashboard
-            const [metrics] = await computeForEmployees([emp._id], anio);
-
-            // metrics tiene: { scoreObj, scoreApt, scoreFinal, ... }
-            // Nota: computeForEmployees devuelve scores en 0..100 (ej: 85.5)
-            // mixGlobal espera 0..100 también.
-
             // 5. Apply Rules (With Overrides)
             // Priority: Empleado > Area > Global
-            let activeConfig = { ...config.toObject() }; // Default global
+            let activeConfig = { ...config.toObject() };
             let configSource = "GLOBAL";
 
-            // Check overrides
             if (config.overrides && config.overrides.length > 0) {
-                // Empleado override?
                 const empOverride = config.overrides.find(o => o.type === "empleado" && String(o.targetId) === String(emp._id));
-
                 if (empOverride) {
                     activeConfig.escala = { ...activeConfig.escala, ...empOverride.escala };
-                    if (empOverride.success) activeConfig.escala = empOverride.escala; // Fallback helper
+                    if (empOverride.success) activeConfig.escala = empOverride.escala;
                     if (empOverride.bonoTarget !== undefined) activeConfig.bonoTarget = empOverride.bonoTarget;
                     configSource = "OVERRIDE_EMP";
                 } else {
-                    // Area override?
                     const areaOverride = config.overrides.find(o => o.type === "area" && String(o.targetId) === String(emp.area?._id));
                     if (areaOverride) {
                         activeConfig.escala = { ...activeConfig.escala, ...areaOverride.escala };
@@ -110,9 +118,7 @@ export const calculateAll = async (req, res, next) => {
                 }
             }
 
-            const globalScore = metrics?.scoreFinal || 0;
-
-            console.log(`[DEBUG_BONO_CALC] Emp: ${emp.nombre} ${emp.apellido}, Global: ${globalScore}, Source: ${configSource}, Umbral: ${activeConfig.escala.umbral}`);
+            const globalScore = metrics.scoreFinal || 0;
 
             let bonoPct = 0;
             let calcMeta = "";
@@ -135,24 +141,118 @@ export const calculateAll = async (req, res, next) => {
                 calcMeta = "tramos";
             }
 
-            // Re-assign used target for calculation
-            const bonoTargetUsed = activeConfig.bonoTarget;
+            // --- REGLAS DE NEGOCIO (Antigüedad, Incidencias) ---
+            const condiciones = [];
+            let factorTiempo = 1;
+            let disqualified = false;
 
-            // 6. Calculate Amount
-            // Bono Base = Sueldo * BonoTarget (ej: 1.5 sueldos)
+            // 1. Antigüedad al 31 de Agosto del año del bono
+            // Usamos emp_fechaIngreso. Si no tiene, asumimos reciente (0)
+            if (emp.fechaIngreso) {
+                const ingreso = new Date(emp.fechaIngreso);
+                const fechaCorte = new Date(anio + 1, 7, 31); // 31 de Agosto del siguiente año (fin de ciclo)
+
+                // Diferencia en meses
+                let months = (fechaCorte.getFullYear() - ingreso.getFullYear()) * 12 + (fechaCorte.getMonth() - ingreso.getMonth());
+                // Ajuste por día
+                if (fechaCorte.getDate() < ingreso.getDate()) months--;
+
+                if (months < 6) {
+                    disqualified = true;
+                    condiciones.push({ tipo: "ANTIGUEDAD", descripcion: `Menor a 6 meses (${months}m)`, impacto: "ANULA" });
+                } else if (months < 12) {
+                    // Proporcional 6-12 meses (según cuanto trabajó en el año fiscal? o desde ingreso?)
+                    // El requerimiento dice: "se proporciona a los meses trabajados". ASUMIENDO proporcional simple.
+                    // Si ingresó hace 9 meses, trabajó 9/12 del periodo? O desde enero?
+                    // Interpretación usual: Proporcional a tiempo en la empresa vs año complete.
+                    // Simplificación: factor = months / 12 (pero tope 1 si > 12)
+                    factorTiempo = Math.min(1, months / 12);
+                    condiciones.push({ tipo: "ANTIGUEDAD", descripcion: `Proporcional (${months} meses)`, impacto: "REDUCE" });
+                }
+            }
+
+            // 2. Incidencias del año Fiscal (1 Sep Anio - 31 Ago Anio+1)
+            const startYear = new Date(anio, 8, 1); // 1 de Septiembre del año seleccionado
+            const endYear = new Date(anio + 1, 7, 31); // 31 de Agosto del siguiente año
+            const incidencias = await Incidencia.find({
+                empleado: emp._id,
+                fecha: { $gte: startYear, $lte: endYear }
+            });
+
+            // a) Suspensiones / Sanciones
+            const sanciones = incidencias.filter(i => ["SANCION", "SUSPENSION"].includes(i.tipo));
+            if (sanciones.length > 0) {
+                disqualified = true;
+                condiciones.push({ tipo: "SANCION", descripcion: `${sanciones.length} Sanciones disciplinarias`, impacto: "ANULA" });
+            }
+
+            // b) Apercibimientos > 2
+            const apercibimientos = incidencias.filter(i => i.tipo === "APERCIBIMIENTO");
+            if (apercibimientos.length > 2) {
+                disqualified = true;
+                condiciones.push({ tipo: "SANCION", descripcion: `${apercibimientos.length} Apercibimientos (>2)`, impacto: "ANULA" });
+            }
+
+            // c) Inasistencias Injustificadas > 3
+            // (Asumimos que undefined means false/unjustified for backward compat or default)
+            const inasistencias = incidencias.filter(i => i.tipo === "INASISTENCIA" && !i.justificada);
+            if (inasistencias.length > 3) {
+                disqualified = true;
+                condiciones.push({ tipo: "PRESENTISMO", descripcion: `${inasistencias.length} Inasistencias Injust. (>3)`, impacto: "ANULA" });
+            }
+
+            // d) Licencias (Acumular días)
+            // Filter only LICENCIA
+            const misLicencias = incidencias.filter(i => i.tipo === "LICENCIA" && i.fechaHasta);
+            let totalDiasLicencia = 0;
+
+            misLicencias.forEach(l => {
+                const ini = new Date(l.fecha);
+                const fin = new Date(l.fechaHasta);
+                const diffTime = Math.abs(fin - ini);
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+                totalDiasLicencia += diffDays;
+            });
+
+            if (totalDiasLicencia > 60) {
+                const factorDescuento = totalDiasLicencia / 365;
+                factorTiempo = Math.max(0, factorTiempo - factorDescuento);
+                condiciones.push({
+                    tipo: "LICENCIA",
+                    descripcion: `Licencias acumuladas (${totalDiasLicencia} días)`,
+                    impacto: "REDUCE"
+                });
+            }
+
+            // d) Performance Threshold
+            if (activeConfig.escala.umbral && globalScore < activeConfig.escala.umbral) {
+                condiciones.push({
+                    tipo: "DESEMPEÑO",
+                    descripcion: `No alcanza objetivo global (${Math.round(globalScore)} < ${activeConfig.escala.umbral})`,
+                    impacto: "ANULA"
+                });
+            }
+
+            // 3. Resultado final
             const sueldo = emp.sueldoBase?.monto || 0;
-            const bonoBase = sueldo * (activeConfig.bonoTarget || 0);
-            const bonoFinal = bonoBase * bonoPct; // % del bono target ganado según desempeño
+            const bonoBase = sueldo * (activeConfig.bonoTarget || 0); // Target %
 
-            // Determine debugging info
+            // Si descalificado -> 0
+            // Sino -> Base * PerformancePct * FactorTiempo
+            const bonoFinal = disqualified ? 0 : (bonoBase * bonoPct * factorTiempo);
+
             if (targetId) {
-                debugs.push(`${emp.apellido}: Score=${globalScore} -> BonoPct=${bonoPct} (${calcMeta}) [Cfg: ${configSource}]`);
+                // debugs.push(`${emp.apellido}: Score=${globalScore} -> BonoPct=${bonoPct} (${calcMeta}) [Cfg: ${configSource}]`);
             }
 
             // 7. Save BonoAnual
-            const bono = await BonoAnual.findOneAndUpdate(
-                { empleado: emp._id, anio },
-                {
+            // Use findOneAndUpdate but try to do it parallel if possible? 
+            // For safety, let's keep sequential save inside this loop or Promise.all the saves.
+            // Promise.all for saves is faster.
+            results.push({
+                empleado: emp._id,
+                anio,
+                update: {
                     estado: "borrador",
                     snapshot: {
                         puesto: emp.puesto,
@@ -160,12 +260,22 @@ export const calculateAll = async (req, res, next) => {
                         areaNombre: emp.area?.nombre
                     },
                     bonoBase,
-                    bonoFinal
-                },
-                { new: true, upsert: true }
-            );
-            results.push(bono);
+                    bonoFinal,
+                    condiciones // Guardamos el detalle
+                }
+            });
         }
+
+        // Execute updates in parallel chunks to avoid overwhelming DB but faster than serial
+        const savePromises = results.map(r =>
+            BonoAnual.findOneAndUpdate(
+                { empleado: r.empleado, anio: r.anio },
+                r.update,
+                { new: true, upsert: true }
+            )
+        );
+
+        await Promise.all(savePromises);
 
         res.json({
             count: results.length,
@@ -184,16 +294,22 @@ export const getResults = async (req, res, next) => {
         const anio = Number(year);
 
         // 1. Get Config
-        const config = await BonoConfig.findOne({ anio });
+        let config = await BonoConfig.findOne({ anio });
         if (!config) {
-            // If no config, return empty or default
-            return res.json([]);
+            // Fallback default config if not saved yet
+            config = new BonoConfig({
+                anio,
+                bonoTarget: 0,
+                escala: { tipo: "lineal", minPct: 0, maxPct: 1, umbral: 60, tramos: [] },
+                overrides: []
+            });
+            // We don't save it, just use it for calculation
         }
 
         // 2. Get All Active Employees (or filtered by area/sector if provided to optimize)
         // For now, get all and let computeForEmployees handle it, or filter here.
         // computeForEmployees expects IDs.
-        const empleadosDocs = await Empleado.find({ estadoLaboral: "ACTIVO" }, "_id").lean();
+        const empleadosDocs = await Empleado.find({ estadoLaboral: "VINCULADO" }, "_id").lean();
         const ids = empleadosDocs.map(e => e._id);
 
         if (ids.length === 0) return res.json([]);
@@ -201,22 +317,28 @@ export const getResults = async (req, res, next) => {
         // 3. Compute Metrics (Live)
         const metrics = await computeForEmployees(ids, anio);
 
+        // --- PRE-FETCH INCIDENCIAS FOR ALL EMPLOYEES (Optimization) ---
+        // Periodo Fiscal: 1 de Septiembre (Anio) al 31 de Agosto (Anio + 1)
+        const startYear = new Date(anio, 8, 1);
+        const endYear = new Date(anio + 1, 7, 31);
+        const allIncidencias = await Incidencia.find({
+            fecha: { $gte: startYear, $lte: endYear },
+            empleado: { $in: ids }
+        }).lean();
+
         // 4. Map to Result Format
         const results = metrics.map(m => {
             const emp = m.empleado;
             const globalScore = m.scoreFinal || 0;
 
-            // --- Apply Overrides Logic (Same as calculateAll) ---
+            // --- Apply Overrides Logic ---
             let activeConfig = { ...config.toObject() };
-
             if (config.overrides && config.overrides.length > 0) {
-                // Empleado override
                 const empOverride = config.overrides.find(o => o.type === "empleado" && String(o.targetId) === String(emp._id));
                 if (empOverride) {
                     activeConfig.escala = { ...activeConfig.escala, ...empOverride.escala };
                     if (empOverride.bonoTarget !== undefined) activeConfig.bonoTarget = empOverride.bonoTarget;
                 } else {
-                    // Area override
                     const areaOverride = config.overrides.find(o => o.type === "area" && String(o.targetId) === String(emp.area?._id));
                     if (areaOverride) {
                         activeConfig.escala = { ...activeConfig.escala, ...areaOverride.escala };
@@ -225,7 +347,7 @@ export const getResults = async (req, res, next) => {
                 }
             }
 
-            // Calculate Bono Pct using ACTIVE config
+            // Calculate Bono Pct
             let bonoPct = 0;
             if (activeConfig.escala.tipo === "lineal") {
                 bonoPct = bonoLineal({
@@ -241,20 +363,93 @@ export const getResults = async (req, res, next) => {
                 }).pct;
             }
 
-            // Calculate Amounts
-            // Calculate Amounts
+            // --- REGLAS DE NEGOCIO (Antigüedad, Incidencias) ---
+            const condiciones = [];
+            let factorTiempo = 1;
+            let disqualified = false;
+
+            // 1. Antigüedad
+            if (emp.fechaIngreso) {
+                const ingreso = new Date(emp.fechaIngreso);
+                const fechaCorte = new Date(anio + 1, 7, 31); // 31 Agosto del año siguiente
+                let months = (fechaCorte.getFullYear() - ingreso.getFullYear()) * 12 + (fechaCorte.getMonth() - ingreso.getMonth());
+                if (fechaCorte.getDate() < ingreso.getDate()) months--;
+
+                if (months < 6) {
+                    disqualified = true;
+                    condiciones.push({ tipo: "ANTIGUEDAD", descripcion: `Menor a 6 meses (${months}m)`, impacto: "ANULA" });
+                } else if (months < 12) {
+                    factorTiempo = Math.min(1, months / 12);
+                    condiciones.push({ tipo: "ANTIGUEDAD", descripcion: `Proporcional (${months} meses)`, impacto: "REDUCE" });
+                }
+            }
+
+            // 2. Incidencias (Filter from pre-fetched)
+            const misIncidencias = allIncidencias.filter(i => String(i.empleado) === String(emp._id));
+
+            // a) Sanciones
+            const sanciones = misIncidencias.filter(i => ["SANCION", "SUSPENSION"].includes(i.tipo));
+            if (sanciones.length > 0) {
+                disqualified = true;
+                condiciones.push({ tipo: "SANCION", descripcion: `${sanciones.length} Sanciones`, impacto: "ANULA" });
+            }
+            // b) Apercibimientos
+            const apercibimientos = misIncidencias.filter(i => i.tipo === "APERCIBIMIENTO");
+            if (apercibimientos.length > 2) {
+                disqualified = true;
+                condiciones.push({ tipo: "SANCION", descripcion: `${apercibimientos.length} Apercibimientos (>2)`, impacto: "ANULA" });
+            }
+            // c) Inasistencias Injustificadas > 3
+            const inasistencias = misIncidencias.filter(i => i.tipo === "INASISTENCIA" && !i.justificada);
+            if (inasistencias.length > 3) {
+                disqualified = true;
+                condiciones.push({ tipo: "PRESENTISMO", descripcion: `${inasistencias.length} Inasistencias Injust. (>3)`, impacto: "ANULA" });
+            }
+            // d) Licencias (Acumular días)
+            const licencias = misIncidencias.filter(i => i.tipo === "LICENCIA" && i.fechaHasta);
+            let totalDiasLicencia = 0;
+
+            licencias.forEach(l => {
+                const ini = new Date(l.fecha);
+                const fin = new Date(l.fechaHasta);
+                // Diferencia en días + 1 (inclusivo)
+                const diffTime = Math.abs(fin - ini);
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+                totalDiasLicencia += diffDays;
+            });
+
+            if (totalDiasLicencia > 60) {
+                // Descontar proporcionalmente todo el tiempo de licencia si supera el umbral
+                const factorDescuento = totalDiasLicencia / 365;
+                factorTiempo = Math.max(0, factorTiempo - factorDescuento);
+                condiciones.push({
+                    tipo: "LICENCIA",
+                    descripcion: `Licencias acumuladas (${totalDiasLicencia} días)`,
+                    impacto: "REDUCE"
+                });
+            }
+
+            // d) Performance Threshold
+            if (activeConfig.escala.umbral && globalScore < activeConfig.escala.umbral) {
+                condiciones.push({
+                    tipo: "DESEMPEÑO",
+                    descripcion: `No alcanza objetivo global (${Math.round(globalScore)} < ${activeConfig.escala.umbral})`,
+                    impacto: "ANULA" // Or just info, but effectively it results in 0 bonus usually
+                });
+            }
+
+            // Calculate Final Amounts
             const sueldo = emp.sueldoBase?.monto || 0;
             const bonoBase = sueldo * (activeConfig.bonoTarget || 0);
-            const bonoFinal = bonoBase * bonoPct;
+            const bonoFinal = disqualified ? 0 : (bonoBase * bonoPct * factorTiempo);
 
-            // Get Feedback Comment (Defensive & Correct field)
-            // m.feedbacks should be array, but safe check
+            // Get Feedback Comment
             const safeFeedbacks = Array.isArray(m.feedbacks) ? m.feedbacks : [];
             const finalFeedback = safeFeedbacks.find(f => f.periodo === "FINAL");
-            const feedbackComentario = finalFeedback?.comentario || ""; // Fixed field name
+            const feedbackComentario = finalFeedback?.comentario || "";
 
             return {
-                _id: emp._id, // Virtual ID for the row
+                _id: emp._id,
                 empleado: {
                     _id: emp._id,
                     nombre: emp.nombre,
@@ -266,10 +461,10 @@ export const getResults = async (req, res, next) => {
                     sectorNombre: emp.sector?.nombre || "Sin Sector",
                     puesto: emp.puesto,
                     fechaIngreso: emp.fechaIngreso,
-                    sueldo: sueldo // Optional, for debug
+                    sueldo: sueldo
                 },
                 pesos: {
-                    objetivos: 70, // TODO: Get from config if dynamic
+                    objetivos: 70,
                     competencias: 30
                 },
                 resultado: {
@@ -277,6 +472,7 @@ export const getResults = async (req, res, next) => {
                     competencias: m.scoreApt,
                     total: globalScore
                 },
+                condiciones, // NEW FIELD
                 feedbackComentario,
                 bonoBase,
                 bonoFinal,
@@ -287,7 +483,7 @@ export const getResults = async (req, res, next) => {
                     min: activeConfig.escala?.minPct || 0,
                     max: activeConfig.escala?.maxPct || 0,
                 },
-                estado: "calculado" // Indicate this is a live calculation
+                estado: "calculado"
             };
         });
 

@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { api } from "@/lib/api";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Plus, Trash2, Building, Briefcase, Calendar } from "lucide-react";
 
@@ -70,7 +70,7 @@ export default function CarreraTable({ empleadoId, canEdit, areas = [], sectores
       toast.success("Registro agregado.");
     } catch (e) {
       console.error(e);
-      toast.error("No se pudo agregar.");
+      toast.error(e.message || "No se pudo agregar.");
     }
   };
 
@@ -82,7 +82,7 @@ export default function CarreraTable({ empleadoId, canEdit, areas = [], sectores
       toast.success("Registro eliminado.");
     } catch (e) {
       console.error(e);
-      toast.error("No se pudo eliminar.");
+      toast.error(e.message || "No se pudo eliminar.");
     }
   };
 

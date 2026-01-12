@@ -20,7 +20,8 @@ export const getEmpleados = async (req, res, next) => {
     if (area && mongoose.isValidObjectId(area)) filter.area = area;
     if (sector && mongoose.isValidObjectId(sector)) filter.sector = sector;
     if (q) {
-      const rx = new RegExp(String(q).trim(), "i");
+      const safeQ = String(q).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Escape special chars
+      const rx = new RegExp(safeQ, "i");
       filter.$or = [
         { nombre: rx },
         { apellido: rx },
@@ -44,7 +45,7 @@ export const getEmpleados = async (req, res, next) => {
 
     const [items, total] = await Promise.all([
       Empleado.find(filter)
-        .select("nombre apellido email dni cuil puesto categoria area sector sueldoBase fotoUrl createdAt updatedAt celular apodo fechaIngreso domicilio")
+        .select("nombre apellido email dni cuil puesto categoria area sector sueldoBase fotoUrl createdAt updatedAt celular apodo fechaIngreso domicilio genero")
         .populate("area", "nombre")
         .populate("sector", "nombre")
         .sort(sortObj)
@@ -87,6 +88,7 @@ export const createEmpleado = async (req, res, next) => {
       celular,
       apodo,
       categoria,
+      genero,
       sueldoBase, // { monto, moneda, vigenteDesde }
     } = req.body;
 
@@ -109,6 +111,7 @@ export const createEmpleado = async (req, res, next) => {
       celular,
       apodo,
       categoria,
+      genero,
       ...(sueldoBase ? { sueldoBase } : {}), // opcional, si viene lo guarda
     });
 
@@ -150,6 +153,18 @@ export const updateEmpleado = async (req, res, next) => {
         if (allowed.includes(k)) filtered[k] = updates[k];
       });
       updates = filtered;
+    }
+
+    // ---------------------------------------------------------
+    // AUTO-CIERRE DE CARRERA SI SE DESVINCULA
+    // ---------------------------------------------------------
+    if (updates.estadoLaboral === "DESVINCULADO") {
+      // Buscar el puesto actual (hasta: null) y cerrarlo a hoy
+      const puestoActual = await Carrera.findOne({ empleado: id, hasta: null });
+      if (puestoActual) {
+        puestoActual.hasta = new Date();
+        await puestoActual.save();
+      }
     }
 
     const empleado = await Empleado.findByIdAndUpdate(id, updates, {
@@ -226,6 +241,16 @@ export const actualizarSueldoEmpleado = async (req, res, next) => {
 
     const empleado = await Empleado.findById(id);
     if (!empleado) return res.status(404).json({ message: "Empleado no encontrado" });
+
+    // Validar fecha posterior a la actual (no retroactiva)
+    const newDate = new Date(vigenteDesde);
+    const currentDate = empleado.sueldoBase?.vigenteDesde ? new Date(empleado.sueldoBase.vigenteDesde) : null;
+
+    if (currentDate && newDate <= currentDate && empleado.sueldoBase.monto > 0) {
+      return res.status(400).json({
+        message: `La fecha de vigencia debe ser posterior a la actual (${currentDate.toLocaleDateString()}).`
+      });
+    }
 
     // push histórico del sueldo anterior (si había)
     const prev = empleado.sueldoBase || {};

@@ -1,6 +1,6 @@
 // src/pages/EditorAsignacion.jsx
 import { useEffect, useMemo, useState, useRef } from "react";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -1155,8 +1155,8 @@ export default function EditorAsignacion() {
                                   </div>
                                   <div className="flex items-center gap-2 mt-1">
                                     <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${['aptitud', 'competencia'].includes(row.tpl.tipo?.toLowerCase())
-                                        ? 'bg-emerald-50 text-emerald-600'
-                                        : 'bg-indigo-50 text-indigo-600'
+                                      ? 'bg-emerald-50 text-emerald-600'
+                                      : 'bg-indigo-50 text-indigo-600'
                                       }`}>
                                       {row.tpl.tipo}
                                     </span>
