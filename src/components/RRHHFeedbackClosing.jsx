@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { api } from "@/lib/api";
 import { dashEmpleado } from "@/lib/dashboard";
 import { calculatePeriodScores } from "@/lib/scoreHelpers";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";

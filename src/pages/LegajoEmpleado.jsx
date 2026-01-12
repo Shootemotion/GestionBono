@@ -1,15 +1,36 @@
-// src/pages/LegajoEmpleado.jsx
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { Home, Copy, Check } from "lucide-react";
-import { api } from "@/lib/api";
-import { toast } from "react-toastify";
+import { Home, Copy, Check, Trophy, FileText, Calendar } from "lucide-react";
+import { api, API_ORIGIN } from "@/lib/api";
+import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import CarreraTable from "@/components/CarreraTable.jsx";
 import CapacitacionesTable from "@/components/CapacitacionesTable.jsx";
-import { API_ORIGIN } from "@/lib/api";
+import IncidenciasTable from "@/components/IncidenciasTable.jsx";
+import { ReporteFinal } from "@/components/ReporteFinal";
+import { dashEmpleado } from "@/lib/dashboard";
+
+function CertificateIcon(props) {
+  return (
+    <svg
+      {...props}
+      xmlns="http://www.w3.org/2000/svg"
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" />
+    </svg>
+  );
+}
 
 /* ---------- UI helpers ---------- */
+
 const EstadoTag = ({ estado = "ACTIVO" }) => {
   const map = {
     ACTIVO: "bg-emerald-500/10 text-emerald-700 border border-emerald-200",
@@ -65,7 +86,8 @@ const fotoSrc = (empleado) => {
 };
 
 /* ---------- Pestañas ---------- */
-const TABS = ["Informacion basica", "Datos laborales", "Capacitaciones", "Documentos"];
+/* ---------- Pestañas ---------- */
+const TABS = ["Informacion basica", "Datos laborales", "Capacitaciones", "Incidencias", "Documentos", "Desempeño"];
 
 /* ---------- fallback de puestos/categorías ---------- */
 const DEFAULT_PUESTOS = [
@@ -107,7 +129,7 @@ export default function LegajoEmpleado() {
   const [emp, setEmp] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const isRRHH = !!(user?.isSuper || user?.isRRHH || user?.caps?.includes?.("nomina:editar"));
+  const isRRHH = !!(user?.isSuper || user?.isRRHH || user?.role === "ADMIN" || user?.role === "RRHH" || user?.role === "DIRECTIVO" || user?.caps?.includes?.("nomina:editar"));
   const isOwnProfile = user?.empleadoId === id || user?.empleado?._id === id;
   const canEditBasic = isRRHH || isOwnProfile;
 
@@ -124,7 +146,8 @@ export default function LegajoEmpleado() {
       "informacion-basica": TABS[0],
       "datos-laborales": TABS[1],
       "capacitaciones": TABS[2],
-      "documentos": TABS[3],
+      "incidencias": TABS[3],
+      "documentos": TABS[4],
     };
     return map[q] || TABS[0];
   })();
@@ -162,6 +185,13 @@ export default function LegajoEmpleado() {
   const [resumeCaps, setResumeCaps] = useState({ total: 0, vencen30: 0 });
   const [docs, setDocs] = useState([]);
   const [docForm, setDocForm] = useState({ nombre: "", archivo: null });
+
+  // Estados para Desempeño
+  const [feedbacks, setFeedbacks] = useState([]);
+  const [selectedReportData, setSelectedReportData] = useState(null);
+  const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [loadingReport, setLoadingReport] = useState(false);
+  const [selectedReportYear, setSelectedReportYear] = useState(null);
 
   // Carga inicial
   useEffect(() => {
@@ -247,6 +277,55 @@ export default function LegajoEmpleado() {
     }
   }, [tab, id]);
 
+  // Cargar feedbacks al entrar a la tab "Desempeño"
+  useEffect(() => {
+    if (tab === "Desempeño" && id) {
+      api(`/feedbacks/empleado/${id}`)
+        .then(res => {
+          const list = Array.isArray(res) ? res : [];
+          // Filtramos solo los FINAL que estén cerrados o listos
+          const finales = list.filter(f => f.periodo === "FINAL");
+          // Ordenar por año desc
+          finales.sort((a, b) => b.year - a.year);
+          setFeedbacks(finales);
+        })
+        .catch(err => console.error("Error cargando feedbacks", err));
+    }
+  }, [tab, id]);
+
+  const handleOpenReport = async (feedback) => {
+    try {
+      setLoadingReport(true);
+      // Fetch data dashboard del año específico del reporte
+      const data = await dashEmpleado(id, feedback.year);
+
+      if (data) {
+        // Extract evolution data from feedbacks (Q1-4, SEM, Final), ignoring monthly if present
+        const evData = (data.feedbacks || [])
+          .filter(f => /Q\d|SEM\d|A\d|FINAL/.test(f.periodo))
+          .sort((a, b) => {
+            const order = ["Q1", "Q2", "SEM1", "Q3", "SEM2", "Q4", "FINAL"];
+            return order.indexOf(a.periodo) - order.indexOf(b.periodo);
+          })
+          .map(f => ({
+            name: f.periodo === "FINAL" ? "Fin" : f.periodo,
+            global: f.scores?.global ?? 0
+          }));
+
+        setSelectedReportData({ ...data, evolutionData: evData });
+        setSelectedReportYear(feedback.year);
+        setReportModalOpen(true);
+      } else {
+        toast.error("No se encontraron datos detallados para este reporte.");
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Error al abrir el reporte.");
+    } finally {
+      setLoadingReport(false);
+    }
+  };
+
   // Persistir tab en URL
   useEffect(() => {
     const key =
@@ -256,7 +335,11 @@ export default function LegajoEmpleado() {
           ? "datos-laborales"
           : tab === TABS[2]
             ? "capacitaciones"
-            : "documentos";
+            : tab === "Incidencias"
+              ? "incidencias"
+              : tab === "Desempeño"
+                ? "desempeno"
+                : "documentos";
     setSearchParams((prev) => {
       const p = new URLSearchParams(prev);
       p.set("tab", key);
@@ -291,7 +374,7 @@ export default function LegajoEmpleado() {
       toast.success("Estado laboral actualizado.");
     } catch (e) {
       console.error(e);
-      toast.error("No se pudo actualizar el estado.");
+      toast.error(e.message || "No se pudo actualizar el estado.");
     }
   };
 
@@ -317,7 +400,7 @@ export default function LegajoEmpleado() {
       toast.success("Información básica actualizada.");
     } catch (e) {
       console.error(e);
-      toast.error("No se pudo actualizar la información básica.");
+      toast.error(e.message || "No se pudo actualizar la información básica.");
     }
   };
 
@@ -341,18 +424,10 @@ export default function LegajoEmpleado() {
           : sueldo.vigenteDesde,
         comentario: updEmp?.sueldoBase?.comentario || "",
       });
-      setSueldo({
-        monto: updEmp?.sueldoBase?.monto ?? "",
-        moneda: updEmp?.sueldoBase?.moneda ?? "ARS",
-        vigenteDesde: updEmp?.sueldoBase?.vigenteDesde
-          ? String(updEmp.sueldoBase.vigenteDesde).slice(0, 10)
-          : sueldo.vigenteDesde,
-        comentario: updEmp?.sueldoBase?.comentario || "",
-      });
       toast.success("Sueldo actualizado y registrado en histórico.");
     } catch (e) {
       console.error(e);
-      toast.error("No se pudo actualizar el sueldo.");
+      toast.error(e.message || "No se pudo actualizar el sueldo.");
     }
   };
 
@@ -365,7 +440,7 @@ export default function LegajoEmpleado() {
       toast.success("Registro eliminado.");
     } catch (e) {
       console.error(e);
-      toast.error("No se pudo eliminar.");
+      toast.error(e.message || "No se pudo eliminar.");
     }
   };
 
@@ -382,7 +457,7 @@ export default function LegajoEmpleado() {
       toast.success("CV subido correctamente.");
     } catch (e) {
       console.error(e);
-      toast.error("No se pudo subir el CV.");
+      toast.error(e.message || "No se pudo subir el CV.");
     } finally {
       if (cvInputRef.current) cvInputRef.current.value = "";
     }
@@ -398,21 +473,56 @@ export default function LegajoEmpleado() {
       const upd = resp?.empleado || resp;
       setEmp(upd);
       toast.success("Foto actualizada.");
-    } catch (err) {
-      console.error(err);
-      toast.error("No se pudo subir la foto.");
+    } catch (e) {
+      console.error(e);
+      toast.error(e.message || "No se pudo subir la foto.");
     }
   };
 
   const [copied, setCopied] = useState(false);
-  const copyReferente = () => {
+  const copyReferente = async () => {
     const ref = emp?.area?.referentes?.[0];
     if (!ref) return;
     const text = `Referente: ${ref.nombre} ${ref.apellido}\nEmail: ${ref.email}\nCel: ${ref.celular || "—"}`;
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    toast.success("Datos del referente copiados.");
+
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";
+        textArea.style.top = "0";
+        textArea.style.left = "0";
+        textArea.style.width = "2em";
+        textArea.style.height = "2em";
+        textArea.style.padding = "0";
+        textArea.style.border = "none";
+        textArea.style.outline = "none";
+        textArea.style.boxShadow = "none";
+        textArea.style.background = "transparent";
+        textArea.style.opacity = "0";
+        textArea.style.zIndex = "-1";
+
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+          const success = document.execCommand('copy');
+          if (!success) throw new Error("execCommand failed");
+        } catch (err) {
+          console.error('Fallback copy failed', err);
+          throw new Error('No se pudo copiar');
+        } finally {
+          document.body.removeChild(textArea);
+        }
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast.success("Datos del referente copiados.");
+    } catch (err) {
+      toast.error("Error al copiar");
+    }
   };
 
   if (loading) return <div className="p-6">Cargando…</div>;
@@ -429,14 +539,19 @@ export default function LegajoEmpleado() {
   return (
     <div className="min-h-screen bg-[#f5f9fc]">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-8 font-sans">
-        {/* Header */}
-        <div className="relative overflow-hidden rounded-3xl bg-white p-6 shadow-sm border border-slate-100">
-          <div className="absolute top-0 left-0 w-full h-24 bg-gradient-to-r from-blue-50 to-indigo-50/50" />
+        {/* Header Moderno con Gradiente Oscuro */}
+        <div className="relative overflow-hidden rounded-3xl bg-white shadow-sm border border-slate-200 group/header">
+          {/* Cover */}
+          <div className="relative h-32 w-full bg-slate-900 overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/40 via-slate-900 to-slate-900" />
+            <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '24px 24px' }}></div>
+          </div>
 
-          <div className="relative flex flex-col md:flex-row items-center md:items-end justify-between gap-6 pt-8">
-            <div className="flex flex-col md:flex-row items-center gap-5 text-center md:text-left">
-              <div className="h-24 w-24 rounded-full p-1 bg-white shadow-lg ring-1 ring-slate-100 -mt-8 md:mt-0 relative group">
-                <div className="h-full w-full rounded-full overflow-hidden bg-slate-100 relative">
+          <div className="relative px-8 pb-8">
+            <div className="flex flex-col md:flex-row items-end -mt-20 gap-6">
+              {/* Avatar con borde grueso */}
+              <div className="h-40 w-40 rounded-full p-1.5 bg-white shadow-2xl shadow-indigo-500/30 ring-4 ring-white/50 relative shrink-0">
+                <div className="h-full w-full rounded-full overflow-hidden bg-slate-100 relative group">
                   {avatar ? (
                     <img src={avatar} alt="foto" className="h-full w-full object-cover" />
                   ) : (
@@ -455,46 +570,63 @@ export default function LegajoEmpleado() {
                     </label>
                   )}
                 </div>
+                {/* Status Dot integrado al avatar */}
+                <div className="absolute bottom-2 right-2 rounded-full bg-white p-1 shadow-sm" title={emp?.estadoLaboral || "ACTIVO"}>
+                  <span className="relative flex h-3.5 w-3.5">
+                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${emp?.estadoLaboral === 'DESVINCULADO' ? 'bg-rose-400' : 'bg-emerald-400'}`}></span>
+                    <span className={`relative inline-flex rounded-full h-3.5 w-3.5 border-2 border-white ${emp?.estadoLaboral === 'DESVINCULADO' ? 'bg-rose-500' : 'bg-emerald-500'}`}></span>
+                  </span>
+                </div>
               </div>
 
-              <div className="mb-1">
-                <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+              {/* Info Principal */}
+              <div className="flex-1 pb-2 text-center md:text-left">
+                <h1 className="text-3xl font-bold text-slate-900 tracking-tight flex items-center justify-center md:justify-start gap-3">
                   {emp.nombre} {emp.apellido}
                 </h1>
-                <div className="text-sm font-medium text-slate-500 mt-1 flex flex-wrap justify-center md:justify-start items-center gap-2">
-                  <span>{emp.puesto || "Sin puesto definido"}</span>
-                  <span className="text-slate-300">•</span>
-                  {isRRHH && <EstadoTag estado={emp?.estadoLaboral || "ACTIVO"} />}
+
+                <div className="flex flex-col md:flex-row items-center gap-x-6 gap-y-1 mt-1 text-slate-500 text-sm font-medium">
+                  <div className="flex items-center gap-1.5 text-slate-700">
+                    <span className="bg-slate-100 p-1 rounded-md"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /><rect width="20" height="14" x="2" y="6" rx="2" /></svg></span>
+                    {emp.puesto || "Sin puesto definido"}
+                  </div>
+                  {(emp.area || emp.sector) && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="bg-slate-50 p-1 rounded-md text-slate-400"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="2" /></svg></span>
+                      <span>{emp.area?.nombre} <span className="text-slate-300 mx-1">/</span> {emp.sector?.nombre || "-"}</span>
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
 
-            {/* Actions */}
-            <div className="flex items-center gap-3">
-              {isRRHH && (
-                <div className="flex bg-slate-50 rounded-lg p-1 border border-slate-200">
-                  <select
-                    className="bg-transparent text-xs font-semibold text-slate-700 px-2 py-1.5 outline-none cursor-pointer"
-                    value={estadoLaboral}
-                    onChange={(e) => setEstadoLaboral(e.target.value)}
-                  >
-                    <option value="VINCULADO">VINCULADO</option>
-                    <option value="DESVINCULADO">DESVINCULADO</option>
-                  </select>
-                  <button
-                    onClick={onGuardarEstado}
-                    className="px-3 py-1.5 bg-white rounded-md text-xs font-medium text-slate-700 shadow-sm border border-slate-200 hover:text-blue-600 transition-colors"
-                  >
-                    Guardar
-                  </button>
-                </div>
-              )}
-              <button
-                onClick={onBack}
-                className="h-9 px-4 rounded-lg bg-white border border-slate-200 text-slate-600 text-sm font-medium shadow-sm hover:bg-slate-50 hover:text-slate-900 transition-all flex items-center gap-2"
-              >
-                <Home size={16} /> Home
-              </button>
+              {/* Botones de Acción (Mantener lógica RRHH) */}
+              <div className="flex items-center gap-3 pb-2">
+                {isRRHH && (
+                  <div className="flex items-center gap-2 bg-slate-50 rounded-xl p-1 border border-slate-100 shadow-sm">
+                    <select
+                      className="bg-transparent text-xs font-bold text-slate-600 px-3 py-1.5 outline-none cursor-pointer hover:text-slate-900 transition-colors"
+                      value={estadoLaboral}
+                      onChange={(e) => setEstadoLaboral(e.target.value)}
+                    >
+                      <option value="VINCULADO">VINCULADO</option>
+                      <option value="DESVINCULADO">DESVINCULADO</option>
+                    </select>
+                    <button
+                      onClick={onGuardarEstado}
+                      className="h-7 w-7 flex items-center justify-center bg-white rounded-lg text-slate-400 shadow-sm border border-slate-200 hover:text-emerald-600 hover:border-emerald-200 transition-all"
+                      title="Guardar estado"
+                    >
+                      <Check size={14} />
+                    </button>
+                  </div>
+                )}
+                <button
+                  onClick={onBack}
+                  className="h-10 px-5 rounded-xl bg-slate-900 text-white text-sm font-semibold shadow-md shadow-slate-900/10 hover:bg-slate-800 hover:shadow-lg transition-all flex items-center gap-2"
+                >
+                  <Home size={16} /> <span className="hidden sm:inline">Volver</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -551,12 +683,48 @@ export default function LegajoEmpleado() {
 
                 {/* Botón copiar TODO */}
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     const ref = emp?.area?.referentes?.[0];
                     const refText = ref ? `\n\nREFERENTE:\n${ref.nombre} ${ref.apellido}\nEmail: ${ref.email}\nCel: ${ref.celular || "—"}` : "";
                     const text = `EMPLEADO:\n${emp.nombre} ${emp.apellido}\nDNI: ${emp.dni}\nCUIL: ${emp.cuil}\nEmail: ${emp.email}\nCel: ${emp.celular}\nDomicilio: ${emp.domicilio}${refText}`;
-                    navigator.clipboard.writeText(text);
-                    toast.success("Todos los datos copiados");
+
+                    try {
+                      if (navigator.clipboard && window.isSecureContext) {
+                        await navigator.clipboard.writeText(text);
+                      } else {
+                        // Fallback http: visible but transparent to avoid security block
+                        const textArea = document.createElement("textarea");
+                        textArea.value = text;
+                        textArea.style.position = "fixed";
+                        textArea.style.top = "0";
+                        textArea.style.left = "0";
+                        textArea.style.width = "2em";
+                        textArea.style.height = "2em";
+                        textArea.style.padding = "0";
+                        textArea.style.border = "none";
+                        textArea.style.outline = "none";
+                        textArea.style.boxShadow = "none";
+                        textArea.style.background = "transparent";
+                        textArea.style.opacity = "0";
+                        textArea.style.zIndex = "-1";
+
+                        document.body.appendChild(textArea);
+                        textArea.focus();
+                        textArea.select();
+                        try {
+                          const success = document.execCommand('copy');
+                          if (!success) throw new Error("execCommand failed");
+                        } catch (err) {
+                          console.error('Fallback copy failed', err);
+                          throw new Error('No se pudo copiar');
+                        } finally {
+                          document.body.removeChild(textArea);
+                        }
+                      }
+                      toast.success("Todos los datos copiados");
+                    } catch (err) {
+                      toast.error("Error al copiar al portapapeles");
+                    }
                   }}
                   className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors backdrop-blur-sm"
                   title="Copiar ficha completa"
@@ -664,20 +832,7 @@ export default function LegajoEmpleado() {
               </div>
             </div>
 
-            {/* Tips / accesos */}
-            {isRRHH && (
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="h-2 w-2 rounded-full bg-blue-500"></div>
-                  <h4 className="text-xs font-bold uppercase text-slate-800 tracking-wider">Accesos rápidos</h4>
-                </div>
-                <ul className="text-sm space-y-2 text-slate-600">
-                  <li className="flex gap-2 items-start opacity-80 hover:opacity-100 transition-opacity"><span className="text-blue-400">›</span> Cambiar estado laboral desde el header</li>
-                  <li className="flex gap-2 items-start opacity-80 hover:opacity-100 transition-opacity"><span className="text-blue-400">›</span> Editar datos desde “Información básica”</li>
-                  <li className="flex gap-2 items-start opacity-80 hover:opacity-100 transition-opacity"><span className="text-blue-400">›</span> Actualizar sueldo en “Datos laborales”</li>
-                </ul>
-              </div>
-            )}
+
           </aside>
 
           {/* PANEL CENTRAL: Tabs siempre arriba + contenido */}
@@ -948,6 +1103,7 @@ export default function LegajoEmpleado() {
                               <th className="px-4 py-3 text-right">Sueldo Act.</th>
                               <th className="px-4 py-3 text-center">% Ajuste</th>
                               <th className="px-4 py-3">Comentario</th>
+                              {isRRHH && <th className="px-4 py-3 w-10"></th>}
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-border/40">
@@ -973,6 +1129,9 @@ export default function LegajoEmpleado() {
                                 const pct = (hasPrev && anterior > 0) ? (diff / anterior) * 100 : 0;
 
                                 const isPositive = pct > 0;
+
+                                // Identificamos subdocumentos reales para poder borrarlos
+                                const canDelete = !item.isCurrent && item._id && isRRHH;
 
                                 return (
                                   <tr key={i} className={`hover:bg-slate-50/50 transition-colors ${item.isCurrent ? "bg-blue-50/30" : ""}`}>
@@ -1006,6 +1165,19 @@ export default function LegajoEmpleado() {
                                       )}
                                       {item.isCurrent && <span className="text-[9px] uppercase tracking-wide font-bold text-blue-500 block mt-0.5">Vigente</span>}
                                     </td>
+                                    {isRRHH && (
+                                      <td className="px-4 py-3 text-right">
+                                        {canDelete && (
+                                          <button
+                                            onClick={() => onEliminarSueldo(item._id)}
+                                            className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"
+                                            title="Eliminar registro histórico"
+                                          >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>
+                                          </button>
+                                        )}
+                                      </td>
+                                    )}
                                   </tr>
                                 );
                               });
@@ -1061,6 +1233,17 @@ export default function LegajoEmpleado() {
                 <div className="overflow-x-auto">
                   <div className="min-w-0">
                     <CapacitacionesTable empleadoId={id} canEdit={isRRHH} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Incidencias */}
+            {tab === "Incidencias" && (
+              <div className="rounded-xl bg-card ring-1 ring-border/60 p-4">
+                <div className="overflow-x-auto">
+                  <div className="min-w-0">
+                    <IncidenciasTable empleadoId={id} canEdit={isRRHH} />
                   </div>
                 </div>
               </div>
@@ -1214,9 +1397,71 @@ export default function LegajoEmpleado() {
                 </div>
               </div>
             )}
+
+            {/* Desempeño */}
+            {tab === "Desempeño" && (
+              <div className="rounded-xl bg-card ring-1 ring-border/60 p-5">
+                <div className="flex items-center gap-3 mb-6 pb-4 border-b border-border/60">
+                  <div className="p-2 bg-purple-50 text-purple-600 rounded-lg">
+                    <Trophy size={20} />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-800">Historial de Desempeño</h3>
+                </div>
+
+                {feedbacks.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                    <CertificateIcon className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                    <p className="text-sm">No hay reportes de cierre registrados.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {feedbacks.map((item) => (
+                      <div key={item._id} className="group bg-white rounded-xl border border-slate-200 p-5 hover:shadow-md transition-all hover:border-purple-200 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                          <Trophy className="w-16 h-16 text-purple-600 transform rotate-12" />
+                        </div>
+
+                        <div className="relative z-10">
+                          <div className="flex justify-between items-start mb-4">
+                            <span className="px-2.5 py-1 rounded-md bg-purple-50 text-purple-700 text-xs font-bold font-mono tracking-tight">
+                              CICLO {item.year}
+                            </span>
+                            <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${['CLOSED', 'SENT'].includes(item.estado) ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-500'}`}>
+                              {item.estado === 'CLOSED' ? 'Finalizado' : (item.estado === 'SENT' ? 'Cerrado' : item.estado)}
+                            </span>
+                          </div>
+
+                          <div className="mb-6">
+                            <h4 className="text-base font-bold text-slate-700 leading-tight">Reporte Anual Final</h4>
+                            <p className="text-xs text-slate-400 mt-1">Cierre de ciclo lectivo y evaluación global.</p>
+                          </div>
+
+                          <button
+                            onClick={() => handleOpenReport(item)}
+                            className="w-full py-2.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 shadow-sm hover:shadow active:scale-95 transition-all flex items-center justify-center gap-2"
+                            disabled={loadingReport}
+                          >
+                            {loadingReport ? 'Cargando...' : <><FileText size={14} /> Ver Reporte Completo</>}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </section>
         </div>
       </div>
+      {/* Modal Reporte Final */}
+      <ReporteFinal
+        isOpen={reportModalOpen}
+        onClose={() => setReportModalOpen(false)}
+        data={selectedReportData}
+        empleado={emp}
+        anio={selectedReportYear}
+        evolutionData={selectedReportData?.evolutionData}
+      />
     </div>
   );
 }

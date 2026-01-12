@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/table";
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 import {
   ChevronDown,
   ChevronUp,
@@ -54,7 +54,7 @@ const money = (n) =>
 const COLORS = ["#10b981", "#f59e0b", "#ef4444", "#3b82f6"];
 
 export default function SeguimientoEjecutivo() {
-  const [anio, setAnio] = useState(new Date().getFullYear());
+  const [anio, setAnio] = useState(2025);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 

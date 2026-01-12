@@ -1,11 +1,12 @@
 import { Router } from "express";
-import { getFeedbacksByEmpleado, saveFeedback, getPendingFeedbacks, closeFeedbacksBulk, deleteFeedback } from "../controllers/feedback.controller.js";
+import { getFeedbacksByEmpleado, saveFeedback, getPendingFeedbacks, closeFeedbacksBulk, deleteFeedback, getPendingNotifications } from "../controllers/feedback.controller.js";
 import { authenticateJWT } from "../auth/auth.middleware.js";
 
 const router = Router();
 
 router.use(authenticateJWT);
 
+router.get("/notifications", getPendingNotifications);
 router.get("/empleado/:empleadoId", getFeedbacksByEmpleado);
 router.post("/", saveFeedback);
 

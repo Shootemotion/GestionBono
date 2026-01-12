@@ -67,10 +67,10 @@ export const crearUsuario = async (req, res) => {
     // 3) Existe y ya vinculado AL MISMO empleado -> resetear contraseña temporal
     if (String(existing.empleado) === String(empleadoId)) {
       existing.passwordHash = passwordHash;
-   existing.status = 'invited';
-   existing.rol = rol || existing.rol;   // 🔥 CORRECCIÓN
-   await existing.save();
-   return res.json({ action: 'reset', user: safeUser(existing), tempPassword: tempPwd });
+      existing.status = 'invited';
+      existing.rol = rol || existing.rol;   // 🔥 CORRECCIÓN
+      await existing.save();
+      return res.json({ action: 'reset', user: safeUser(existing), tempPassword: tempPwd });
     }
 
     // 4) Existe y vinculado a otro empleado -> conflicto
@@ -154,5 +154,36 @@ export const unlinkEmpleado = async (req, res) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: 'No se pudo desvincular empleado' });
+  }
+};
+
+// PATCH /api/usuarios/:id (Update email/role)
+export const actualizarUsuario = async (req, res) => {
+  try {
+    const { id } = req.params;
+    let { email, rol } = req.body;
+
+    // Normalizar email si viene
+    if (email) email = String(email).trim().toLowerCase();
+
+    // Validar unicidad de email si cambió
+    if (email) {
+      const existing = await Usuario.findOne({ email, _id: { $ne: id } });
+      if (existing) {
+        return res.status(409).json({ message: 'El email ya está en uso por otro usuario.' });
+      }
+    }
+
+    const updates = {};
+    if (email) updates.email = email;
+    if (rol) updates.rol = rol;
+
+    const user = await Usuario.findByIdAndUpdate(id, updates, { new: true });
+    if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+    return res.json({ user: safeUser(user) });
+  } catch (err) {
+    console.error('actualizarUsuario error:', err);
+    return res.status(500).json({ message: 'Error al actualizar usuario' });
   }
 };

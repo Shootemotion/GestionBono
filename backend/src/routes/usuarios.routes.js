@@ -6,7 +6,7 @@ import {
   resetPassword,
   linkEmpleado,
   unlinkEmpleado,
-
+  actualizarUsuario,
 } from '../controllers/usuarios.controller.js';
 import {
   authenticateJWT as requireAuth,
@@ -28,5 +28,8 @@ router.patch('/:id/reset-password', requireAuth, requireCap('usuarios:reset_pass
 // Vincular / desvincular empleado (PATCH)
 router.patch('/:id/link', requireAuth, requireRole('superadmin'), linkEmpleado);
 router.patch('/:id/unlink', requireAuth, requireRole('superadmin'), unlinkEmpleado);
+
+// Actualizar usuario (email/rol)
+router.patch('/:id', requireAuth, requireRole('superadmin'), actualizarUsuario);
 
 export default router;

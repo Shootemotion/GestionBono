@@ -17,10 +17,7 @@ export function bonoLineal({ global, maxPct = 0.3, minPct = 0, umbral = 60 }) {
   const epsilon = 0.0001;
   const normalizedG = g + epsilon;
 
-  // DEBUG LOG
-  if (normalizedG < umbral || (g > 35 && g < 45)) {
-    console.log(`[DEBUG_BONO_LINEAL] g=${g}, norm=${normalizedG}, umbral=${umbral}, minPct=${minPct}, maxPct=${maxPct}, result=${normalizedG < umbral ? 'bajoumbral' : 'ok'}`);
-  }
+
 
   if (normalizedG < umbral) return { pct: 0, meta: "bajo_umbral" };
   const pct = minPct + (maxPct - minPct) * ((g - umbral) / (100 - umbral));

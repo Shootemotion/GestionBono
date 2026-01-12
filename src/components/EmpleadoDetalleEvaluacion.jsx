@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import GanttEvaluaciones from "@/components/GanttEvaluaciones";
@@ -35,13 +35,13 @@ export default function EmpleadoDetalleEvaluacion({ empleado, onClose }) {
       </h2>
 
       {/* 🔹 Diagrama de Gantt con objetivos y aptitudes */}
-<GanttEvaluaciones
-  objetivos={Array.isArray(empleado.objetivos?.items) ? empleado.objetivos.items : []}
-  aptitudes={Array.isArray(empleado.aptitudes?.items) ? empleado.aptitudes.items : []}
-  onSelectHito={(plantilla) => {
-    console.log("Seleccionado", plantilla);
-  }}
-/>
+      <GanttEvaluaciones
+        objetivos={Array.isArray(empleado.objetivos?.items) ? empleado.objetivos.items : []}
+        aptitudes={Array.isArray(empleado.aptitudes?.items) ? empleado.aptitudes.items : []}
+        onSelectHito={(plantilla) => {
+          console.log("Seleccionado", plantilla);
+        }}
+      />
 
 
       {/* 🔹 Evaluación manual clásica debajo */}

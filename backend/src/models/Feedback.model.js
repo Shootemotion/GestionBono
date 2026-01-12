@@ -24,6 +24,7 @@ const FeedbackSchema = new mongoose.Schema(
             type: String,
             enum: ["DRAFT", "SENT", "PENDING_HR", "CLOSED"],
             default: "DRAFT",
+            index: true,
         },
         correctionCount: { type: Number, default: 0 },
         fechaRealizacion: {

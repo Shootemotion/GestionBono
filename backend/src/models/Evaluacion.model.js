@@ -5,10 +5,10 @@ const evaluacionSchema = new mongoose.Schema(
   {
     // Identificación
     empleado: { type: mongoose.Schema.Types.ObjectId, ref: "Empleado", required: true },
-    plantillaId: { type: mongoose.Schema.Types.ObjectId, ref: "Plantilla", required: true },
+    plantillaId: { type: mongoose.Schema.Types.ObjectId, ref: "Plantilla", required: true, index: true },
 
     // Periodización
-    year: { type: Number, default: null },             // ej: 2025
+    year: { type: Number, default: null, index: true },             // ej: 2025
     periodo: { type: String, required: true, index: true }, // ej: "2025Q1", "2025M03", "2025S1"
 
     // Resultado global (0-100)
@@ -27,19 +27,19 @@ const evaluacionSchema = new mongoose.Schema(
     },
 
     // Trazabilidad de actores
-    manager:    { type: mongoose.Schema.Types.ObjectId, ref: "Usuario" }, // jefe que evalúa
+    manager: { type: mongoose.Schema.Types.ObjectId, ref: "Usuario" }, // jefe que evalúa
     hrReviewer: { type: mongoose.Schema.Types.ObjectId, ref: "Usuario" }, // quien cierra
 
     // Comentarios con autoría separada
-    comentarioManager:  { type: String, trim: true },
+    comentarioManager: { type: String, trim: true },
     comentarioEmpleado: { type: String, trim: true },
-    comentarioRRHH:     { type: String, trim: true },
+    comentarioRRHH: { type: String, trim: true },
 
     // ✅ Aprobación / disconformidad del empleado (tu “check”)
     //    ACK = de acuerdo | CONTEST = en desacuerdo
     empleadoAck: {
       estado: { type: String, enum: ["ACK", "CONTEST", null], default: null },
-      fecha:  { type: Date },
+      fecha: { type: Date },
       userId: { type: mongoose.Schema.Types.ObjectId, ref: "Usuario" },
     },
 
@@ -61,43 +61,43 @@ const evaluacionSchema = new mongoose.Schema(
 
     // 📌 Resultados por meta (lo que ya venías usando)
     metasResultados: [
-  {
-    // 🔗 referencia a la meta de la plantilla (muy útil para mergear config)
-    metaId:  { type: mongoose.Schema.Types.ObjectId },
+      {
+        // 🔗 referencia a la meta de la plantilla (muy útil para mergear config)
+        metaId: { type: mongoose.Schema.Types.ObjectId },
 
-    nombre:  { type: String, required: true },
-    unidad:  { type: String }, // "Cumple/No Cumple" | "Porcentual" | "Numerico"
-    operador:{ type: String, default: ">=" },
+        nombre: { type: String, required: true },
+        unidad: { type: String }, // "Cumple/No Cumple" | "Porcentual" | "Numerico"
+        operador: { type: String, default: ">=" },
 
-    // target
-    esperado: { type: Number, default: null },
+        // target
+        esperado: { type: Number, default: null },
 
-    // 💪 configuración copiada de la meta de plantilla
-    pesoMeta:         { type: Number, min: 0, max: 100, default: null },
-    reconoceEsfuerzo: { type: Boolean, default: true },
-    permiteOver:      { type: Boolean, default: false },
-    tolerancia:       { type: Number, default: 0 },
+        // 💪 configuración copiada de la meta de plantilla
+        pesoMeta: { type: Number, min: 0, max: 100, default: null },
+        reconoceEsfuerzo: { type: Boolean, default: true },
+        permiteOver: { type: Boolean, default: false },
+        tolerancia: { type: Number, default: 0 },
 
-    modoAcumulacion: {
-      type: String,
-      enum: ["acumulativo", "periodo"],
-      default: "periodo",
-    },
-    acumulativa: { type: Boolean, default: false },
+        modoAcumulacion: {
+          type: String,
+          enum: ["acumulativo", "periodo"],
+          default: "periodo",
+        },
+        acumulativa: { type: Boolean, default: false },
 
-    reglaCierre: {
-      type: String,
-      enum: ["promedio", "umbral_periodos", "cierre_unico"],
-      default: "promedio",
-    },
+        reglaCierre: {
+          type: String,
+          enum: ["promedio", "umbral_periodos", "cierre_unico"],
+          default: "promedio",
+        },
 
-    // valor cargado en el hito
-    resultado: { type: mongoose.Schema.Types.Mixed, default: null },
+        // valor cargado en el hito
+        resultado: { type: mongoose.Schema.Types.Mixed, default: null },
 
-    // flag de cumplimiento en ese hito
-    cumple:    { type: Boolean, default: false },
-  },
-],
+        // flag de cumplimiento en ese hito
+        cumple: { type: Boolean, default: false },
+      },
+    ],
 
 
 

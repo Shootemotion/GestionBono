@@ -11,7 +11,7 @@ import {
   getEvaluacion,
 } from "@/lib/evaluaciones";
 import { Button } from "@/components/ui/button";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 
 const EstadoBadge = ({ estado }) => {
   const map = {
@@ -77,7 +77,7 @@ export default function EvaluacionFlow({
           empleadoId,
           plantillaId: plantilla._id,
           year,
-         periodo: periodo || `${year}ANUAL`,
+          periodo: periodo || `${year}ANUAL`,
         });
         setEv(created);
       }
@@ -159,7 +159,7 @@ export default function EvaluacionFlow({
               size="sm"
               variant="secondary"
               disabled={!contestText.trim() || loading}
-              onClick={() => run((id)=>employeeContest(id, contestText.trim()), "Contestación enviada")}
+              onClick={() => run((id) => employeeContest(id, contestText.trim()), "Contestación enviada")}
             >
               No estoy de acuerdo
             </Button>
@@ -170,7 +170,7 @@ export default function EvaluacionFlow({
       <div className="p-3 grid md:grid-cols-3 gap-3">
         <div className="rounded-md bg-muted/30 p-3">
           <div className="text-xs text-muted-foreground mb-1">Comentario del jefe</div>
-       <div className="text-sm">{ev?.comentarioManager || ev?.comentario || "—"}</div>
+          <div className="text-sm">{ev?.comentarioManager || ev?.comentario || "—"}</div>
         </div>
         <div className="rounded-md bg-muted/30 p-3">
           <div className="text-xs text-muted-foreground mb-1">Comentario del empleado</div>

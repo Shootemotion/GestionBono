@@ -23,13 +23,15 @@ export const createDocumento = async (req, res, next) => {
         if (!nombre) return res.status(400).json({ message: "Nombre requerido." });
 
         // Path relativo para guardar en DB
-        // Asumimos que multer guarda en 'uploads/documentos' por ejemplo
-        const archivoUrl = req.file.path.replace(/\\/g, "/");
+        const abs = String(req.file.path).replaceAll('\\', '/');
+        const i = abs.lastIndexOf('/uploads/');
+        const relative = i >= 0 ? abs.substring(i) : `uploads/${req.file.filename}`;
+        const archivoUrl = relative.startsWith('/') ? relative.slice(1) : relative;
 
         const doc = await Documento.create({
             nombre,
             tipo: tipo || "DOCUMENTO",
-            archivoUrl, // ej: "uploads/docs/archivo.pdf"
+            archivoUrl, // ej: "uploads/empleados/slug/doc-123.pdf"
             empleado: id,
             fechaSubida: new Date(),
         });

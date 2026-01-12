@@ -1,7 +1,7 @@
 // src/pages/GestionPlantillas.jsx
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 import usePlantillas from "@/hooks/usePlantillas";
 import PlantillasList from "@/components/PlantillasList";
 import PlantillaModal from "@/components/PlantillaModal";
@@ -86,8 +86,7 @@ export default function GestionPlantillasPage() {
   const { user } = useAuth();
   const nav = useNavigate();
 
-  const currentYear = new Date().getFullYear();
-  const [year, setYear] = useState(currentYear);
+  const [year, setYear] = useState(2025);
 
   const [empleados, setEmpleados] = useState([]); // empleados
 

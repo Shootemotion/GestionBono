@@ -21,9 +21,29 @@ export async function createCarrera(req, res, next) {
     if (!puesto || !desde) return res.status(400).json({ message: "puesto y desde son requeridos" });
 
     const item = await Carrera.create({ empleado: id, puesto, area, sector, desde, hasta, motivo });
+
+    // LOGICA DE SOLAPAMIENTO:
+    // Si el nuevo puesto es "abierto" (sin fecha fin), revisamos otros abiertos para cerrarlos o ajustar este.
+    if (!hasta) {
+      const otrosAbiertos = await Carrera.find({ empleado: id, _id: { $ne: item._id }, hasta: null });
+
+      for (const other of otrosAbiertos) {
+        // Caso A: El otro es ANTERIOR a este nuevo (Promoción normal)
+        // Cerramos el anterior con la fecha de inicio del nuevo.
+        if (new Date(other.desde) < new Date(item.desde)) {
+          await Carrera.findByIdAndUpdate(other._id, { hasta: item.desde });
+        }
+        // Caso B: El otro es POSTERIOR a este nuevo (Inserción histórica olvidada)
+        // Cerramos ESTE nuevo registro con la fecha de inicio del posterior, para que no quede como "Actual".
+        else {
+          await Carrera.findByIdAndUpdate(item._id, { hasta: other.desde });
+        }
+      }
+    }
+
     const populated = await Carrera.findById(item._id).populate("area", "nombre").populate("sector", "nombre");
 
-    // Actualizar datos actuales del empleado si este puesto es "vigente" 
+    // Actualizar datos actuales del empleado si este puesto es REALMENTE el "vigente" 
     // (Asumimos que si estamos agregando algo es lo actual, o verificar por fecha)
     // Estrategia: Buscar el último por fecha 'desde' y actualizar el empleado con eso.
     const ultimo = await Carrera.findOne({ empleado: id }).sort({ desde: -1 });

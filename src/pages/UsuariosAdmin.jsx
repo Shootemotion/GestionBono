@@ -1,7 +1,7 @@
 // src/pages/UsuariosAdmin.jsx
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 import Modal from "@/components/Modal.jsx";
 import { Button } from "@/components/ui/button";
 
@@ -33,17 +33,59 @@ export default function UsuariosAdmin() {
   const [createRole, setCreateRole] = useState("visor");
   const [creating, setCreating] = useState(false);
 
+  // Modal EDITAR usuario
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editUser, setEditUser] = useState(null);
+  const [editEmail, setEditEmail] = useState("");
+  const [editRole, setEditRole] = useState("visor");
+  const [updating, setUpdating] = useState(false);
+
+  const openEditModal = (u) => {
+    setEditUser(u);
+    setEditEmail(u.email || "");
+    setEditRole(u.rol || "visor");
+    setEditModalOpen(true);
+  };
+
+  const closeEditModal = () => {
+    setEditUser(null);
+    setEditModalOpen(false);
+  };
+
+  const handleUpdateUser = async () => {
+    if (!editUser) return;
+    setUpdating(true);
+    try {
+      const res = await api(`/usuarios/${editUser._id}`, {
+        method: "PATCH",
+        body: {
+          email: editEmail,
+          rol: editRole
+        }
+      });
+      // Actualizar local
+      setUsers(prev => prev.map(u => (u._id === res.user._id ? res.user : u)));
+      toast.success("Usuario actualizado correctamente.");
+      closeEditModal();
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.data?.message || "Error al actualizar usuario.");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   // Carga inicial
   const loadAll = async () => {
     setLoading(true);
     try {
-// forzamos orden y tamaño generoso por si el backend pagina
-    const [emps, usrs] = await Promise.all([
-      api("/empleados?sort=-createdAt&limit=1000"),
-      api("/usuarios?limit=1000"),
-    ]);
-    setEmpleados(toArray(emps));
-    setUsers(toArray(usrs));
+      // forzamos orden y tamaño generoso por si el backend pagina
+      const [emps, usrs] = await Promise.all([
+        api("/empleados?sort=-createdAt&limit=1000"),
+        api("/usuarios?limit=1000"),
+      ]);
+      setEmpleados(toArray(emps));
+      setUsers(toArray(usrs));
     } catch (err) {
       console.error(err);
       toast.error("No se pudieron cargar empleados/usuarios");
@@ -57,12 +99,12 @@ export default function UsuariosAdmin() {
   // Índice rápido de usuario por empleado
   const usersByEmpleado = useMemo(() => {
     const map = {};
- (Array.isArray(users) ? users : toArray(users)).forEach(u => {
-    if (u.empleado) {
-      const empId = typeof u.empleado === "object" ? u.empleado._id : u.empleado;
-      map[String(empId)] = u;
-    }
-  });
+    (Array.isArray(users) ? users : toArray(users)).forEach(u => {
+      if (u.empleado) {
+        const empId = typeof u.empleado === "object" ? u.empleado._id : u.empleado;
+        map[String(empId)] = u;
+      }
+    });
     return map;
   }, [users]);
 
@@ -77,33 +119,33 @@ export default function UsuariosAdmin() {
   // Filtrado por búsqueda y estado
   const empleadosFiltrados = useMemo(() => {
     const qi = q.trim().toLowerCase();
-   const base = Array.isArray(empleados) ? empleados : toArray(empleados);
- return base
- .filter(Boolean)
- .filter(emp => {
-      // filtro por estado
-      if (statusFilter !== "todos") {
-        const st = empleadoEstado(emp);
-        if (statusFilter === "active" && st !== "activo") return false;
-        if (statusFilter === "desvinculado" && st !== "desvinculado") return false;
-        if (statusFilter === "suspended" && (st !== "suspended" && st !== "suspendido")) return false;
-        if (statusFilter === "other" && !["activo","desvinculado","suspended","suspendido"].includes(st)) return false;
-      }
+    const base = Array.isArray(empleados) ? empleados : toArray(empleados);
+    return base
+      .filter(Boolean)
+      .filter(emp => {
+        // filtro por estado
+        if (statusFilter !== "todos") {
+          const st = empleadoEstado(emp);
+          if (statusFilter === "active" && st !== "activo") return false;
+          if (statusFilter === "desvinculado" && st !== "desvinculado") return false;
+          if (statusFilter === "suspended" && (st !== "suspended" && st !== "suspendido")) return false;
+          if (statusFilter === "other" && !["activo", "desvinculado", "suspended", "suspendido"].includes(st)) return false;
+        }
 
-      if (!qi) return true;
-      const nombre = `${emp.apellido || ""}, ${emp.nombre || ""}`.toLowerCase();
-      const dni = String(emp.dni || "");
-      const mail = (emp.email || "").toLowerCase();
-      return nombre.includes(qi) || dni.includes(qi) || mail.includes(qi);
-    });
+        if (!qi) return true;
+        const nombre = `${emp.apellido || ""}, ${emp.nombre || ""}`.toLowerCase();
+        const dni = String(emp.dni || "");
+        const mail = (emp.email || "").toLowerCase();
+        return nombre.includes(qi) || dni.includes(qi) || mail.includes(qi);
+      });
   }, [empleados, q, statusFilter]);
 
   // Abrir modal crear cuenta (prefill email desde empleado si existe)
   const openCreateModal = (empleado) => {
- setCreateEmpleado(empleado || null);
-  const u = usersByEmpleado[empleado?._id];
-  setCreateEmail((u?.email || empleado?.email || "").trim());
-  setCreateRole(u?.rol || "visor");
+    setCreateEmpleado(empleado || null);
+    const u = usersByEmpleado[empleado?._id];
+    setCreateEmail((u?.email || empleado?.email || "").trim());
+    setCreateRole(u?.rol || "visor");
     setCreateModalOpen(true);
   };
 
@@ -115,57 +157,57 @@ export default function UsuariosAdmin() {
   };
 
   // Crear usuario para empleado (o con email editado)
-const handleCreateAccount = async () => {
-  if (!createEmail) return toast.warn("Email requerido");
-  setCreating(true);
-  try {
-    const body = {
-      email: createEmail.trim().toLowerCase(),
-      rol: createRole,
-      empleadoId: createEmpleado ? createEmpleado._id : undefined,
-    };
-    const res = await api("/usuarios", { method: "POST", body });
+  const handleCreateAccount = async () => {
+    if (!createEmail) return toast.warn("Email requerido");
+    setCreating(true);
+    try {
+      const body = {
+        email: createEmail.trim().toLowerCase(),
+        rol: createRole,
+        empleadoId: createEmpleado ? createEmpleado._id : undefined,
+      };
+      const res = await api("/usuarios", { method: "POST", body });
 
-    const action = res?.action || 'created';
-    const user = res?.user;
-    const tempPassword = res?.tempPassword;
+      const action = res?.action || 'created';
+      const user = res?.user;
+      const tempPassword = res?.tempPassword;
 
-    if (user) {
-     await loadAll();
+      if (user) {
+        await loadAll();
+      }
+
+      if (action === 'created') {
+        toast.success("Usuario creado. Compartí la contraseña temporal.");
+      } else if (action === 'linked') {
+        toast.success("Usuario existente vinculado al empleado. Se generó clave temporal.");
+      } else if (action === 'reset') {
+        toast.success("Usuario existente: se reseteó la contraseña temporal.");
+      } else if (action === 'conflict') {
+        toast.error(res?.message || "Conflicto: email vinculado a otro empleado.");
+      } else {
+        toast.success("Operación completada.");
+      }
+
+      if (tempPassword) {
+        setTempInfo({ email: user?.email || createEmail, tempPassword });
+        setTempModalOpen(true);
+      }
+
+      closeCreateModal();
+    } catch (err) {
+      console.error('create account err', err);
+
+      // tu helper api() podría devolver error con err.status y err.data
+      const status = err?.status || err?.response?.status;
+      const data = err?.data || err?.response?.data || {};
+      if (status === 409) {
+        toast.error(data?.message || 'Conflicto: email ya registrado.');
+      } else {
+        toast.error(data?.message || err?.message || 'No se pudo crear el usuario');
+      }
+    } finally {
+      setCreating(false);
     }
-
-    if (action === 'created') {
-      toast.success("Usuario creado. Compartí la contraseña temporal.");
-    } else if (action === 'linked') {
-      toast.success("Usuario existente vinculado al empleado. Se generó clave temporal.");
-    } else if (action === 'reset') {
-      toast.success("Usuario existente: se reseteó la contraseña temporal.");
-    } else if (action === 'conflict') {
-      toast.error(res?.message || "Conflicto: email vinculado a otro empleado.");
-    } else {
-      toast.success("Operación completada.");
-    }
-
-    if (tempPassword) {
-      setTempInfo({ email: user?.email || createEmail, tempPassword });
-      setTempModalOpen(true);
-    }
-
-    closeCreateModal();
-  } catch (err) {
-    console.error('create account err', err);
-
-    // tu helper api() podría devolver error con err.status y err.data
-    const status = err?.status || err?.response?.status;
-    const data = err?.data || err?.response?.data || {};
-    if (status === 409) {
-      toast.error(data?.message || 'Conflicto: email ya registrado.');
-    } else {
-      toast.error(data?.message || err?.message || 'No se pudo crear el usuario');
-    }
-  } finally {
-    setCreating(false);
-  }
   };
 
   // Resetear contraseña (admin)
@@ -210,24 +252,24 @@ const handleCreateAccount = async () => {
   };
 
   const copyTemp = () => {
-  if (!tempInfo) return;
-  const txt = `Usuario: ${tempInfo.email}\nClave temporal: ${tempInfo.tempPassword}`;
+    if (!tempInfo) return;
+    const txt = `Usuario: ${tempInfo.email}\nClave temporal: ${tempInfo.tempPassword}`;
 
 
- if (navigator.clipboard && navigator.clipboard.writeText) {
-   navigator.clipboard.writeText(txt)
-     .then(() => toast.success("Credenciales copiadas"))
-     .catch(() => toast.error("No se pudo copiar"));
- } else {
-   const temp = document.createElement("textarea");
-   temp.value = txt;
-   document.body.appendChild(temp);
-   temp.select();
-   document.execCommand("copy");
-   document.body.removeChild(temp);
-   toast.success("Credenciales copiadas (fallback)");
- }
-};
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt)
+        .then(() => toast.success("Credenciales copiadas"))
+        .catch(() => toast.error("No se pudo copiar"));
+    } else {
+      const temp = document.createElement("textarea");
+      temp.value = txt;
+      document.body.appendChild(temp);
+      temp.select();
+      document.execCommand("copy");
+      document.body.removeChild(temp);
+      toast.success("Credenciales copiadas (fallback)");
+    }
+  };
 
   return (
     <div className="container-app space-y-6">
@@ -278,7 +320,7 @@ const handleCreateAccount = async () => {
               </tr>
             </thead>
             <tbody>
-             {(empleadosFiltrados || []).map(emp => {
+              {(empleadosFiltrados || []).map(emp => {
                 const u = usersByEmpleado[emp._id];
                 const estado = empleadoEstado(emp);
                 return (
@@ -308,6 +350,7 @@ const handleCreateAccount = async () => {
                         <Button size="sm" onClick={() => openCreateModal(emp)}>Crear cuenta</Button>
                       ) : (
                         <>
+                          <Button size="sm" variant="outline" onClick={() => openEditModal(u)}>Editar</Button>
                           <Button size="sm" variant="secondary" onClick={() => resetearUsuario(u)}>Resetear pw</Button>
                           <Button size="sm" variant="outline" onClick={() => unlinkUsuario(u)}>Desvincular</Button>
                         </>
@@ -326,6 +369,7 @@ const handleCreateAccount = async () => {
 
       {/* Modal: crear cuenta (editar/verificar email antes de crear) */}
       <Modal isOpen={createModalOpen} onClose={closeCreateModal} title="Crear cuenta web">
+        {/* ... content same as before ... */}
         <div className="space-y-3">
           <div>
             <label className="block text-xs text-muted-foreground">Empleado</label>
@@ -333,17 +377,18 @@ const handleCreateAccount = async () => {
           </div>
           <div>
             <label className="block text-xs text-muted-foreground">Email para la cuenta</label>
-            <input className="w-full rounded-md border border-border bg-background px-3 py-2" value={createEmail} onChange={(e)=>setCreateEmail(e.target.value)} />
+            <input className="w-full rounded-md border border-border bg-background px-3 py-2" value={createEmail} onChange={(e) => setCreateEmail(e.target.value)} />
             <div className="text-xs text-muted-foreground mt-1">Verificá o editá el email si hace falta.</div>
           </div>
           <div>
             <label className="block text-xs text-muted-foreground">Rol</label>
-            <select className="w-full rounded-md border border-border bg-background px-3 py-2" value={createRole} onChange={(e)=>setCreateRole(e.target.value)}>
+            <select className="w-full rounded-md border border-border bg-background px-3 py-2" value={createRole} onChange={(e) => setCreateRole(e.target.value)}>
               <option value="visor">visor</option>
               <option value="jefe_sector">jefe_sector</option>
               <option value="jefe_area">jefe_area</option>
               <option value="rrhh">rrhh</option>
-                <option value="directivo">directivo</option>
+              <option value="directivo">directivo</option>
+              <option value="superadmin">superadmin</option>
             </select>
           </div>
 
@@ -354,8 +399,44 @@ const handleCreateAccount = async () => {
         </div>
       </Modal>
 
+      {/* Modal: Editar Usuario */}
+      {/* ───────────────────────────────────────────────────────────────── */}
+      <Modal isOpen={editModalOpen} onClose={closeEditModal} title="Editar Usuario">
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs text-muted-foreground">Email</label>
+            <input
+              className="w-full rounded-md border border-border bg-background px-3 py-2"
+              value={editEmail}
+              onChange={(e) => setEditEmail(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground">Rol</label>
+            <select
+              className="w-full rounded-md border border-border bg-background px-3 py-2"
+              value={editRole}
+              onChange={(e) => setEditRole(e.target.value)}
+            >
+              <option value="visor">visor</option>
+              <option value="jefe_sector">jefe_sector</option>
+              <option value="jefe_area">jefe_area</option>
+              <option value="rrhh">rrhh</option>
+              <option value="directivo">directivo</option>
+              <option value="superadmin">superadmin</option>
+            </select>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={closeEditModal}>Cancelar</Button>
+            <Button onClick={handleUpdateUser} disabled={updating}>{updating ? 'Guardando…' : 'Guardar Cambios'}</Button>
+          </div>
+        </div>
+      </Modal>
+      {/* ───────────────────────────────────────────────────────────────── */}
+
       {/* Modal: credenciales temporales */}
-      <Modal isOpen={tempModalOpen} onClose={()=>setTempModalOpen(false)} title="Credenciales temporales">
+      <Modal isOpen={tempModalOpen} onClose={() => setTempModalOpen(false)} title="Credenciales temporales">
         {tempInfo && (
           <div className="space-y-3">
             <p className="text-sm">Compartí estos datos de forma segura con el usuario (y pedile que la cambie al ingresar).</p>
@@ -365,7 +446,7 @@ const handleCreateAccount = async () => {
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={copyTemp}>Copiar</Button>
-              <Button onClick={()=>setTempModalOpen(false)}>Listo</Button>
+              <Button onClick={() => setTempModalOpen(false)}>Listo</Button>
             </div>
           </div>
         )}

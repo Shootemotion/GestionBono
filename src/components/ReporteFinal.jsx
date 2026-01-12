@@ -29,6 +29,7 @@ export function ReporteFinal({ isOpen, onClose, data, empleado, anio, scoreGloba
 
         // Si viene pre-calculado en el objeto "FINAL" (dashboard)
         if (data.scoreGlobal !== undefined) return data.scoreGlobal;
+        if (data.scoreFinal !== undefined) return data.scoreFinal; // Fallback to Dashboard API response structure
 
         return data.globalScore || 0;
     }, [data, propScoreGlobal]);
@@ -54,7 +55,7 @@ export function ReporteFinal({ isOpen, onClose, data, empleado, anio, scoreGloba
     // 3. Datos para Línea de Tiempo
     const lineData = useMemo(() => {
         // Prioridad: Usar datos de evolución pasados por props (Q1, Q2, Q3, FINAL)
-        if (evolutionData && evolutionData.length > 0) {
+        if (evolutionData) {
             return evolutionData.map(d => ({
                 name: d.name === 'Fin' ? 'FINAL' : d.name,
                 score: Number(d.global).toFixed(1)

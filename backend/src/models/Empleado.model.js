@@ -13,11 +13,13 @@ const empleadoSchema = new mongoose.Schema(
     fechaIngreso: { type: Date, required: true },
     puesto: { type: String, required: true, trim: true },
     celular: { type: String },
-    categoria: { type: String },
+    genero: { type: String, enum: ["Masculino", "Femenino", "Otro"], default: "Otro" },
+    categoria: { type: String, index: true },
     estadoLaboral: {
       type: String,
       enum: ["VINCULADO", "DESVINCULADO"],
       default: "VINCULADO",
+      index: true,
     },
     cvUrl: { type: String, default: null },
     // 💰 Sueldo con historial versionado
@@ -42,11 +44,13 @@ const empleadoSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Area",
       required: true,
+      index: true,
     },
     sector: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Sector",
       required: false,
+      index: true,
     },
 
     fotoUrl: { type: String, default: null },
