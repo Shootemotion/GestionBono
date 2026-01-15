@@ -1,9 +1,54 @@
 import Feedback from "../models/Feedback.model.js";
 
+// Helper to auto-close overdue feedbacks
+const checkAutoCloseFeedbacks = async (empleadoId = null) => {
+    try {
+        const query = { estado: "SENT" };
+        if (empleadoId) query.empleado = empleadoId;
+
+        const candidates = await Feedback.find(query);
+        const now = new Date();
+
+        for (const fb of candidates) {
+            let deadline = null;
+            // Fiscal Year Logic: year 2025 => Sep 2025 - Aug 2026
+            const y = fb.year;
+
+            if (fb.periodo === "Q1") deadline = new Date(y, 11, 15); // Dec 15 of starting year
+            else if (fb.periodo === "Q2") deadline = new Date(y + 1, 2, 15); // Mar 15 of next year
+            else if (fb.periodo === "Q3") deadline = new Date(y + 1, 5, 15); // Jun 15 of next year
+            else if (fb.periodo === "FINAL") deadline = new Date(y + 1, 8, 15); // Sep 15 of next year
+
+            // Set end of day for deadline? Or strict start of day? usually End of Day.
+            if (deadline) {
+                deadline.setHours(23, 59, 59, 999);
+
+                if (now > deadline) {
+                    fb.estado = "PENDING_HR";
+                    fb.empleadoAck = {
+                        estado: "SYSTEM_CLOSED",
+                        fecha: now
+                    };
+                    if (!fb.comentarioEmpleado) {
+                        fb.comentarioEmpleado = "Cerrado automáticamente por sistema debido a falta de respuesta en plazo.";
+                    }
+                    await fb.save();
+                    console.log(`Feedback auto-closed for employee ${fb.empleado} period ${fb.periodo}`);
+                }
+            }
+        }
+    } catch (e) {
+        console.error("Error in auto-close check:", e);
+    }
+};
+
 export const getFeedbacksByEmpleado = async (req, res) => {
     try {
         const { empleadoId } = req.params;
         const { year } = req.query;
+
+        // Lazy check for expiration
+        await checkAutoCloseFeedbacks(empleadoId);
 
         const query = { empleado: empleadoId };
         if (year) query.year = Number(year);
@@ -103,6 +148,9 @@ export const saveFeedback = async (req, res) => {
 
 export const getPendingFeedbacks = async (req, res) => {
     try {
+        // Lazy check for expiration (global)
+        await checkAutoCloseFeedbacks();
+
         const { periodo, year } = req.query;
         const query = { estado: { $in: ["PENDING_HR", "CLOSED"] } };
 

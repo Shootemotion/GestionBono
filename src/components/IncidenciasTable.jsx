@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, Trash2, Calendar, MessageSquare, AlertTriangle } from "lucide-react";
 
 export default function IncidenciasTable({ empleadoId, canEdit }) {
@@ -164,9 +164,57 @@ export default function IncidenciasTable({ empleadoId, canEdit }) {
                                         <td className="px-4 py-3">
                                             <TipoBadge item={it} />
                                         </td>
-                                        <td className="px-4 py-3 text-slate-600">
-                                            <div className="flex items-center justify-between gap-2">
-                                                <span>{it.descripcion}</span>
+                                        <td className="px-4 py-3 text-slate-600 max-w-[200px]">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <Dialog>
+                                                    <DialogTrigger asChild>
+                                                        <div className="cursor-pointer group/desc">
+                                                            <div className="line-clamp-2 text-sm leading-snug group-hover/desc:text-blue-700 transition-colors">
+                                                                {it.descripcion}
+                                                            </div>
+                                                            <span className="text-[10px] text-blue-500 font-bold opacity-0 group-hover/desc:opacity-100 transition-opacity">
+                                                                Ver detalle completo
+                                                            </span>
+                                                        </div>
+                                                    </DialogTrigger>
+                                                    <DialogContent className="sm:max-w-lg">
+                                                        <DialogHeader>
+                                                            <DialogTitle>Detalle de Incidencia</DialogTitle>
+                                                        </DialogHeader>
+                                                        <div className="py-4 space-y-4">
+                                                            <div className="flex items-center gap-3 text-sm text-slate-500 border-b border-slate-100 pb-3">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <Calendar size={14} />
+                                                                    {new Date(it.fecha).toLocaleDateString()}
+                                                                </div>
+                                                                <div>•</div>
+                                                                <TipoBadge item={it} />
+                                                            </div>
+                                                            <div className="bg-slate-50 rounded-xl p-4 text-sm text-slate-700 whitespace-pre-line leading-relaxed border border-slate-100 max-h-[60vh] overflow-y-auto">
+                                                                {it.descripcion}
+                                                            </div>
+                                                            {it.archivoUrl && (
+                                                                <div className="pt-2">
+                                                                    <a
+                                                                        href={(() => {
+                                                                            const url = it.archivoUrl || "";
+                                                                            if (/^https?:\/\//i.test(url)) return url;
+                                                                            const base = (typeof API_ORIGIN === "string" && API_ORIGIN) ? API_ORIGIN : window.location.origin;
+                                                                            return `${base.replace(/\/+$/, "")}/${String(url).replace(/^\/+/, "")}`;
+                                                                        })()}
+                                                                        target="_blank"
+                                                                        rel="noreferrer"
+                                                                        className="inline-flex items-center gap-2 text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-2 rounded-lg transition-colors"
+                                                                    >
+                                                                        <MessageSquare size={14} />
+                                                                        Ver Adjunto
+                                                                    </a>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </DialogContent>
+                                                </Dialog>
+
                                                 {it.archivoUrl && (
                                                     <a
                                                         href={(() => {
@@ -177,11 +225,11 @@ export default function IncidenciasTable({ empleadoId, canEdit }) {
                                                         })()}
                                                         target="_blank"
                                                         rel="noreferrer"
-                                                        className="text-blue-500 hover:text-blue-700 p-1"
+                                                        className="text-slate-400 hover:text-blue-600 p-1 shrink-0"
                                                         title="Ver adjunto"
                                                         onClick={(e) => e.stopPropagation()}
                                                     >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
                                                     </a>
                                                 )}
                                             </div>
@@ -205,7 +253,7 @@ export default function IncidenciasTable({ empleadoId, canEdit }) {
                 </table>
             </div >
 
-            {/* Modal */}
+            {/* Modal ADD */}
             < Dialog open={open} onOpenChange={setOpen} >
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>

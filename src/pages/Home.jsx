@@ -15,7 +15,8 @@ import {
   LayoutDashboard,
   CheckCircle,
   DollarSign,
-  Building2
+  Building2,
+  Megaphone
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import useCan, { useHasRole } from "@/hooks/useCan";
@@ -180,6 +181,16 @@ export default function Home() {
           allow: hasRoleRRHH || hasRoleDirectivo,
           color: "text-indigo-600",
           bg: "bg-indigo-50"
+        },
+        {
+          key: "avisos",
+          title: "Gestión de Avisos",
+          desc: "Comunicados globales y alertas.",
+          icon: Megaphone,
+          to: "/gestion-avisos",
+          allow: hasRoleRRHH || hasRoleDirectivo,
+          color: "text-rose-600",
+          bg: "bg-rose-50"
         }
       ]
     },

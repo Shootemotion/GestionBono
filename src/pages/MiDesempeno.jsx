@@ -33,10 +33,19 @@ import {
   TrendingUp,
   BarChart3,
   Hourglass,
-  Trophy
+  Trophy,
+  Megaphone
 } from "lucide-react";
 import { ReporteFinal } from "@/components/ReporteFinal";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine, Legend, AreaChart, Area } from "recharts";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 // === UI helpers ===
 const StatusBadge = ({ status }) => {
@@ -46,6 +55,7 @@ const StatusBadge = ({ status }) => {
     "PENDING_HR": "bg-purple-50 text-purple-700 border-purple-200",
     "ACKNOWLEDGED": "bg-purple-50 text-purple-700 border-purple-200", // Legacy support
     "CLOSED": "bg-emerald-50 text-emerald-700 border-emerald-200",
+    "SYSTEM_CLOSED": "bg-slate-100 text-slate-600 border-slate-300",
     "PENDIENTE": "bg-amber-50 text-amber-700 border-amber-200",
     "DRAFT": "bg-amber-50 text-amber-700 border-amber-200",
     "VENCIDO": "bg-rose-50 text-rose-700 border-rose-200",
@@ -59,6 +69,7 @@ const StatusBadge = ({ status }) => {
     "PENDING_HR": "Enviado a RRHH",
     "ACKNOWLEDGED": "Enviado a RRHH", // Legacy support
     "CLOSED": "Finalizado",
+    "SYSTEM_CLOSED": "Cerrado por Sistema",
     "PENDIENTE": "Borrador",
     "DRAFT": "Borrador",
     "VENCIDO": "Vencido",
@@ -293,6 +304,7 @@ export default function MiDesempeno() {
   const [viewPeriod, setViewPeriod] = useState(null); // For chart interaction
   const [showGraph, setShowGraph] = useState(false); // Collapsible graph state
   const [showFinalReport, setShowFinalReport] = useState(false);
+  const [globalAvisos, setGlobalAvisos] = useState([]);
 
   // Year Selection Logic
   const [selectedYear, setSelectedYear] = useState(() => {
@@ -369,7 +381,11 @@ export default function MiDesempeno() {
   useEffect(() => {
     fetchDash();
     fetchFeedbacks();
-  }, [fetchDash, fetchFeedbacks]);
+    // Fetch Active Avisos
+    api(`/avisos/my`).then(res => {
+      if (Array.isArray(res)) setGlobalAvisos(res);
+    }).catch(err => console.error("Error loading avisos", err));
+  }, [fetchDash, fetchFeedbacks, selectedYear]);
 
   // Sincronizar estado local al cambiar selección
   useEffect(() => {
@@ -1027,7 +1043,7 @@ export default function MiDesempeno() {
       sub: "Inicio",
       date: `${selectedYear}-11-01`,
       actionMonth: "Diciembre",
-      deadlines: { manager: "1-10", employee: "10-20", hr: "20-30" }
+      deadlines: { manager: "1-10", employee: "10-15", hr: "15-30" }
     },
     {
       id: "Q2",
@@ -1035,7 +1051,7 @@ export default function MiDesempeno() {
       sub: "Seguimiento",
       date: `${selectedYear + 1}-02-01`,
       actionMonth: "Marzo",
-      deadlines: { manager: "1-10", employee: "10-20", hr: "20-30" }
+      deadlines: { manager: "1-10", employee: "10-15", hr: "15-30" }
     },
     {
       id: "Q3",
@@ -1043,7 +1059,7 @@ export default function MiDesempeno() {
       sub: "Seguimiento",
       date: `${selectedYear + 1}-05-01`,
       actionMonth: "Junio",
-      deadlines: { manager: "1-10", employee: "10-20", hr: "20-30" }
+      deadlines: { manager: "1-10", employee: "10-15", hr: "15-30" }
     },
     {
       id: "FINAL",
@@ -1051,7 +1067,7 @@ export default function MiDesempeno() {
       sub: "Cierre Anual",
       date: `${selectedYear + 1}-08-30`,
       actionMonth: "Septiembre",
-      deadlines: { manager: "1-10", employee: "10-20", hr: "20-30" }
+      deadlines: { manager: "1-10", employee: "10-15", hr: "15-30" }
     }
   ], [selectedYear]);
 
@@ -1144,6 +1160,100 @@ export default function MiDesempeno() {
 
             {/* SIDEBAR NAVIGATION (Sticky) - Only show if data exists */}
             <div className="hidden lg:block space-y-2 sticky top-24 h-fit">
+              {/* NOTIFICATIONS SECTION */}
+              <div className="bg-white/80 backdrop-blur-sm p-4 rounded-2xl border border-slate-200/60 shadow-sm mb-4">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                  Avisos y Novedades
+                </h3>
+
+                <div className="space-y-3">
+                  {/* 1. PERSONAL ALERTS (Deadline) */}
+                  {(() => {
+                    const sentFeedback = feedbacks.find(f => f.estado === "SENT");
+                    if (sentFeedback && sentFeedback.submittedToEmployeeAt) {
+                      const submissionDate = new Date(sentFeedback.submittedToEmployeeAt);
+                      const deadline = new Date(submissionDate);
+                      deadline.setDate(deadline.getDate() + 5);
+
+                      const now = new Date();
+                      const diffTime = deadline - now;
+                      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                      if (diffDays >= 0) {
+                        return (
+                          <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs shadow-sm">
+                            <div className="flex items-center gap-2 mb-1 text-amber-700 font-bold">
+                              <AlertCircle className="w-4 h-4" />
+                              <span>Acción Requerida</span>
+                            </div>
+                            <p className="text-amber-600 leading-snug">
+                              Tenés hasta el <strong className="text-amber-800">{deadline.toLocaleDateString()}</strong> para responder tu feedback (quedan {diffDays} días).
+                            </p>
+                          </div>
+                        );
+                      }
+                    }
+                    return null;
+                  })()}
+
+                  {/* 2. ACTIVE NOTICES (Dynamic List) */}
+                  {/* 2. ACTIVE NOTICES (Dynamic List) */}
+                  {globalAvisos.length > 0 && globalAvisos.map(aviso => (
+                    <Dialog key={aviso._id}>
+                      <DialogTrigger asChild>
+                        <div
+                          className={`p-3 border rounded-xl text-xs shadow-sm cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 group
+                          ${aviso.alcance === 'GLOBAL' ? 'bg-indigo-50 border-indigo-100 hover:border-indigo-300' : 'bg-emerald-50 border-emerald-100 hover:border-emerald-300'}`}
+                        >
+                          <div className={`flex items-center gap-2 mb-1 font-bold ${aviso.alcance === 'GLOBAL' ? 'text-indigo-700' : 'text-emerald-700'}`}>
+                            {aviso.alcance === 'GLOBAL' ? <Info className="w-4 h-4" /> : <Megaphone className="w-4 h-4" />}
+                            <span className="line-clamp-1">{aviso.titulo}</span>
+                          </div>
+                          <p className={`${aviso.alcance === 'GLOBAL' ? 'text-indigo-600' : 'text-emerald-600'} leading-snug line-clamp-2`}>
+                            {aviso.mensaje}
+                          </p>
+                          <div className="mt-2 text-[10px] opacity-60 font-medium flex justify-end">
+                            Leer más...
+                          </div>
+                        </div>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-md border-0 shadow-2xl rounded-2xl overflow-hidden p-0">
+                        {/* Header Colorido */}
+                        <div className={`px-6 py-6 flex flex-col items-center text-center ${aviso.alcance === 'GLOBAL' ? 'bg-gradient-to-br from-indigo-500 to-blue-600 text-white' : 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white'}`}>
+                          <div className="p-3 bg-white/20 rounded-full mb-3 backdrop-blur-sm">
+                            {aviso.alcance === 'GLOBAL' ? <Info className="w-8 h-8" /> : <Megaphone className="w-8 h-8" />}
+                          </div>
+                          <DialogTitle className="text-xl font-bold tracking-tight mb-1">{aviso.titulo}</DialogTitle>
+                          <DialogDescription className="text-blue-50/90 text-xs uppercase tracking-wider font-semibold">
+                            Comunicado {aviso.alcance}
+                            {aviso.targetName && ` • ${aviso.targetName}`}
+                          </DialogDescription>
+                        </div>
+
+                        {/* Body */}
+                        <div className="p-6 bg-white space-y-4">
+                          <div className="text-sm text-slate-600 leading-relaxed whitespace-pre-line max-h-[60vh] overflow-y-auto pr-2">
+                            {aviso.mensaje}
+                          </div>
+
+                          {/* Footer Info */}
+                          {/* Footer Info Removed */}
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  ))}
+
+                  {/* EMPTY STATE */}
+                  {globalAvisos.length === 0 && !feedbacks.some(f => f.estado === "SENT") && (
+                    <div className="text-center py-4 text-[10px] text-slate-400 italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                      No hay nuevas notificaciones.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* MENU SECTION */}
               <div className="bg-white/80 backdrop-blur-sm p-2 rounded-2xl border border-slate-200/60 shadow-sm">
                 <button
                   onClick={() => scrollToSection(sectionFeedbackRef)}

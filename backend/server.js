@@ -26,6 +26,7 @@ import simulacionRoutes from './src/routes/simulacion.routes.js';
 
 import feedbackRoutes from './src/routes/feedback.routes.js';
 import bonoRoutes from './src/routes/bono.routes.js';
+import globalAvisoRoutes from './src/routes/globalAviso.routes.js';
 
 // --- CONFIGURACIÓN INICIAL ---
 dotenv.config();
@@ -75,6 +76,7 @@ app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/evaluaciones', evaluacionRoutes);
 app.use('/api/simulacion', simulacionRoutes);
 app.use('/api/feedbacks', feedbackRoutes);
+app.use('/api/avisos', globalAvisoRoutes);
 
 // Alias útil para debug del usuario autenticado
 app.get('/api/_whoami', whoami);

@@ -25,7 +25,8 @@ import {
   TrendingUp,
   Calculator,
   Home,
-  Bell
+  Bell,
+  Megaphone
 } from 'lucide-react';
 
 
@@ -338,7 +339,8 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                         { to: '/plantillas', label: 'Objetivos', icon: <Target className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo },
                         { to: '/seguimiento', label: 'Seguimiento', icon: <TrendingUp className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo || canViewNomina || hasReferente },
                         { to: '/rrhh-evaluaciones', label: 'Cierre Eval.', icon: <CheckCircle className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo },
-                        { to: '/asignaciones', label: 'Asignaciones', icon: <UserPlus className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo }
+                        { to: '/asignaciones', label: 'Asignaciones', icon: <UserPlus className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo },
+                        { to: '/gestion-avisos', label: 'Avisos', icon: <Megaphone className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo }
                       ]}
                       isOpen={activeMenu === 'Gestión'}
                       onMouseEnter={() => handleMenuEnter('Gestión')}
@@ -521,12 +523,18 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                             <div>
                               <p className="text-sm font-semibold text-slate-700">Feedback {notif.periodo} disponible</p>
                               <p className="text-xs text-slate-500 mt-0.5">
-                                Tenés una evaluación pendiente de respuesta por tu parte.
+                                Tenés una evaluación pendiente.
                               </p>
-                              {/* Simple "XX days ago" logic for now */}
-                              <p className="text-[10px] text-slate-400 mt-1">
-                                {notif.submittedToEmployeeAt ? `Recibido el ${new Date(notif.submittedToEmployeeAt).toLocaleDateString()}` : "Reciente"}
-                              </p>
+                              {notif.submittedToEmployeeAt && (() => {
+                                const submissionDate = new Date(notif.submittedToEmployeeAt);
+                                const deadline = new Date(submissionDate);
+                                deadline.setDate(deadline.getDate() + 5);
+                                return (
+                                  <p className="text-[10px] text-amber-600 font-bold mt-1">
+                                    Vence el {deadline.toLocaleDateString()}
+                                  </p>
+                                );
+                              })()}
                             </div>
                           </button>
                         ))

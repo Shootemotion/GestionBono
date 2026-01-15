@@ -26,6 +26,7 @@ const GestionDepartamentos = lazy(() => import('./pages/GestionDepartamentos'));
 const SimuladorObjetivos = lazy(() => import('@/pages/SimuladorObjetivos'));
 const ConfiguracionBono = lazy(() => import('@/pages/ConfiguracionBono'));
 const ResultadosBono = lazy(() => import('@/pages/ResultadosBono'));
+const GestionAvisos = lazy(() => import('@/pages/GestionAvisos'));
 
 
 function App() {
@@ -140,6 +141,15 @@ function App() {
               element={
                 <RequireAuth allow={['superadmin', 'directivo', 'rrhh']}>
                   <ConfiguracionBono />
+                </RequireAuth>
+              }
+            />
+
+            <Route
+              path="/gestion-avisos"
+              element={
+                <RequireAuth allow={['superadmin', 'directivo', 'rrhh']}>
+                  <GestionAvisos />
                 </RequireAuth>
               }
             />

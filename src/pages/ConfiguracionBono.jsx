@@ -90,12 +90,14 @@ export default function ConfiguracionBono() {
                     escala: data.escala || { tipo: "lineal", minPct: 0, maxPct: 1.0, umbral: 60, tramos: [] },
                     bonoTarget: data.bonoTarget ?? 0,
                     overrides: data.overrides || [],
+                    globalMessage: data.globalMessage || ""
                 });
             } else {
                 setConfig({
                     escala: { tipo: "lineal", minPct: 0, maxPct: 1.0, umbral: 60, tramos: [] },
                     bonoTarget: 0,
-                    overrides: []
+                    overrides: [],
+                    globalMessage: ""
                 });
             }
         } catch (err) {
@@ -377,7 +379,6 @@ export default function ConfiguracionBono() {
                     </div>
                 </div>
 
-                {/* --- GLOBAL CONFIG REMOVED --- */}
 
 
                 {/* --- BUILDER (Top) --- */}
