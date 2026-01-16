@@ -437,6 +437,14 @@ export const getResults = async (req, res, next) => {
                     total: globalScore
                 },
                 condiciones,
+                feedbacks: m.feedbacks?.map(f => ({
+                    periodo: f.periodo,
+                    estado: f.estado,
+                    score: f.scores?.global,
+                    scoreObj: f.scores?.obj,
+                    scoreComp: f.scores?.comp,
+                    updatedAt: f.updatedAt
+                })) || [],
                 feedbackComentario,
                 bonoBase,
                 bonoFinal,

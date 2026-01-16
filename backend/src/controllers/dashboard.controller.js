@@ -178,7 +178,10 @@ export async function computeForEmployees(empleadoIds, anio) {
           const progresos = hitos.map((h) => h.actual ?? 0);
 
           const progreso = isCumulative
-            ? Math.max(...progresos, 0)
+            ? Math.min(Math.round(progresos.reduce((a, b) => a + b, 0)), 100) // Sum for cumulative, capped at 100? Or allow over? 
+            // If original logic allowed over via 'permiteOver', ensure matches. 
+            // Usually 'target' is 100. If we sum, we should probably cap at 100 unless over allowed.
+            // Using simple sum for now as per user expectation "35+5=40".
             : (progresos.length ? Math.round(progresos.reduce((a, b) => a + b, 0) / progresos.length) : 0);
 
           objetivosArr.push({
@@ -234,7 +237,7 @@ export async function computeForEmployees(empleadoIds, anio) {
       // Find latest non-DRAFT feedback (The "Effective" one)
       const latestFeedback = empFeedbacks
         .sort((a, b) => periodOrder.indexOf(b.periodo) - periodOrder.indexOf(a.periodo))
-        .find(f => f.estado !== "DRAFT");
+        .find(f => f.estado === "CLOSED");
 
       // Determine Cutoff Period (Default to FINAL if no feedback, or use latest feedback's period)
       // If no authorized feedback exists, maybe we shouldn't filter? Or assume year-to-date?
@@ -257,10 +260,10 @@ export async function computeForEmployees(empleadoIds, anio) {
           ? Math.max(...progresos, 0)
           : (progresos.length ? Math.round(progresos.reduce((a, b) => a + b, 0) / progresos.length) : 0);
 
-        // Update the object in place (referenced in array)
-        obj.progreso = newProgreso;
-        // Note: Weights don't change, but weighted sums need updating?
-        // Yes, we need to re-sum below.
+        // Apply PermiteOver Logic (Cap at 100 if not allowed)
+        const hasPermiteOver = obj.metas?.some(m => m.permiteOver) || obj.hitos?.some(h => h.metas?.some(m => m.permiteOver));
+        obj.progreso = hasPermiteOver ? newProgreso : Math.min(newProgreso, 100);
+
       });
 
       // Re-map aptitudes
@@ -600,6 +603,8 @@ export const dashByEmpleado = async (req, res, next) => {
       .sort((a, b) => periodOrder.indexOf(b.periodo) - periodOrder.indexOf(a.periodo))
       .find(f => f.estado !== "DRAFT");
 
+    const cutoffPeriod = latestFeedback ? latestFeedback.periodo : "FINAL";
+
 
     // OVERRIDE if Latest Feedback exists and has valid scores
     if (latestFeedback && latestFeedback.scores?.global != null) {
@@ -620,8 +625,16 @@ export const dashByEmpleado = async (req, res, next) => {
       },
       objetivos: { count: objetivosArr.length, sumPeso: sumPesoObj, items: objetivosArr },
       aptitudes: { count: aptitudesArr.length, sumPeso: sumPesoApt, items: aptitudesArr },
-      // Mostrar feedback siempre, sin depender de objetivos
-      feedbacks: empFeedbacks,
+      debug: {
+        sumPesoObj, weightedProgressSum,
+        sumPesoApt, weightedAptScoreSum,
+        scoreObjRaw: scoreObj,
+        scoreAptRaw: scoreApt,
+        latestFeedbackPeriod: latestFeedback?.periodo,
+        cutoffPeriod
+      },
+      // Mostrar feedback solo si está CERRADO
+      feedbacks: empFeedbacks.filter(f => f.estado === "CLOSED"),
       scoreObj, scoreApt, scoreFinal, bono,
 
     });

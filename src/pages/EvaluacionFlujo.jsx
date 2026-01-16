@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/context/AuthContext";
@@ -28,8 +29,11 @@ import {
   Printer,
   Trophy,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Megaphone,
+  History
 } from "lucide-react";
+import { calculateObjectiveProgress, calculateWeightedScore, calculateGlobalScore } from "@/utils/calculos";
 import { ReporteFinal } from "@/components/ReporteFinal";
 
 /* ===================== Constantes y helpers ===================== */
@@ -57,48 +61,209 @@ function buildResumenEmpleado(data) {
   let objetivos = Array.isArray(data.objetivos) ? data.objetivos : (data.objetivos?.items || []);
   let aptitudes = Array.isArray(data.aptitudes) ? data.aptitudes : (data.aptitudes?.items || []);
 
-  // Calculate Objective Score
+  console.group("🧮 Debug Cálculo de Scores");
+
+  // Calculate Objective Score (LIVE RECALCULATION)
   const pesosObj = objetivos.map((o) => Number(o.peso ?? 0));
   const pesosBaseObj = objetivos.map((o) => Number(o.pesoBase ?? o.peso ?? 0));
-  const progObj = objetivos.map((o) => Number(o.progreso ?? 0));
 
-  const totalBasePesoObj = pesosBaseObj.reduce((a, b) => a + b, 0) || 0;
+  let scoreObjRaw = 0;
+  let totalBasePesoObj = 0;
+  const progObj = []; // To store individual objective progress for debug/display
 
+  objetivos.forEach((o, i) => {
+    const peso = pesosObj[i];
+    const pesoBase = pesosBaseObj[i];
+    totalBasePesoObj += pesoBase;
 
+    const hitosValidos = o.hitos?.filter(h => h.actual != null) || [];
+    const scoreRaw = calculateObjectiveProgress(o, hitosValidos);
+    const scoreContrib = calculateWeightedScore(scoreRaw, peso, o); // Pass objective for permiteOver check
 
-  const scoreObjRaw = totalBasePesoObj > 0
-    ? pesosObj.reduce((acc, p, i) => {
-      const obj = objetivos[i];
-      const hasPermiteOver = obj.metas?.some(m => m.permiteOver) || obj.hitos?.some(h => h.metas?.some(m => m.permiteOver));
-      const rawScore = progObj[i] || 0;
-      const effectiveScore = hasPermiteOver ? rawScore : Math.min(rawScore, 100);
-      return acc + p * effectiveScore;
-    }, 0) / 100 // Always normalize to 100 base
-    : 0;
+    scoreObjRaw += scoreContrib;
+    progObj.push(scoreRaw); // Store for debug/display
+  });
 
-  const scoreObj = scoreObjRaw; // Already weighted by reduce logic above? No, reduce logic uses weights.
-  // Wait, the reduce logic is: Sum(Weight * Score) / Sum(BaseWeight).
-  // This IS the weighted average.
-  // So scoreObjRaw IS the final Objective Score (0-100+).
+  // Normalize scoreObjRaw if totalBasePesoObj is not 100 (e.g., if some objectives have 0 weight)
+  // The calculateWeightedScore already handles the 100 division, so scoreObjRaw is already a percentage of total possible.
+  // If totalBasePesoObj is 0, scoreObjRaw will be 0, which is correct.
+
+  console.log("Objetivos (Live Calc):", objetivos.map((o, i) => ({
+    nombre: o.nombre,
+    peso: pesosObj[i],
+    progreso: progObj[i],
+    scoreContrib: (pesosObj[i] * progObj[i]) / 100
+  })));
+
+  // scoreObjRaw is already calculated in the loop above.
+  console.log("Score Objetivos (Raw):", scoreObjRaw);
+
+  const scoreObj = scoreObjRaw;
 
   // Calculate Aptitude Score
   const pesosApt = aptitudes.map((a) => Number(a.peso ?? 0));
-  const pesosBaseApt = aptitudes.map((a) => Number(a.pesoBase ?? a.peso ?? 0));
   const progApt = aptitudes.map((a) => Number(a.puntuacion ?? a.score ?? 0));
+
+  console.log("Aptitudes:", aptitudes.map((a, i) => ({
+    nombre: a.nombre,
+    score: progApt[i]
+  })));
 
   const scoreApt = progApt.length
     ? progApt.reduce((a, b) => a + b, 0) / progApt.length
     : 0;
+
+  console.log("Score Aptitudes (Raw):", scoreApt);
 
   // Global Score (70/30)
   const scoreObjWeighted = scoreObj * 0.7;
   const scoreAptWeighted = scoreApt * 0.3;
   const global = scoreObjWeighted + scoreAptWeighted;
 
+  console.log("Final:", { scoreObjWeighted, scoreAptWeighted, global });
+
+  // --- DEBUG: CÁLCULO POR TRIMESTRE (Q1, Q2, Q3, Q4) ---
+  const periods = ["Q1", "Q2", "Q3", "4"]; // Helper to identify periods (checking string contains)
+  const breakdownProyeccion = {};
+
+  // Find all unique periods present in hitos
+  const allPeriods = new Set();
+  objetivos.forEach(o => o.hitos?.forEach(h => allPeriods.add(h.periodo)));
+  const sortedPeriods = Array.from(allPeriods).sort();
+
+  const periodBreakdown = sortedPeriods.map(periodo => {
+    // 1. Calc Obj Score for this period
+    let p_totalPesoObj = 0;
+    let p_weightedScoreObj = 0;
+
+    objetivos.forEach(o => {
+      const hito = o.hitos?.find(h => h.periodo === periodo);
+      const peso = Number(o.peso || 0);
+      const progreso = Number(hito?.actual ?? 0); // If null/future, counts as 0 for "Snapshot" logic, but let's be strict:
+      // If hito doesn't exist or has no 'actual', it is 0.
+      p_totalPesoObj += peso;
+      p_weightedScoreObj += (progreso * peso);
+    });
+
+    const p_scoreObj = p_totalPesoObj > 0 ? (p_weightedScoreObj / 100) : 0; // Assuming normalized weights sum to 100
+
+
+
+    // 2. Calc Apt Score for this period
+    let p_aptSum = 0;
+    let p_aptCount = 0;
+    aptitudes.forEach(a => {
+      const hito = a.hitos?.find(h => h.periodo === periodo);
+      if (hito && hito.actual != null) {
+        p_aptSum += Number(hito.actual);
+        p_aptCount++;
+      }
+    });
+    const p_scoreApt = p_aptCount > 0 ? (p_aptSum / p_aptCount) : 0;
+
+    // 3. Global
+    const p_global = (p_scoreObj * 0.7) + (p_scoreApt * 0.3);
+
+    return {
+      periodo,
+      scoreObj: Math.round(p_scoreObj),
+      scoreApt: Math.round(p_scoreApt),
+      global: Math.round(p_global)
+    };
+  });
+
+  console.log("Breakdown Periods:", periodBreakdown);
+  console.groupEnd();
+
   return {
     objetivos: { cantidad: objetivos.length, peso: totalBasePesoObj, score: scoreObjWeighted, rawScore: scoreObj },
     aptitudes: { cantidad: aptitudes.length, score: scoreAptWeighted, rawScore: scoreApt },
     global,
+    debug: {
+      objetivos: objetivos.map((o, i) => {
+        // Collect ALL metas (root + hitos) to ensure we find the rules (which might be populated in hitos only)
+        const allMetas = [...(o.metas || [])];
+        o.hitos?.forEach(h => {
+          h.metas?.forEach(m => allMetas.push(m));
+        });
+
+        const hasEffectiveAccumulation = allMetas.some(m => m.acumulativa || m.modoAcumulacion === 'acumulativo');
+        const uniqueRules = [...new Set(allMetas.map(m => m.reglaCierre).filter(Boolean))];
+
+        let label = "Promedio";
+        if (hasEffectiveAccumulation) {
+          label = "Suma (Acum.)";
+        } else if (uniqueRules.length === 1) {
+          const r = uniqueRules[0];
+          if (r === "ultimo_valor") label = "Último Valor";
+          else if (r === "umbral_periodos") label = "Umbral Periodos";
+          else if (r === "promedio") label = "Promedio";
+          else label = r;
+        } else if (uniqueRules.length > 1) {
+          label = "Mix Metas";
+        }
+
+        // --- Meta Detail Construction ---
+        // We need a unique list of definition metas. 
+        // Best source: root definition OR inferred from first hito.
+        // Let's group allMeta entries by ID/Name to build the "Rows"
+        const metaGroups = {};
+        allMetas.forEach(m => {
+          const k = m.metaId || m._id || m.nombre;
+          if (!metaGroups[k]) metaGroups[k] = {
+            def: m,
+            values: []
+          };
+        });
+
+        // Now populate values per period for each meta
+        o.hitos?.forEach(h => {
+          h.metas?.forEach(m => {
+            const k = m.metaId || m._id || m.nombre;
+            if (metaGroups[k]) {
+              metaGroups[k].values.push({
+                period: h.periodo,
+                val: m.resultado,
+                target: m.esperado ?? m.target // Capture target
+              });
+            }
+          });
+        });
+
+        const metasDetails = Object.values(metaGroups).map(g => ({
+          nombre: g.def.nombre,
+          peso: g.def.peso || g.def.pesoMeta, // Check both
+          config: {
+            regla: g.def.reglaCierre || "promedio",
+            acum: g.def.modoAcumulacion === 'acumulativo' || g.def.acumulativa,
+            esfuerzo: g.def.reconoceEsfuerzo,
+            over: g.def.permiteOver,
+            umbral: g.def.umbralPeriodos, // Capture threshold
+            target: g.def.esperado ?? g.def.target,
+            unidad: g.def.unidad,
+            operador: g.def.operador
+          },
+          breakdown: g.values // [{period: 'Q1', val: 50}, ...]
+        }));
+
+        return {
+          nombre: o.nombre,
+          peso: pesosObj[i],
+          progreso: progObj[i],
+          hitosEvaluados: o.hitos?.filter(h => h.actual != null).length || 0,
+          hitosTotal: o.hitos?.length || 0,
+          hitosValores: o.hitos?.map(h => ({
+            actual: h.actual ?? 0,
+            target: h.target ?? h.meta ?? 100
+          })) || [],
+          scoreContrib: (pesosObj[i] * progObj[i]) / 100,
+          metodoCalculo: label,
+          metasDetails
+        };
+      }),
+      aptitudes: aptitudes.map((a, i) => ({ nombre: a.nombre, score: progApt[i] })),
+      periodos: periodBreakdown
+    }
   };
 }
 
@@ -326,6 +491,7 @@ export default function EvaluacionFlujo() {
   // TESTING MODE
   const [isTestingMode, setIsTestingMode] = useState(false);
   const [showFinalReport, setShowFinalReport] = useState(false);
+  const [showDebugDialog, setShowDebugDialog] = useState(false);
 
   const handleDeleteEvaluacion = async (item, periodo) => {
     if (!confirm(`[MODO ADMIN] ¿Borrar la evaluación de ${periodo}? Esto es irreversible.`)) return;
@@ -812,9 +978,9 @@ export default function EvaluacionFlujo() {
                 {state?.from === "seguimiento" ? "← Volver al Gantt" : "← Volver"}
               </Button>
               <div>
-                <h1 className={`text-xl font-bold flex items-center gap-2 ${isTestingMode ? "text-slate-900" : "text-slate-800"}`}>
+                <h1 className="text-xl font-bold flex items-center gap-2 text-slate-800">
                   {empleadoNombreCompleto}
-                  <Badge variant="outline" className={isTestingMode ? "text-indigo-600 border-indigo-300 bg-white/50 font-normal" : "text-slate-500 border-slate-300 font-normal"}>
+                  <Badge variant="outline" className="text-slate-500 border-slate-300 font-normal">
                     {anio}
                   </Badge>
                 </h1>
@@ -873,20 +1039,32 @@ export default function EvaluacionFlujo() {
 
               {/* TESTING MODE TOGGLE (Only Directors) */}
               {esDirector && (
-                <label className={`flex items-center gap-2 cursor-pointer border px-3 py-1.5 rounded-lg transition-colors ${isTestingMode
-                  ? "bg-white border-indigo-200 shadow-sm"
-                  : "bg-white border-slate-200 hover:bg-slate-50"
-                  }`}>
-                  <input
-                    type="checkbox"
-                    className="accent-indigo-500 w-4 h-4"
-                    checked={isTestingMode}
-                    onChange={(e) => setIsTestingMode(e.target.checked)}
-                  />
-                  <span className={`text-xs font-bold uppercase tracking-wider ${isTestingMode ? 'text-indigo-600' : 'text-slate-600'}`}>
-                    Modo Admin
-                  </span>
-                </label>
+                <div className="flex items-center gap-2">
+                  <label className={`flex items-center gap-2 cursor-pointer border px-3 py-1.5 rounded-lg transition-colors ${isTestingMode
+                    ? "bg-white border-indigo-200 shadow-sm"
+                    : "bg-white border-slate-200 hover:bg-slate-50"
+                    }`}>
+                    <input
+                      type="checkbox"
+                      className="accent-indigo-500 w-4 h-4"
+                      checked={isTestingMode}
+                      onChange={(e) => setIsTestingMode(e.target.checked)}
+                    />
+                    <span className={`text-xs font-bold uppercase tracking-wider ${isTestingMode ? 'text-indigo-600' : 'text-slate-600'}`}>
+                      Modo Admin
+                    </span>
+                  </label>
+                  {isTestingMode && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-xs text-indigo-600 h-8"
+                      onClick={() => setShowDebugDialog(true)}
+                    >
+                      Ver Cálculo
+                    </Button>
+                  )}
+                </div>
               )}
 
               <div className={`flex items-stretch rounded-xl border shadow-sm overflow-hidden divide-x divide-slate-100 ${isTestingMode
@@ -1613,27 +1791,20 @@ export default function EvaluacionFlujo() {
                       const relevantHitos = obj.hitos?.filter(h => getPeriodMonth(h.periodo) <= feedbackLimit) || [];
 
                       // Recalculate progress based on relevant hitos
-                      let score = 0;
-                      if (relevantHitos.length > 0) {
-                        const isCumulative = obj.metas?.some(m => m.acumulativa || m.modoAcumulacion === 'acumulativo');
-                        const progresos = relevantHitos.map(h => h.actual ?? 0);
+                      const peso = Number(obj.peso || 0);
+                      totalObjBaseWeight += peso;
 
-                        score = isCumulative
-                          ? Math.max(...progresos, 0)
-                          : Math.round(progresos.reduce((a, b) => a + b, 0) / progresos.length);
-                      }
+                      // Use Shared Utility
+                      const hitosValidos = relevantHitos.filter(h => h.actual != null) || [];
+                      const progreso = calculateObjectiveProgress(obj, hitosValidos);
 
-                      const hasPermiteOver = obj.metas?.some(m => m.permiteOver) || obj.hitos?.some(h => h.metas?.some(m => m.permiteOver));
-                      const effectiveScore = hasPermiteOver ? score : Math.min(score, 100);
-
-                      totalObjScore += effectiveScore * (obj.peso || 0);
-                      totalObjBaseWeight += (obj.pesoBase || obj.peso || 0);
+                      totalObjScore += calculateWeightedScore(progreso, peso);
 
                       // Weighted contribution for details (score * weight / 100)
-                      const weightedScore = (effectiveScore * (obj.peso || 0)) / 100;
-                      detailsObj.push({ nombre: obj.nombre, score: weightedScore, rawScore: effectiveScore });
+                      const weightedScore = (progreso * peso) / 100;
+                      detailsObj.push({ nombre: obj.nombre, score: weightedScore, rawScore: progreso, peso: peso });
                     });
-                    const scoreObjRaw = totalObjScore / 100; // Always normalize to 100 base
+                    const scoreObjRaw = totalObjScore; // Already correct scale (sum of weighted scores)
                     const scoreObj = scoreObjRaw * 0.7; // Weighted contribution (Max 70)
 
                     // Competencias
@@ -1743,10 +1914,26 @@ export default function EvaluacionFlujo() {
                                   <Target className="w-3 h-3" /> Objetivos
                                 </div>
                                 <div className="space-y-1">
+                                  <div className="flex justify-between text-[9px] text-slate-400 font-medium border-b border-slate-100 pb-1 mb-1 px-1">
+                                    <span>Nombre</span>
+                                    <div className="flex gap-2">
+                                      <span className="w-8 text-center">Peso</span>
+                                      <span className="w-8 text-center">Logro</span>
+                                      <span className="w-8 text-right">Pond.</span>
+                                    </div>
+                                  </div>
                                   {breakdown.detailsObj.map((d, i) => (
-                                    <div key={i} className="flex justify-between text-xs text-slate-600">
-                                      <span className="truncate max-w-[140px]">{d.nombre}</span>
-                                      <span className="font-semibold">{d.score !== null ? `${Math.round(d.score)}%` : "-"}</span>
+                                    <div key={i} className="flex justify-between text-xs text-slate-600 px-1 py-0.5 hover:bg-slate-50 rounded">
+                                      <span className="truncate max-w-[100px]" title={d.nombre}>{d.nombre}</span>
+                                      <div className="flex gap-2">
+                                        <span className="w-8 text-center text-slate-400 text-[10px]">{d.peso}%</span>
+                                        <span className={`w-8 text-center font-medium ${d.rawScore >= 100 ? 'text-emerald-600' : 'text-slate-600'}`}>
+                                          {d.rawScore !== null ? `${Math.round(d.rawScore)}%` : "-"}
+                                        </span>
+                                        <span className="w-8 text-right font-bold text-blue-600 bg-blue-50 rounded px-1">
+                                          {d.score !== null ? `${d.score.toFixed(1)}%` : "-"}
+                                        </span>
+                                      </div>
                                     </div>
                                   ))}
                                 </div>
@@ -1902,7 +2089,227 @@ export default function EvaluacionFlujo() {
         empleado={dashEmpleadoData?.empleado}
         anio={anio}
       />
-    </div>
+
+      <Dialog open={showDebugDialog} onOpenChange={setShowDebugDialog}>
+        <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Desglose de Cálculo (En Vivo)</DialogTitle>
+            <DialogDescription>
+              Detalle de cómo se llega al puntaje global actual.
+            </DialogDescription>
+          </DialogHeader>
+
+          {resumenEmpleado?.debug && (
+            <div className="space-y-6 py-4">
+
+              <div className="space-y-6">
+                {/* SECTION 2: OBJECTIVES DETAIL */}
+                <div>
+                  <h3 className="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                    <Target className="w-4 h-4 text-blue-500" /> DETALLE OBJETIVOS
+                  </h3>
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-50 text-slate-500 border-b">
+                        <tr>
+                          <th className="px-2 py-2 text-left font-medium w-[20%]">Nombre</th>
+                          <th className="px-2 py-2 text-center font-medium w-[10%]">Cálculo</th>
+                          <th className="px-2 py-2 text-center font-medium w-[10%]">Peso</th>
+                          <th className="px-2 py-2 text-center font-medium w-[10%]">Progreso</th>
+                          <th className="px-2 py-2 text-center font-medium w-[15%]">Contrib. (Peso*Prog)</th>
+                          <th className="px-2 py-2 text-center font-medium text-[10%]">Hitos</th>
+                          <th className="px-2 py-2 text-left font-medium text-[10px] w-[35%]">Valores (Real / Meta)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {resumenEmpleado.debug.objetivos.map((o, i) => (
+                          <React.Fragment key={i}>
+                            <tr className="bg-slate-50/50">
+                              <td className="px-2 py-1.5 font-semibold text-slate-800" colSpan={1} title={o.nombre}>
+                                {o.nombre}
+                              </td>
+                              <td className="px-2 py-1.5 text-center text-xs text-slate-500">
+                                {o.metodoCalculo}
+                              </td>
+                              <td className="px-2 py-1.5 text-center text-slate-500">{o.peso ? `${o.peso}%` : '-'}</td>
+                              <td className={`px-2 py-1.5 text-center font-bold ${o.progreso > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
+                                {Math.round(o.progreso)}%
+                              </td>
+                              <td className="px-2 py-1.5 text-center font-bold text-blue-600 bg-blue-50/30">
+                                {o.scoreContrib.toFixed(1)}%
+                              </td>
+                              <td className="px-2 py-1.5 text-center text-slate-400 text-[10px]" colSpan={2}>
+                                {o.hitosEvaluados}/{o.hitosTotal} Evaluaciones
+                              </td>
+                            </tr>
+                            {/* Metas Detail Sub-rows - SECTIONAL LAYOUT */}
+                            {o.metasDetails?.map((m, idx) => (
+                              <tr key={`${i}-m-${idx}`} className="bg-slate-50/40 hover:bg-slate-50 border-b border-slate-200/60">
+                                {/* SECTION 1: META INFO */}
+                                <td className="pl-6 py-3 pr-4 border-l-[6px] border-slate-300 w-[30%] align-top">
+                                  <div className="flex flex-col gap-1.5">
+                                    <div className="flex items-start gap-2">
+                                      <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0"></div>
+                                      <span className="text-sm font-semibold text-slate-800 leading-tight">{m.nombre}</span>
+                                    </div>
+                                    <div className="pl-3.5">
+                                      <Badge variant="outline" className="h-5 bg-white border-slate-300 text-slate-600 font-normal">
+                                        Meta: {m.config.operador || '>='} {m.config.target} {m.config.unidad}
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                </td>
+
+                                {/* SECTION 2: CONFIGURATION */}
+                                <td colSpan={2} className="px-4 py-3 border-l border-slate-200/60 w-[20%] align-top bg-slate-100/30">
+                                  <div className="flex flex-col gap-2">
+                                    <div className="flex justify-between items-center text-xs text-slate-500">
+                                      <span>Peso:</span>
+                                      <span className="font-bold text-slate-700">{m.peso ? `${m.peso}%` : 'Equitativo'}</span>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="secondary" className="bg-slate-200 text-slate-700 hover:bg-slate-200 text-[10px] justify-center">
+                                          {m.config.regla}
+                                        </Badge>
+                                        {m.config.regla === 'umbral_periodos' && m.config.umbral > 0 && (
+                                          <span className="text-[10px] font-mono text-slate-600 bg-slate-100 px-1 rounded border border-slate-200">
+                                            Min: {m.config.umbral}
+                                          </span>
+                                        )}
+                                      </div>
+                                      {m.config.acum && <span className="text-[9px] text-center text-slate-400 font-bold tracking-wider uppercase">Acumulativo</span>}
+                                    </div>
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {m.config.esfuerzo && <span className="text-[8px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-100 font-medium">Esfuerzo</span>}
+                                      {m.config.over && <span className="text-[8px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100 font-medium">Permite Over</span>}
+                                    </div>
+                                  </div>
+                                </td>
+
+                                {/* SECTION 3: RESULTS (BREAKDOWN) */}
+                                <td colSpan={4} className="px-4 py-3 border-l border-slate-200/60 w-[50%] align-center bg-white">
+                                  <div className="grid grid-cols-4 gap-3 w-full">
+                                    {/* Using Grid to enforce alignment and wrapping into rows if needed */}
+                                    {m.breakdown?.map((b, bix) => (
+                                      <div key={bix} className="flex flex-col border border-slate-200 rounded-md overflow-hidden shadow-sm">
+                                        <div className="bg-slate-50 border-b border-slate-100 px-2 py-1 text-center">
+                                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{b.period}</span>
+                                        </div>
+                                        <div className="bg-white px-2 py-1.5 text-center">
+                                          <span className="text-sm font-bold text-slate-800">{Number(b.val).toLocaleString()}</span>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </React.Fragment>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-slate-50 border-t font-bold text-xs">
+                        <tr>
+                          <td colSpan={3} className="px-2 py-2 text-right text-slate-600">TOTAL OBJETIVOS:</td>
+                          <td className="px-2 py-2 text-center text-blue-700 bg-blue-100/50">
+                            {resumenEmpleado.debug.objetivos.reduce((a, b) => a + (b.scoreContrib || 0), 0).toFixed(1)}%
+                          </td>
+                          <td colSpan={2}></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+
+                {/* SECTION 3: COMPETENCIES DETAIL */}
+                <div>
+                  <h3 className="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                    <Lightbulb className="w-4 h-4 text-amber-500" /> DETALLE COMPETENCIAS
+                  </h3>
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-50 text-slate-500 border-b">
+                        <tr>
+                          <th className="px-2 py-2 text-left font-medium">Nombre</th>
+                          <th className="px-2 py-2 text-center font-medium">Score</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {resumenEmpleado.debug.aptitudes.map((a, i) => (
+                          <tr key={i}>
+                            <td className="px-2 py-1.5 truncate max-w-[300px]" title={a.nombre}>{a.nombre}</td>
+                            <td className={`px-2 py-1.5 text-center font-bold ${a.score > 0 ? 'text-indigo-600' : 'text-slate-300'}`}>
+                              {Math.round(a.score)}%
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-slate-50 border-t font-bold text-xs">
+                        <tr>
+                          <td className="px-2 py-2 text-right text-slate-600">TOTAL COMPETENCIAS:</td>
+                          <td className="px-2 py-2 text-center text-indigo-700 bg-indigo-100/50">
+                            {resumenEmpleado.debug.aptitudes.reduce((a, b) => a + (b.score || 0), 0) > 0
+                              ? Math.round(resumenEmpleado.debug.aptitudes.reduce((a, b) => a + b.score, 0) / resumenEmpleado.debug.aptitudes.length)
+                              : 0}%
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 4: GLOBAL CALCULATION */}
+              <div>
+                <h3 className="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                  <Trophy className="w-4 h-4 text-emerald-600" /> RESUMEN FINAL (PONDERADO)
+                </h3>
+                <div className="border rounded-lg overflow-hidden bg-slate-50/50">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-100 border-b">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs uppercase text-slate-500">Concepto</th>
+                        <th className="px-4 py-2 text-center text-xs uppercase text-slate-500">Puntaje</th>
+                        <th className="px-4 py-2 text-center text-xs uppercase text-slate-500">Peso</th>
+                        <th className="px-4 py-2 text-right text-xs uppercase text-slate-500">Resultado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      <tr>
+                        <td className="px-4 py-2 font-medium text-slate-700">Objetivos</td>
+                        <td className="px-4 py-2 text-center text-slate-600">
+                          {(resumenEmpleado.objetivos.rawScore || 0).toFixed(1)}%
+                        </td>
+                        <td className="px-4 py-2 text-center text-slate-500">70%</td>
+                        <td className="px-4 py-2 text-right font-bold text-slate-800">
+                          {(resumenEmpleado.objetivos.score || 0).toFixed(1)}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="px-4 py-2 font-medium text-slate-700">Competencias</td>
+                        <td className="px-4 py-2 text-center text-slate-600">
+                          {(resumenEmpleado.aptitudes.rawScore || 0).toFixed(1)}%
+                        </td>
+                        <td className="px-4 py-2 text-center text-slate-500">30%</td>
+                        <td className="px-4 py-2 text-right font-bold text-slate-800">
+                          {(resumenEmpleado.aptitudes.score || 0).toFixed(1)}
+                        </td>
+                      </tr>
+                      <tr className="bg-slate-100 border-t-2 border-slate-200">
+                        <td colSpan={3} className="px-4 py-3 text-right font-black text-slate-800">GLOBAL:</td>
+                        <td className="px-4 py-3 text-right font-black text-xl text-emerald-600">
+                          {Math.round(resumenEmpleado.global)}%
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div >
   );
 }
 

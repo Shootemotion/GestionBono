@@ -318,7 +318,7 @@ export default function ResultadosBono() {
                                                                                     <span className="text-slate-500 font-medium flex items-center gap-1.5"><StarIcon className="w-3 h-3 text-indigo-400" /> Competencias</span>
                                                                                     <span className="font-bold text-slate-700">{Math.round(emp.resultado?.competencias || 0)}%</span>
                                                                                 </div>
-                                                                                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                                                                                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden" title={`Calc: ${(emp.resultado?.competencias || 0).toFixed(2)}%`}>
                                                                                     <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${emp.resultado?.competencias || 0}%` }} />
                                                                                 </div>
                                                                             </div>
@@ -334,12 +334,12 @@ export default function ResultadosBono() {
                                                                                 <span className="font-medium text-slate-700">{emp.bonusConfig?.target || 0}</span>
                                                                             </div>
                                                                             <div className="flex items-center justify-between text-[10px]">
-                                                                                <span className="text-slate-500">Umbral</span>
+                                                                                <span className="text-slate-500">Score Mín.</span>
                                                                                 <span className="font-medium text-slate-700">{emp.bonusConfig?.umbral}%</span>
                                                                             </div>
                                                                             <div className="flex items-center justify-between text-[10px]">
-                                                                                <span className="text-slate-500">Max</span>
-                                                                                <span className="font-medium text-slate-700">{emp.bonusConfig?.max}%</span>
+                                                                                <span className="text-slate-500">Tope</span>
+                                                                                <span className="font-medium text-slate-700">{emp.bonusConfig?.max}</span>
                                                                             </div>
                                                                         </div>
                                                                     </div>
@@ -366,7 +366,47 @@ export default function ResultadosBono() {
                                                                         </div>
                                                                     </div>
 
-                                                                    {/* 5. FINANCIERO (Fixed Right) */}
+                                                                    {/* 5. FEEDBACK HISTORY (New) */}
+                                                                    <div className="w-full lg:w-[220px] p-2 flex flex-col justify-start border-b lg:border-b-0 lg:border-r border-slate-50/80">
+                                                                        <span className="text-[9px] font-bold uppercase text-slate-400 tracking-wider mb-2">Historial</span>
+
+                                                                        <div className="border border-slate-200 rounded-sm overflow-hidden bg-white">
+                                                                            {/* Header */}
+                                                                            <div className="grid grid-cols-4 bg-slate-100 border-b border-slate-200">
+                                                                                <div className="py-1 text-center text-[9px] font-bold text-slate-500 border-r border-slate-200">PER</div>
+                                                                                <div className="py-1 text-center text-[9px] font-bold text-slate-500 border-r border-slate-200">OBJ</div>
+                                                                                <div className="py-1 text-center text-[9px] font-bold text-slate-500 border-r border-slate-200">COMP</div>
+                                                                                <div className="py-1 text-center text-[9px] font-bold text-slate-500">GLOB</div>
+                                                                            </div>
+
+                                                                            {/* Body */}
+                                                                            <div className="flex flex-col">
+                                                                                {emp.feedbacks && emp.feedbacks.length > 0 ? (
+                                                                                    emp.feedbacks
+                                                                                        .sort((a, b) => {
+                                                                                            const order = { "Q1": 1, "Q2": 2, "Q3": 3, "FINAL": 4 };
+                                                                                            return (order[a.periodo] || 99) - (order[b.periodo] || 99);
+                                                                                        })
+                                                                                        .map((f, i) => (
+                                                                                            <div key={i} className="grid grid-cols-4 text-[10px] border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                                                                                                <div className="py-1 text-center font-semibold text-slate-600 border-r border-slate-100">{f.periodo}</div>
+                                                                                                <div className="py-1 text-center text-slate-500 border-r border-slate-100">{f.scoreObj ? Math.round(Number(f.scoreObj)) : '-'}%</div>
+                                                                                                <div className="py-1 text-center text-slate-500 border-r border-slate-100">{f.scoreComp ? Math.round(Number(f.scoreComp)) : '-'}%</div>
+                                                                                                <div className={`py-1 text-center font-bold ${f.score >= 70 ? 'text-emerald-600' : 'text-slate-500'}`}>
+                                                                                                    {f.score ? Number(f.score).toFixed(1) : '-'}%
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        ))
+                                                                                ) : (
+                                                                                    <div className="p-2 text-center text-[10px] text-slate-400 italic">
+                                                                                        Sin registros
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* 6. FINANCIERO (Fixed Right) */}
                                                                     <div className="w-full lg:w-[200px] bg-slate-50/50 p-3 flex flex-col justify-center shrink-0">
                                                                         <div className="flex justify-between items-center mb-1">
                                                                             <span className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">Base</span>

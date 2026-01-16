@@ -44,8 +44,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { calculateObjectiveProgress, calculateWeightedScore } from "@/utils/calculos";
 
 // === UI helpers ===
 const StatusBadge = ({ status }) => {
@@ -84,28 +86,7 @@ const StatusBadge = ({ status }) => {
   );
 };
 
-function getAccumulatedValue(obj, metaId, currentPeriod, currentValue) {
-  if (!obj || !Array.isArray(obj.hitos)) return currentValue || 0;
 
-  const periodOrder = ["Q1", "Q2", "Q3", "FINAL"];
-  const currentIdx = periodOrder.indexOf(currentPeriod);
-  if (currentIdx === -1) return currentValue || 0;
-
-  let total = 0;
-  for (const h of obj.hitos) {
-    const hIdx = periodOrder.indexOf(h.periodo);
-    if (hIdx !== -1 && hIdx <= currentIdx) {
-      const m = h.metas?.find(m => (m.metaId === metaId || m._id === metaId));
-      if (h.periodo === currentPeriod) {
-        total += Number(currentValue || 0);
-      } else if (m) {
-        total += Number(m.resultado || 0);
-      }
-    }
-  }
-  return total;
-  return total;
-}
 
 function getCierreLabel(meta) {
   const rule = meta.reglaCierre || "promedio";
@@ -212,9 +193,22 @@ const ObjectiveCard = ({ obj, currentPeriod, expanded, onToggle }) => {
               <div className="space-y-3">
                 {currentHito?.metas?.map((meta, idx) => {
                   const isAcumulativo = obj.metas?.[idx]?.modoAcumulacion === "acumulativo";
-                  const valorEvaluado = isAcumulativo
-                    ? getAccumulatedValue(obj, meta.metaId || meta._id, selectedPeriod, meta.resultado)
-                    : meta.resultado;
+                  let valorEvaluado = meta.resultado;
+
+                  if (isAcumulativo) {
+                    const periodOrder = ["Q1", "Q2", "Q3", "FINAL"];
+                    const currentIdx = periodOrder.indexOf(selectedPeriod);
+                    if (currentIdx !== -1) {
+                      valorEvaluado = obj.hitos?.reduce((acc, h) => {
+                        const hIdx = periodOrder.indexOf(h.periodo);
+                        if (hIdx !== -1 && hIdx <= currentIdx) {
+                          const m = h.metas?.find(m => (m.metaId === meta.metaId || m._id === meta._id)); // Robust ID check
+                          return acc + Number(m?.resultado || 0);
+                        }
+                        return acc;
+                      }, 0);
+                    }
+                  }
 
                   return (
                     <div key={idx} className="pb-3 border-b border-slate-50 last:border-0 last:pb-0">
@@ -456,19 +450,18 @@ export default function MiDesempeno() {
       });
 
       if (relevantHitos.length > 0) {
-        const isCumulative = obj.metas?.some(m => m.acumulativa || m.modoAcumulacion === 'acumulativo');
-        const progresos = relevantHitos.map(h => h.actual ?? 0);
-        score = isCumulative
-          ? Math.max(...progresos, 0)
-          : Math.round(progresos.reduce((a, b) => a + b, 0) / progresos.length);
+        // Use Shared Utility for consistent calculation (supports Umbral, Esfuerzo, etc.)
+        score = calculateObjectiveProgress(obj, relevantHitos);
 
         // Max Weight is FULL weight (Annual Potential), regardless of period
         // This avoids "Result > Max" if user is over-performing in Q1
         maxActiveObjWeight += (obj.peso || 0);
       }
 
-      const hasPermiteOver = obj.metas?.some(m => m.permiteOver) || obj.hitos?.some(h => h.metas?.some(m => m.permiteOver));
-      const effectiveScore = hasPermiteOver ? score : Math.min(score, 100);
+      // calculateObjectiveProgress already handles PermiteOver and limits, 
+      // but ensure we respect the global expected range if needed.
+      // Actually, effectiveScore is just 'score' now.
+      const effectiveScore = score;
 
       totalObjScore += effectiveScore * (obj.peso || 0);
       totalObjWeight += (obj.peso || 0); // Should sum to 100 ideally
@@ -481,12 +474,12 @@ export default function MiDesempeno() {
       });
     });
 
-    const scoreObjRaw = totalObjScore / 100; // Normalize to 100 base
+    const scoreObjRaw = totalObjWeight > 0 ? (totalObjScore / totalObjWeight) : 0; // Normalize by actual weight sum
     const scoreObj = scoreObjRaw * 0.7; // Weighted contribution (Max 70)
 
     // Competencias
     let totalCompScore = 0;
-    let compCount = 0;
+    let totalCompWeight = 0;
     const aptitudes = [];
 
     data.aptitudes?.forEach(apt => {
@@ -498,8 +491,9 @@ export default function MiDesempeno() {
         score = Math.round(puntuaciones.reduce((a, b) => a + b, 0) / puntuaciones.length);
       }
 
-      totalCompScore += score;
-      compCount++;
+      const peso = apt.peso || 0;
+      totalCompScore += score * peso;
+      totalCompWeight += peso;
 
       const hitoPeriodo = apt.hitos?.find(h => h.periodo === p);
 
@@ -510,7 +504,7 @@ export default function MiDesempeno() {
       });
     });
 
-    const scoreCompRaw = compCount > 0 ? (totalCompScore / compCount) : 0;
+    const scoreCompRaw = totalCompWeight > 0 ? (totalCompScore / totalCompWeight) : 0; // Weighted Average
     const scoreComp = scoreCompRaw * 0.3; // Weighted contribution (Max 30)
 
     const global = scoreObj + scoreComp;
@@ -527,7 +521,7 @@ export default function MiDesempeno() {
     // For Objectives: Sum of weights of ACTIVE objectives * 70 (Max Contribution) / 100 (Total Weight Base)
     // For Cumulative objectives, Max Contribution is weighted by time passed (e.g. Q1 = 25% of annual).
     const maxObj = (maxActiveObjWeight / 100) * 70;
-    const maxComp = compCount > 0 ? 30 : 0; // Fixed 30% potential if any data exists
+    const maxComp = aptitudes.length > 0 ? 30 : 0; // Fixed 30% potential if any data exists
 
     // Expected Scores Calculation
     let expectedObjScore = 0;
@@ -547,7 +541,7 @@ export default function MiDesempeno() {
     const expectedObjDisplay = (expectedObjScore / 100) * 70;
 
     // Competencies: Expected is always 100% (perform at level) => 30% weighted
-    const expectedCompDisplay = compCount > 0 ? 30 : 0;
+    const expectedCompDisplay = aptitudes.length > 0 ? 30 : 0;
 
     return {
       objetivos,
@@ -584,15 +578,11 @@ export default function MiDesempeno() {
           data.objetivos?.forEach(o => {
             const rh = o.hitos?.filter(h => getPeriodMonth(h.periodo) <= relevantLimit) || [];
             if (rh.length > 0) {
-              const isCum = o.metas?.some(m => m.acumulativa || m.modoAcumulacion === 'acumulativo');
-              const prog = rh.map(h => h.actual ?? 0);
-              const sc = isCum ? Math.max(...prog, 0) : Math.round(prog.reduce((a, b) => a + b, 0) / prog.length);
-              const hasOver = o.metas?.some(m => m.permiteOver);
-              const eff = hasOver ? sc : Math.min(sc, 100);
-              tObjScore += eff * (o.peso || 0);
+              const prog = calculateObjectiveProgress(o, rh);
+              tObjScore += calculateWeightedScore(prog, o.peso || 0);
             }
           });
-          const rawObj = tObjScore / 100;
+          const rawObj = tObjScore;
 
           // Calc Comp
           let tCompScore = 0;
@@ -717,16 +707,33 @@ export default function MiDesempeno() {
     };
 
     if (!displayPeriod) {
-      if (isMonthly && selectedFeedback.periodo.startsWith("Q")) {
+      if (isMonthly && (selectedFeedback.periodo.startsWith("Q") || selectedFeedback.periodo === "FINAL")) {
         // Handle "2025Q1" -> "Q1"
-        const suffix = selectedFeedback.periodo.length > 4 ? selectedFeedback.periodo.slice(4) : selectedFeedback.periodo;
+        let suffix = selectedFeedback.periodo;
+        if (suffix.length > 4 && /^\d{4}/.test(suffix)) {
+          suffix = suffix.slice(4);
+        }
 
-        // Default display period is the last month of the quarter (for the Detail View)
+        const targetMonths = periodMonthsMap[suffix] || [];
+
+        // Identify the BEST hito to show:
+        // Default to the END of the quarter (Standard expectation) 
         const qMapEnd = { "Q1": "M11", "Q2": "M02", "Q3": "M05", "FINAL": "M08" };
         displayPeriod = qMapEnd[suffix] || "M11";
 
+        // Try to find if we have a specific hito in this quarter that is LATEST?
+        const relevantHitos = item.hitos?.filter(h => {
+          if (!h.periodo) return false;
+          return targetMonths.some(m => h.periodo.endsWith(m));
+        });
+
+        if (relevantHitos && relevantHitos.length > 0) {
+          relevantHitos.sort((a, b) => getPeriodMonth(a.periodo) - getPeriodMonth(b.periodo));
+          displayPeriod = relevantHitos[relevantHitos.length - 1].periodo;
+        }
+
         // Highlight ALL months in the quarter
-        activeMonths = periodMonthsMap[suffix] || [];
+        activeMonths = targetMonths;
       } else {
         displayPeriod = selectedFeedback.periodo;
         activeMonths = [selectedFeedback.periodo];
@@ -753,32 +760,62 @@ export default function MiDesempeno() {
     const maxScore = activeTab === 'obj' ? (item.peso || 100) : 100;
 
     const graphData = periods.map(p => {
-      // Find hito for this period
-      const h = item.hitos?.find(h => {
-        if (!h.periodo) return false;
-        if (h.periodo === p) return true;
-        if (h.periodo.endsWith(p)) return true;
-        if (p === "FINAL" && (h.periodo.endsWith("Q4") || h.periodo.endsWith("A1"))) return true;
-        return false;
-      });
-
       // Determine if this is the currently viewed period (or part of the active range)
       const isSelected = activeMonths.some(m => p === m || p.endsWith(m));
 
       // Check visibility relative to the specific period's feedback
-      const periodFeedback = feedbacks.find(f => f.periodo === p);
+      let feedbackPeriod = p;
+      if (isMonthly) {
+        feedbackPeriod = Object.keys(periodMonthsMap).find(key => periodMonthsMap[key].some(m => p.endsWith(m))) || p;
+      }
+
+      const periodFeedback = feedbacks.find(f => f.periodo === feedbackPeriod || f.periodo.endsWith(feedbackPeriod));
       const isVisible = periodFeedback && ["SENT", "PENDING_HR", "CLOSED", "ACKNOWLEDGED"].includes(periodFeedback.estado);
 
-      // Calculate Weighted Score for Objectives, Raw Score for Competencies
-      const rawScore = h?.actual ?? 0;
-      const weightedScore = activeTab === 'obj'
-        ? (rawScore * maxScore) / 100
-        : rawScore;
+      // Determine Relevant Hitos for this point in time (Cumulative Evolution)
+      let rawScore = 0;
+      let weightedScore = 0;
+
+      if (activeTab === 'obj') {
+        const limitByPeriod = getPeriodMonth(p);
+        const relevantHitos = item.hitos?.filter(h => getPeriodMonth(h.periodo) <= limitByPeriod) || [];
+
+        if (relevantHitos.length > 0) {
+          // Calculate status AS OF this period
+          const prog = calculateObjectiveProgress(item, relevantHitos);
+
+          // For display, we want the Weighted Score (Contribution to Global)
+          // maxScore is item.peso
+          weightedScore = calculateWeightedScore(prog, item.peso || 0);
+
+          // Raw Score is the % achievement (0-100+)
+          rawScore = prog;
+        }
+      } else {
+        // Competencies: Keep per-period or implement running average?
+        // Defaulting to "Per Period" raw value for now as it's more standard for competencies
+        // But to be safe vs "Evolution", a running average might be better?
+        // Let's keep it simple: Per period value (Raw).
+        // If the user wants Evolution of Average, we'd need running avg.
+        // Current behavior was: find hito for p.
+        const h = item.hitos?.find(h => {
+          if (!h.periodo) return false;
+          if (h.periodo === p) return true;
+          if (h.periodo.endsWith(p)) return true;
+          if (p === "FINAL" && (h.periodo.endsWith("Q4") || h.periodo.endsWith("A1"))) return true;
+          return false;
+        });
+        rawScore = h?.actual ?? 0;
+        weightedScore = rawScore; // Competencies don't scale by weight in the chart usually (0-100 scale)
+      }
+
+      // If NOT visible, show 0? Or show partial if we want?
+      // User requirement: "no me carga el resultado" implies visibility check.
 
       return {
         name: p,
         score: isVisible ? weightedScore : 0,
-        rawScore: isVisible ? rawScore : 0, // Keep raw for tooltip if needed
+        rawScore: isVisible ? rawScore : 0,
         meta: maxScore,
         isCurrent: isSelected,
         isVisible
@@ -876,7 +913,12 @@ export default function MiDesempeno() {
             <div>
               <h4 className="font-bold text-slate-800 flex items-center gap-2 text-base">
                 <Calendar className="w-5 h-5 text-blue-600" />
-                Detalle {displayPeriod}
+                <span>
+                  Detalle {displayPeriod}
+                  {isMonthly && selectedFeedback?.periodo && selectedFeedback.periodo !== displayPeriod && (
+                    <span className="text-sm font-normal text-slate-400 ml-2">({selectedFeedback.periodo})</span>
+                  )}
+                </span>
               </h4>
               <div className="text-xs text-slate-500 mt-1">Desglose de objetivos y resultados</div>
             </div>
@@ -895,14 +937,35 @@ export default function MiDesempeno() {
 
           {/* Metas List (Polished) */}
           <div className="space-y-4">
-            {activeTab === 'obj' && displayHito?.metas?.length > 0 ? (
-              displayHito.metas.map((meta, idx) => {
-                const metaDef = item.metas?.find(m => m._id === (meta.metaId || meta._id)) || item.metas?.[idx];
+            {activeTab === 'obj' && item.metas?.length > 0 ? (
+              item.metas.map((metaDef, idx) => {
+                // Try to find the result in the displayHito
+                const metaResult = displayHito?.metas?.find(m => (m.metaId === metaDef._id || m._id === metaDef._id || m.nombre === metaDef.nombre));
+
+                // Fallback to metaDef info if result not found
                 const isAcumulativo = metaDef?.modoAcumulacion === "acumulativo";
-                const valorEvaluado = isAcumulativo
-                  ? getAccumulatedValue(item, metaDef?._id, displayPeriod, meta.resultado)
-                  : meta.resultado;
-                const target = meta.esperado ?? metaDef?.target ?? 0;
+
+                let valorEvaluado = metaResult?.resultado;
+
+                // Calculate Cumulative if needed and not present
+                if (isAcumulativo) {
+                  const periodOrder = ["Q1", "Q2", "Q3", "FINAL"];
+                  const currentIdx = periodOrder.indexOf(displayPeriod);
+
+                  if (currentIdx !== -1) {
+                    // Sum matches from item.hitos up to current period
+                    valorEvaluado = item.hitos?.reduce((acc, h) => {
+                      const hIdx = periodOrder.indexOf(h.periodo);
+                      if (hIdx !== -1 && hIdx <= currentIdx) {
+                        // Find same meta in this hito
+                        const m = h.metas?.find(m => (m.metaId === metaDef._id || m._id === metaDef._id || m.nombre === metaDef.nombre));
+                        return acc + Number(m?.resultado || 0);
+                      }
+                      return acc;
+                    }, 0);
+                  }
+                }
+                const target = metaResult?.esperado ?? metaDef?.target ?? 0;
                 const rawCompliance = target > 0 ? (valorEvaluado / target) * 100 : 0;
                 const clampedCompliance = Math.min(Math.max(rawCompliance, 0), 100);
 
@@ -911,12 +974,12 @@ export default function MiDesempeno() {
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex-1 min-w-0 pr-6">
                         <div className="flex items-center gap-2 mb-1.5">
-                          <span className="text-sm font-bold text-slate-700 truncate">{metaDef?.nombre || meta.nombre}</span>
+                          <span className="text-sm font-bold text-slate-700 truncate">{metaDef?.nombre}</span>
                           <Badge variant="outline" className="text-[9px] h-5 px-1.5 bg-white text-slate-500 border-slate-200">
                             Peso: {metaDef?.peso ?? 0}%
                           </Badge>
                           <span className="text-[9px] bg-indigo-50 border border-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-medium">
-                            {getCierreLabel(metaDef || meta)}
+                            {getCierreLabel(metaDef)}
                           </span>
                         </div>
                         <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -984,14 +1047,20 @@ export default function MiDesempeno() {
                       <div className="flex items-center gap-2 overflow-x-auto pb-1 mt-3 no-scrollbar">
                         {(() => {
                           const currentPeriodMonth = getPeriodMonth(displayPeriod);
+
+                          // Determine Quarter Range for the current display period
+                          // 1-3 (Q1), 4-6 (Q2), 7-9 (Q3), 10-12 (Final)
+                          // Show ALL history up to the FEEDBACK period (limit context), regardless of which one is clicked
+                          const feedbackLimitMonth = getPeriodMonth(selectedFeedback.periodo);
                           const historyHitos = item.hitos
-                            ?.filter(h => getPeriodMonth(h.periodo) <= currentPeriodMonth)
+                            ?.filter(h => getPeriodMonth(h.periodo) <= feedbackLimitMonth)
                             .sort((a, b) => getPeriodMonth(a.periodo) - getPeriodMonth(b.periodo)) || [];
 
                           if (historyHitos.length === 0) return null;
 
                           return historyHitos.map((h, hIdx) => {
-                            const hMeta = h.metas?.find(m => m.metaId === (metaDef?._id || meta.metaId) || m._id === (meta.metaId || meta._id));
+                            // Correctly link meta result in history
+                            const hMeta = h.metas?.find(m => m.metaId === metaDef?._id || m._id === metaDef?._id || m.nombre === metaDef?.nombre);
                             const hVal = hMeta?.resultado;
                             const isCurrentH = h.periodo === displayPeriod;
 
@@ -999,7 +1068,11 @@ export default function MiDesempeno() {
                             const displayVal = hVal !== undefined && hVal !== null ? hVal : "-";
 
                             return (
-                              <div key={hIdx} className={`flex flex-col items-center justify-center px-2.5 py-1.5 rounded-lg border min-w-[3.5rem] transition-colors ${isCurrentH ? 'bg-blue-50 border-blue-200 shadow-sm' : 'bg-white border-slate-100'}`}>
+                              <div
+                                key={hIdx}
+                                onClick={() => setViewPeriod(h.periodo)}
+                                className={`flex flex-col items-center justify-center px-2.5 py-1.5 rounded-lg border min-w-[3.5rem] transition-colors cursor-pointer hover:bg-slate-50 ${isCurrentH ? 'bg-blue-50 border-blue-200 shadow-sm' : 'bg-white border-slate-100'}`}
+                              >
                                 <span className={`text-[9px] font-bold uppercase tracking-wider mb-0.5 ${isCurrentH ? 'text-blue-600' : 'text-slate-400'}`}>
                                   {h.periodo}
                                 </span>
