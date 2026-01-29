@@ -38,7 +38,7 @@ const FeedbackSchema = new mongoose.Schema(
 
         // Aprobación del empleado
         empleadoAck: {
-            estado: { type: String, enum: ["ACK", "CONTEST", null], default: null },
+            estado: { type: String, enum: ["ACK", "CONTEST", "SYSTEM_CLOSED", null], default: null },
             fecha: { type: Date },
         },
 

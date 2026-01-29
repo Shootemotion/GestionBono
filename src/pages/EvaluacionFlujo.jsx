@@ -33,7 +33,9 @@ import {
   Megaphone,
   History
 } from "lucide-react";
-import { calculateObjectiveProgress, calculateWeightedScore, calculateGlobalScore } from "@/utils/calculos";
+import { calculateObjectiveProgress, calculateWeightedScore, calculateGlobalScore, calculateMetaScore, calculatePeriodCompliance } from "@/utils/calculos";
+
+import { ReferenceRulesDialog } from "@/components/ReferenceRulesDialog";
 import { ReporteFinal } from "@/components/ReporteFinal";
 
 /* ===================== Constantes y helpers ===================== */
@@ -46,6 +48,222 @@ const ESTADOS = [
 ];
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+// Helper to check if we are in "Annual Closure" mode (Regla de Cierre)
+const isAnnualClosureMode = (obj) => {
+  return obj.reglaCierre === "acumulado" || obj.reglaCierre === "promedio" || obj.reglaCierre === "ultimo_mes";
+};
+
+// Helper to calculate "Running Score" for display
+const getRunningScore = (obj, currentHito) => {
+  if (!obj?.hitos || obj.hitos.length === 0) return { value: 0, label: "Sin datos" };
+
+  // --- 1. DETECT RULE & CONFIG ---
+  let rule = obj.reglaCierre;
+  let thresholdMin = 0;
+  let isAccumulativeMeta = false;
+
+  // Check top-level config first (Priority)
+  if (obj.umbralPeriodos) thresholdMin = Number(obj.umbralPeriodos);
+  if (obj.config?.umbral) thresholdMin = Number(obj.config.umbral);
+
+  // Inspect Metas for "Mode" flags if not explicit on Objective
+  if (obj.metas && obj.metas.length > 0) {
+    const meta = obj.metas[0]; // Assuming homogeneous metas for closing rule
+
+    // Fallback Rule Detection
+    if (!rule) rule = meta.reglaCierre;
+
+    // Detect Threshold Config
+    if (meta.config?.umbral) thresholdMin = Number(meta.config.umbral);
+    if (meta.umbralPeriodos) thresholdMin = Number(meta.umbralPeriodos);
+    if (meta.umbral) thresholdMin = Number(meta.umbral);
+
+    // Detect Accumulation Flag (Check multiple possible keys from different data versions)
+    isAccumulativeMeta =
+      meta.modoAcumulacion === "acumulativo" ||
+      meta.acumulativa === true ||
+      meta.config?.acum === true ||
+      meta.acum === true;
+  }
+
+  // Also check currentHito metas for the accumulation flag (updates in real-time)
+  if (!isAccumulativeMeta && currentHito?.metas) {
+    isAccumulativeMeta = currentHito.metas.some(m => m.modoAcumulacion === "acumulativo" || m.acumulativa);
+  }
+
+  // Force "acumulado" mode if meta flag is present. 
+  // User feedback indicates that if 'acumulativo' checkbox is ticked, it MUST be cumulative, 
+  // regardless of what the main objective rule says (e.g. might be wrongly set to 'ultimo_valor').
+  if (isAccumulativeMeta) {
+    rule = "acumulado";
+  }
+
+  const mode = rule?.toLowerCase() || "promedio";
+
+  // --- 2. GATHER DATA ---
+  // Filter ALL valid hitos (past + current)
+  // We merge the 'localHito' (current editing state) into the list
+  const effectiveHitos = obj.hitos.map(h => {
+    if (h.periodo === currentHito.periodo) {
+      // Use the LIVE values from currentHito
+      // If we need to recalculate the 'actual' score of the hito based on its metas, we should.
+      // But usually 'currentHito.actual' is updated by the parent or is the reference.
+      // For safety, we assume currentHito.actual is the score we want to project.
+      return { ...h, actual: currentHito.actual, cumple: currentHito.actual >= 100 };
+    }
+    return h;
+  }).filter(h => h.actual !== null && h.actual !== undefined);
+
+  if (effectiveHitos.length === 0) return { value: 0, label: "Sin Avance" };
+
+  // --- 3. CALCULATE BASED ON MODE ---
+
+  // MODE: ACCUMULATION
+  if (mode === "acumulado" || mode === "suma") {
+    const total = effectiveHitos.reduce((acc, h) => acc + (Number(h.actual) || 0), 0);
+    return { value: total, label: "Proyección (Acumulado)" };
+  }
+
+  // MODE: THRESHOLD (Umbral)
+  else if (mode === "umbral_periodos" || mode === "umbral") {
+    // Logic: 
+    // - Count HITOS that meet the target (>= 100% or cumple=true)
+    // - If Count >= Threshold -> Return Average of Valid Hitos (as per "Cobra el Promedio Real")
+    // - If Count < Threshold -> Return 0 (as per "Cobra 0%")
+
+    // Estimate compliance:
+    const metCount = effectiveHitos.filter(h => Number(h.actual) >= 100).length;
+
+    // Calculating the "Real Average" of the periods evaluated so far
+    const sum = effectiveHitos.reduce((acc, h) => acc + (Number(h.actual) || 0), 0);
+    const avg = sum / effectiveHitos.length;
+
+    // Display Logic
+    if (thresholdMin > 0) {
+      if (metCount >= thresholdMin) {
+        return { value: avg, label: `Promedio (Umbral ${metCount}/${thresholdMin} OK)` };
+      } else {
+        // Fallback: Check if Effort is Recognized (Sync with Backend Logic)
+        // Backend: total > 0 ? (cumplidos / total) * 100 : 0
+        // We need to check if ANY meta has effort enabled.
+        const metaWithEffort = obj.metas?.find(m => m.reconoceEsfuerzo);
+
+        if ((rule === "umbral_periodos" || obj.reglaCierre === "umbral_periodos") && metaWithEffort) {
+          const denom = thresholdMin > 0 ? thresholdMin : (effectiveHitos.length || 1);
+          const effortScore = (metCount / denom) * 100;
+          return {
+            value: effortScore,
+            label: (
+              <div className="flex flex-col items-start gap-1">
+                <span>Umbral Pendiente ({metCount}/{thresholdMin} OK)</span>
+                <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-700 text-[10px] font-bold border border-amber-200 tracking-tight">
+                  RECONOCE ESFUERZO
+                </span>
+              </div>
+            ),
+            isPendingThreshold: true
+          };
+        }
+
+        // Strict 0 if no effort recognition
+        return {
+          value: 0,
+          label: `Umbral Pendiente (${metCount}/${thresholdMin} OK)`,
+          isPendingThreshold: true
+        };
+      }
+    } else {
+      // Calculate Score % separately for the label
+      // avg is currently calculating SUM(values) / COUNT. This is VALUE average. 
+      // Wait, let's check line 140: const sum = effectiveHitos.reduce((acc, h) => acc + (Number(h.actual) || 0), 0);
+      // h.actual is usually the Percentage Score (0-100+) from the backend? 
+      // OR is it the raw value? 
+      // In the backend, `h.actual` is usually the *Score*. 
+      // IF `h.actual` IS SCORE, then `avg` IS SCORE (96.5%).
+      // Where does 14.5 come from? 
+      // Ah, the user said Q1=15, Q2=14. These are seemingly RAW VALUES.
+      // If `h.actual` holds the raw value, then `avg` = 14.5.
+      // BUT if `h.actual` holds the raw value, then the previous 97% display meant `avg` was 97.
+      // So `h.actual` MUST be the Score.
+      // If `h.actual` is the score, then I CANNOT derive 14.5 from it easily unless I access `h.metas` raw values.
+
+      // Let's look at `effectiveHitos`. They are generated from `getSmartHitoStatus`?
+      // No, `getRunningScore` uses `obj.hitos`.
+      // `obj.hitos` has `actual` (Score?) and `metas` (Raw Values).
+
+      // I need to calculate the Average RAW VALUE from the metas.
+      // Assuming single meta per objective for this simplified view?
+      // Or iterating all metas?
+      // Let's try to extract the raw value from the first meta of each hito (common case).
+
+      const rawValues = effectiveHitos.map(h => {
+        // Find the meta corresponding to the main objective definition
+        // But `obj.metas` is the definition. `h.metas` are the results.
+        // Let's assume the first meta in the result list is the main one.
+        return h.metas?.[0]?.resultado ?? 0;
+      });
+      const sumRaw = rawValues.reduce((a, b) => a + Number(b), 0);
+      const avgRaw = rawValues.length ? sumRaw / rawValues.length : 0;
+
+      // If avg is indeed score (97), then I use avgRaw (14.5) for the big number.
+
+      return {
+        value: avgRaw, // MAIN NUMBER = RAW VALUE
+        isValue: true,
+        decimals: 1, // Show 1 decimal (14.5)
+        label: (
+          <div className="flex flex-col items-start gap-1">
+            <span>Promedio Parcial (Score: {Math.round(avg)}%)</span>
+            {metaWithEffort && (
+              <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-700 text-[10px] font-bold border border-amber-200 tracking-tight">
+                RECONOCE ESFUERZO
+              </span>
+            )}
+          </div>
+        )
+      };
+
+    }
+  }
+
+  // MODE: LAST VALUE
+  else if (mode === "ultimo_valor" || mode === "ultimo_mes" || mode === "cierre_unico") {
+    // Sort by period
+    const sorted = [...effectiveHitos].sort((a, b) => a.periodo.localeCompare(b.periodo));
+    const last = sorted[sorted.length - 1];
+    return { value: last.actual || 0, label: "Último Valor" };
+  }
+
+  // MODE: AVERAGE (Default)
+  // Average of all actuals
+  // Calculate Score (Percentage)
+  const sum = effectiveHitos.reduce((acc, h) => acc + (Number(h.actual) || 0), 0);
+  const avgScore = effectiveHitos.length ? sum / effectiveHitos.length : 0;
+
+  // Calculate Raw Value (for display "14.5")
+  // We assume the first meta result is the primary one for the objective display
+  const sumRaw = effectiveHitos.reduce((acc, h) => acc + (Number(h.metas?.[0]?.resultado) || 0), 0);
+  const avgRaw = effectiveHitos.length ? sumRaw / effectiveHitos.length : 0;
+
+  const metaWithEffort = obj.metas?.find(m => m.reconoceEsfuerzo);
+
+  return {
+    value: avgRaw, // Show 14.5
+    isValue: true,
+    decimals: 1,
+    label: (
+      <div className="flex flex-col items-start gap-1">
+        <span>Promedio Parcial (Score: {Math.round(avgScore)}%)</span>
+        {metaWithEffort && (
+          <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-700 text-[10px] font-bold border border-amber-200 tracking-tight">
+            RECONOCE ESFUERZO
+          </span>
+        )}
+      </div>
+    )
+  };
+};
 
 const ProgressBar = ({ value = 0 }) => (
   <div className="w-full h-2.5 rounded-full bg-slate-200/80 overflow-hidden">
@@ -137,15 +355,20 @@ function buildResumenEmpleado(data) {
     let p_weightedScoreObj = 0;
 
     objetivos.forEach(o => {
+      // Find hito for this period
       const hito = o.hitos?.find(h => h.periodo === periodo);
       const peso = Number(o.peso || 0);
-      const progreso = Number(hito?.actual ?? 0); // If null/future, counts as 0 for "Snapshot" logic, but let's be strict:
-      // If hito doesn't exist or has no 'actual', it is 0.
+
+      // Calculate PROPER score for this hito using the helper
+      // This will respect reconoceEsfuerzo, tolerancia, permiteOver from the meta definitions
+      // We create a temporary objective object with only this hito to use the helper
+      const scoreRaw = calculateObjectiveProgress(o, [hito].filter(Boolean));
+
       p_totalPesoObj += peso;
-      p_weightedScoreObj += (progreso * peso);
+      p_weightedScoreObj += calculateWeightedScore(scoreRaw, peso, o);
     });
 
-    const p_scoreObj = p_totalPesoObj > 0 ? (p_weightedScoreObj / 100) : 0; // Assuming normalized weights sum to 100
+    const p_scoreObj = p_totalPesoObj > 0 ? p_weightedScoreObj : 0; // weightedScore already normalized to contribution
 
 
 
@@ -493,6 +716,14 @@ export default function EvaluacionFlujo() {
   const [showFinalReport, setShowFinalReport] = useState(false);
   const [showDebugDialog, setShowDebugDialog] = useState(false);
 
+  const puedeEditarObjetivo = (obj, localHito) => {
+    if (isTestingMode) return true;
+    if (savingItems[obj._id]) return false;
+    if (!localHito) return false;
+    if (localHito.estado === "PENDING_HR" || localHito.estado === "CERRADO") return false;
+    return true;
+  };
+
   const handleDeleteEvaluacion = async (item, periodo) => {
     if (!confirm(`[MODO ADMIN] ¿Borrar la evaluación de ${periodo}? Esto es irreversible.`)) return;
     try {
@@ -588,7 +819,7 @@ export default function EvaluacionFlujo() {
     })();
   }, [selectedEmpleadoId, empleadoInfo, esReferente, esDirector, esSuperAdmin, esVisor, user, navigate]);
 
-  // Cargar Dashboard
+  // Cargar Dashboard + Hydrate Templates
   useEffect(() => {
     (async () => {
       if (!selectedEmpleadoId) return;
@@ -599,6 +830,84 @@ export default function EvaluacionFlujo() {
           const normalized = { ...res };
           if (normalized.objetivos?.items && !Array.isArray(normalized.objetivos)) normalized.objetivos = normalized.objetivos.items;
           if (normalized.aptitudes?.items && !Array.isArray(normalized.aptitudes)) normalized.aptitudes = normalized.aptitudes.items;
+
+          // --- HYDRATION STEP: Fetch fresh templates to fix stale snapshots ---
+          if (normalized.objetivos && normalized.objetivos.length > 0) {
+            try {
+              // 1. Collect IDs
+              const ids = normalized.objetivos.map(o => o._id).filter(Boolean);
+
+              // 2. Fetch all fresh templates
+              // We use Promise.all for now. If too many, we might need a bulk endpoint, but 10-20 is fine.
+              const freshTemplates = await Promise.all(
+                ids.map(id => api(`/templates/${id}`).catch(() => null))
+              );
+
+              const freshMap = new Map();
+              freshTemplates.forEach(t => {
+                if (t && t._id) freshMap.set(String(t._id), t);
+              });
+
+              // 3. Merge fresh meta config into dashboard objectives
+              normalized.objetivos = normalized.objetivos.map(obj => {
+                const fresh = freshMap.get(String(obj._id));
+                if (!fresh) return obj;
+
+                // We want to keep the assigned hitos/results, but UPDATE the definition (Metas config)
+                // BUT we must be careful to match metas by ID or Name.
+                if (!fresh.metas || fresh.metas.length === 0) return obj;
+
+                // FIX: If obj.metas is missing (flatter structure or old snapshot), 
+                // fill it with fresh metas defaults so we don't fall back to Legacy Calculation
+                let baseMetasDefinitions = obj.metas || [];
+                if (baseMetasDefinitions.length === 0 && fresh.metas.length > 0) {
+                  baseMetasDefinitions = fresh.metas.map(m => ({
+                    ...m,
+                    metaId: m.metaId || m._id
+                  }));
+                }
+
+                if (baseMetasDefinitions.length === 0) return obj;
+
+                const mergedMetas = baseMetasDefinitions.map(currentMeta => {
+                  // Find corresponding fresh meta definition
+                  const freshMeta = fresh.metas.find(fm =>
+                    String(fm.metaId || fm._id) === String(currentMeta.metaId || currentMeta._id) ||
+                    fm.nombre === currentMeta.nombre // Fallback
+                  );
+
+                  if (freshMeta) {
+                    return {
+                      ...currentMeta,
+                      // Override CONFIG fields only
+                      reconoceEsfuerzo: freshMeta.reconoceEsfuerzo,
+                      permiteOver: freshMeta.permiteOver,
+                      // toleranca: freshMeta.tolerancia, // Optional
+                      reglaCierre: freshMeta.reglaCierre,
+                      unidad: freshMeta.unidad,
+                      operador: freshMeta.operador,
+                      target: freshMeta.esperado ?? freshMeta.target // Ensure target is synced too? dangerous if custom
+                    };
+                  }
+                  return currentMeta;
+                });
+
+                // Recalculate Objective Progress using the strict rules
+                // We use calculateObjectiveProgress from existing imports
+                const strictProgress = calculateObjectiveProgress({ ...obj, metas: mergedMetas }, obj.hitos);
+
+                return {
+                  ...obj,
+                  metas: mergedMetas,
+                  progreso: strictProgress // Override raw progress
+                };
+              });
+
+            } catch (err) {
+              console.warn("Hydration failed, using snapshots", err);
+            }
+          }
+
           setDashEmpleadoData(normalized);
         }
       } catch (e) {
@@ -631,11 +940,15 @@ export default function EvaluacionFlujo() {
     try {
       setSavingItems(prev => ({ ...prev, [item._id]: true })); // Show loading state
 
-      // 1. Traer plantilla full para asegurar metas
+      // 1. Traer plantilla full para asegurar metas y CONFIGURACIÓN (reconoceEsfuerzo, etc)
       let plantillaFull = item;
-      if (!item.metas || item.metas.length === 0) {
+      const metaSample = item.metas?.[0];
+      const seemsIncomplete = metaSample && metaSample.reconoceEsfuerzo === undefined;
+
+      if (!item.metas || item.metas.length === 0 || seemsIncomplete) {
         try {
           plantillaFull = await api(`/templates/${item._id}`);
+          if (!plantillaFull) plantillaFull = item; // Fallback
         } catch (e) { console.error("Error loading template full", e); }
       }
 
@@ -740,7 +1053,11 @@ export default function EvaluacionFlujo() {
     setExpandedItems(prev => ({ ...prev, [item._id]: !isExpanded }));
 
     if (!isExpanded && !evaluacionData[item._id]) {
-      const p = periodoGlobal || item.hitos?.[0]?.periodo;
+      // 🔹 Fix: Ensure the Global Period exists in this Objective's Hitos (Timeline)
+      // If not (e.g. Global is Q1 but Obj is Semestral S1), fall back to first hito.
+      const hasGlobal = item.hitos?.some(h => h.periodo === periodoGlobal);
+      const p = hasGlobal ? periodoGlobal : item.hitos?.[0]?.periodo;
+
       if (p) loadItemEvaluacion(item, p);
     }
   };
@@ -1037,6 +1354,10 @@ export default function EvaluacionFlujo() {
             {/* GLOBAL & OPTIONS */}
             <div className="flex items-center gap-4">
 
+
+              {/* HELP GUIDE */}
+              <ReferenceRulesDialog />
+
               {/* TESTING MODE TOGGLE (Only Directors) */}
               {esDirector && (
                 <div className="flex items-center gap-2">
@@ -1158,14 +1479,36 @@ export default function EvaluacionFlujo() {
                       </CardHeader>
 
                       {isExpanded && (
-                        <CardContent className="p-0 border-t border-slate-100">
-                          {/* SECTION 1: TIMELINE */}
+
+                        <CardContent className="p-0 border-t border-slate-200 bg-white">
+
+                          {/* 1. HEADER: Context & Description */}
+                          <div className="px-6 py-5 border-b border-slate-100 bg-white">
+                            <div className="flex items-start gap-4">
+                              <div className="mt-1 p-2 bg-blue-50/50 rounded-lg text-blue-600">
+                                <Lightbulb className="w-5 h-5" />
+                              </div>
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1.5">
+                                  <h4 className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">Descripción del Objetivo</h4>
+                                  {obj.frecuencia && (
+                                    <Badge variant="outline" className="bg-slate-50 text-slate-500 border-slate-200 text-[9px] uppercase tracking-wide px-2 py-0">
+                                      {obj.frecuencia}
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="text-xs text-slate-600 leading-relaxed font-medium max-w-4xl">
+                                  {obj.descripcion || "Sin descripción definida."}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 2. TIMELINE STRIP */}
                           {obj.hitos && obj.hitos.length > 0 && (
-                            <div className="bg-slate-50 border-b-4 border-slate-100/50 p-5">
-                              <label className="text-[9px] text-slate-400 font-bold uppercase mb-3 block tracking-wide flex items-center gap-1">
-                                <Calendar className="w-3 h-3" /> Cronograma
-                              </label>
-                              <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar mask-gradient-r">
+                            <div className="bg-slate-50/80 border-b border-slate-200 px-6 py-3 flex flex-col items-center">
+                              <div className="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-2 w-full text-center">Cronograma de Hitos</div>
+                              <div className="flex items-center justify-center gap-2 flex-wrap w-full max-w-4xl">
                                 {obj.hitos.map((h) => {
                                   const status = getSmartHitoStatus(h);
                                   const colorClass = getHitoColorClass(status);
@@ -1177,246 +1520,266 @@ export default function EvaluacionFlujo() {
                                     <div
                                       key={h.periodo}
                                       onClick={() => (isSelectable || (isTestingMode && puedeVer)) && !savingItems[obj._id] && loadItemEvaluacion(obj, h.periodo)}
-                                      className={`flex flex-col items-center justify-center py-1.5 px-3 min-w-[42px] shrink-0 rounded border transition-all duration-200 relative ${colorClass} 
-                                      ${isSelected ? 'ring-1 ring-blue-400 shadow-sm scale-105 z-10' : ''} 
-                                      ${(isSelectable || (isTestingMode && puedeVer)) && !savingItems[obj._id] ? 'cursor-pointer hover:shadow-sm hover:-translate-y-0.5' : 'opacity-40 grayscale cursor-not-allowed'}
-                                      ${isLoading && isSelected ? 'animate-pulse' : ''}`}
+                                      className={`flex flex-col items-center justify-center h-9 w-12 rounded border transition-all duration-200 cursor-pointer select-none
+                                            ${colorClass} 
+                                            ${isSelected ? 'ring-2 ring-blue-500 ring-offset-1 shadow-sm font-bold scale-110 z-10' : 'opacity-70 hover:opacity-100 hover:scale-105'} 
+                                            ${(isSelectable || (isTestingMode && puedeVer)) ? '' : 'cursor-not-allowed opacity-30 grayscale'}
+                                            ${isLoading && isSelected ? 'animate-pulse' : ''}`}
                                     >
-                                      <span className="text-[8px] font-black uppercase tracking-tight leading-none mb-0.5">{h.periodo}</span>
-                                      <span className="text-[10px] font-bold leading-none">{h.actual !== null ? `${Math.round(h.actual)}%` : "-"}</span>
+                                      <span className="text-[8px] font-black uppercase leading-none mb-0.5">{h.periodo}</span>
+                                      <span className="text-[9px] font-bold leading-none">{h.actual !== null ? `${Math.round(h.actual)}%` : "-"}</span>
                                     </div>
                                   );
                                 })}
                               </div>
-
-                              {/* CENTRALLY ALIGNED LEGEND */}
-                              <div className="flex items-center justify-center gap-4 mt-3 pt-2 border-t border-slate-200/50 w-full opacity-80">
-                                <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-emerald-100 border border-emerald-300"></div><span className="text-[9px] text-slate-500 font-medium">Evaluado</span></div>
-                                <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-100 border border-amber-300"></div><span className="text-[9px] text-slate-500 font-medium">Por Vencer</span></div>
-                                <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-rose-100 border border-rose-300"></div><span className="text-[9px] text-slate-500 font-medium">Vencido</span></div>
-                                <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-50 border border-blue-200"></div><span className="text-[9px] text-slate-500 font-medium">Futuro</span></div>
-                              </div>
                             </div>
                           )}
 
+                          {/* 3. MAIN LEDGER & FOOTER */}
                           {localHito ? (
-                            <div className="animate-in fade-in duration-300">
-                              {/* SECTION 2: CONTEXT (Header + Score) */}
-                              <div className="p-5 border-b-4 border-slate-100/50 bg-white">
-                                <div className="flex flex-col sm:flex-row gap-6">
-                                  {/* Left: Description & Meta Data */}
-                                  <div className="flex-1 space-y-3">
-                                    <div className="flex items-center gap-2">
-                                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[9px] px-2 uppercase tracking-wide">
-                                        {obj.frecuencia || "Objetivo"}
-                                      </Badge>
-                                      {obj.proceso && (
-                                        <Badge variant="secondary" className="bg-slate-100 text-slate-500 border-slate-200 text-[9px] px-2 font-medium">
-                                          {obj.proceso}
-                                        </Badge>
-                                      )}
-                                      <span className="text-xs font-bold text-slate-700">{localHito.periodo}</span>
-                                    </div>
+                            <div className="animate-in fade-in slide-in-from-top-2 duration-300">
 
-                                    <div className="text-sm text-slate-600 leading-relaxed border-l-2 border-slate-200 pl-3">
-                                      {obj.descripcion || <span className="italic text-slate-400">Sin descripción</span>}
-                                    </div>
+                              {/* LEDGER TABLE */}
+                              <div className="px-6 mb-8 mt-8">
+                                <div className="bg-slate-100 rounded-xl p-5 border border-slate-200">
+                                  <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                                      <Target className="w-4 h-4 text-blue-500" /> Metas y Resultados <span className="text-slate-400 font-normal">| {localHito.periodo}</span>
+                                    </h3>
                                   </div>
 
-                                  {/* Right: Score Box */}
-                                  <div className="shrink-0 flex items-center justify-center">
-                                    <div className={`flex flex-col items-center justify-center w-28 h-20 rounded-xl border-2 ${isTestingMode ? 'bg-indigo-50 border-indigo-100' : 'bg-slate-50 border-slate-100'}`}>
-                                      <span className="text-[9px] font-bold uppercase text-slate-400 tracking-wider">Score Hito</span>
-                                      <span className={`text-2xl font-black ${Number(localHito.actual) >= 100 ? "text-emerald-500" : "text-slate-800"}`}>
-                                        {Number(localHito.actual).toFixed(1)}%
-                                      </span>
-                                    </div>
+                                  <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm ring-1 ring-slate-100 bg-white">
+                                    <table className="w-full text-sm text-left">
+                                      <thead className="bg-slate-50/50 text-slate-500 font-semibold text-[10px] uppercase tracking-wider border-b border-slate-200">
+                                        <tr>
+                                          <th className="px-6 py-3 w-[45%]">Variable / Meta</th>
+                                          <th className="px-6 py-3 w-[20%]">Condiciones</th>
+                                          <th className="px-6 py-3 text-right w-[15%]">Objetivo</th>
+                                          <th className="px-6 py-3 text-right w-[20%]">Resultado</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100 bg-white">
+                                        {localHito.metas.map((meta, idx) => {
+                                          const isAcumulativo = meta.modoAcumulacion === "acumulativo";
+                                          const valorEvaluado = isAcumulativo
+                                            ? getAccumulatedValue(obj, meta.metaId || meta._id, localHito.periodo, meta.resultado)
+                                            : meta.resultado;
+                                          const cumple = evaluarCumple(valorEvaluado, meta.esperado, meta.operador, meta.unidad);
+
+                                          return (
+                                            <tr key={idx} className="group hover:bg-slate-50 transition-colors">
+                                              {/* Meta Name */}
+                                              <td className="px-6 py-4 align-top">
+                                                <div className="font-bold text-slate-700 text-sm leading-tight">{meta.nombre}</div>
+                                                <div className="text-[11px] text-slate-400 font-medium mt-1">{meta.unidad}</div>
+                                              </td>
+
+                                              {/* Rules */}
+                                              <td className="px-6 py-4 align-top">
+                                                <div className="grid grid-cols-2 gap-2">
+                                                  {/* Closing Rule Badge */}
+                                                  <div className="col-span-2">
+                                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200 uppercase tracking-tight w-fit">
+                                                      {(meta.reglaCierre || obj.reglaCierre || "Promedio").replace("_", " ")}
+                                                      {(meta.reglaCierre === "umbral_periodos" || obj.reglaCierre === "umbral_periodos") && (
+                                                        <span className="ml-1 text-slate-400">
+                                                          {`> ${meta.umbralPeriodos || obj.umbralPeriodos || meta.config?.umbral || "?"}`}
+                                                        </span>
+                                                      )}
+                                                    </span>
+                                                  </div>
+
+                                                  {isAcumulativo && (
+                                                    <span className="inline-flex justify-center items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-100 text-center">
+                                                      ACUM
+                                                    </span>
+                                                  )}
+                                                  {meta.reconoceEsfuerzo && (
+                                                    <span className="inline-flex justify-center items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-100 text-center">
+                                                      ESFUERZO
+                                                    </span>
+                                                  )}
+                                                  {meta.permiteOver && (
+                                                    <span className="inline-flex justify-center items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 text-center">
+                                                      OVER
+                                                    </span>
+                                                  )}
+                                                  {meta.pesoMeta && meta.pesoMeta < 100 && (
+                                                    <span className="col-span-2 text-[10px] text-slate-400 font-mono">Peso: {meta.pesoMeta}%</span>
+                                                  )}
+                                                </div>
+                                              </td>
+
+                                              {/* Target */}
+                                              <td className="px-6 py-4 align-top text-right">
+                                                <div className="inline-block px-2 py-1 bg-slate-100 rounded text-xs font-mono font-bold text-slate-600">
+                                                  {meta.operador} {Number(meta.esperado).toLocaleString()}
+                                                </div>
+                                              </td>
+
+                                              {/* Input Area */}
+                                              <td className="px-6 py-3 align-middle text-right bg-slate-50/20">
+                                                <div className="flex items-center justify-end gap-3">
+                                                  {meta.unidad === "Cumple/No Cumple" ? (
+                                                    <label className={`flex items-center justify-end gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all border ${meta.resultado ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
+                                                      <span className={`text-[10px] font-bold uppercase ${meta.resultado ? 'text-emerald-700' : 'text-slate-400'}`}>
+                                                        {meta.resultado ? "SÍ" : "NO"}
+                                                      </span>
+                                                      <input
+                                                        type="checkbox"
+                                                        className="h-4 w-4 rounded text-emerald-600 focus:ring-emerald-500 border-gray-300"
+                                                        checked={!!meta.resultado}
+                                                        onChange={(e) => {
+                                                          const val = e.target.checked;
+                                                          handleUpdateLocalHito(obj._id, (prev) => {
+                                                            const metas = [...prev.metas];
+                                                            metas[idx] = { ...metas[idx], resultado: val, cumple: val };
+                                                            return { ...prev, metas };
+                                                          });
+                                                        }}
+                                                      />
+                                                    </label>
+                                                  ) : (
+                                                    <div className="relative">
+                                                      <div className="flex items-center gap-2">
+                                                        <Input
+                                                          type="number"
+                                                          className={`h-10 w-28 text-base font-bold bg-white text-right pr-3 shadow-sm transition-all
+                                                                    ${cumple ? 'border-emerald-300 text-emerald-700 ring-2 ring-emerald-50' : 'border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100'}
+                                                                    ${valorEvaluado !== null && !cumple ? 'border-amber-300 text-amber-700' : ''}
+                                                                  `}
+                                                          placeholder="-"
+                                                          disabled={!puedeEditarObjetivo(obj, localHito)}
+                                                          value={meta.resultado ?? ""}
+                                                          onChange={(e) => {
+                                                            const val = e.target.value === "" ? null : Number(e.target.value);
+                                                            handleUpdateLocalHito(obj._id, (prev) => ({
+                                                              ...prev,
+                                                              metas: prev.metas.map((m, i) => i === idx ? { ...m, resultado: val } : m)
+                                                            }));
+                                                          }}
+                                                        />
+                                                        {valorEvaluado !== null && (
+                                                          cumple
+                                                            ? <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                                                            : <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+                                                        )}
+                                                      </div>
+
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
                                   </div>
                                 </div>
                               </div>
 
-                              {/* SECTION 3: METAS */}
-                              <div className="p-5 border-b-4 border-slate-100/50 bg-white">
-                                <div className="mb-4 flex items-center gap-2">
-                                  <Target className="w-3 h-3 text-slate-400" />
-                                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Metas</span>
-                                </div>
-                                <div className="space-y-4">
-                                  {localHito.metas.map((meta, idx) => {
-                                    const isAcumulativo = meta.modoAcumulacion === "acumulativo";
-                                    const valorEvaluado = isAcumulativo
-                                      ? getAccumulatedValue(obj, meta.metaId || meta._id, localHito.periodo, meta.resultado)
-                                      : meta.resultado;
+                              {/* 4. FOOTER: Comments & Actions */}
+                              <div className="bg-slate-100 border-t border-slate-200 p-8">
+                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
 
-                                    const cumple = evaluarCumple(valorEvaluado, meta.esperado, meta.operador, meta.unidad);
+                                  {/* LEFT: Comments (Span 7) */}
+                                  <div className="lg:col-span-7 flex flex-col">
+                                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm focus-within:ring-2 focus-within:ring-blue-500/20 transition-all flex flex-col gap-2">
+                                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                                        Comentarios y Observaciones (Interno)
+                                      </label>
+                                      <textarea
+                                        className="w-full min-h-[100px] border-0 p-0 text-sm focus:ring-0 outline-none resize-none text-slate-700 placeholder:text-slate-300 font-medium"
+                                        placeholder="Escriba aquí sus justificaciones o comentarios sobre el avance..."
+                                        value={localHito.comentario}
+                                        onChange={(e) => handleUpdateLocalHito(obj._id, (prev) => ({ ...prev, comentario: e.target.value }))}
+                                      />
+                                      <div className="text-right border-t border-slate-100 pt-2 mt-auto">
+                                        <span className={`text-[10px] font-bold ${localHito.comentario ? 'text-blue-600' : 'text-slate-300'}`}>
+                                          {localHito.comentario?.length || 0} caracteres
+                                        </span>
+                                      </div>
+                                    </div>
+                                    {data.comentarioManager && (
+                                      <div className="mt-2 bg-blue-50 border border-blue-100 p-3 rounded-lg flex gap-3">
+                                        <div className="mt-0.5"><MessageSquare className="w-4 h-4 text-blue-400" /></div>
+                                        <div>
+                                          <div className="text-[10px] font-bold text-blue-400 uppercase mb-1">Feedback de Manager</div>
+                                          <p className="text-sm text-blue-800 italic">"{data.comentarioManager}"</p>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
 
-                                    return (
-                                      <div key={idx} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm hover:shadow-md transition-shadow duration-200 space-y-3 group">
-                                        <div className="flex justify-between items-start gap-4">
-                                          <div className="flex-1 space-y-1">
-                                            <div className="font-bold text-sm text-slate-800 leading-snug col-span-1 group-hover:text-blue-700 transition-colors">
-                                              {meta.nombre}
-                                            </div>
-
-                                            <div className="flex flex-wrap gap-2 text-[10px] items-center mt-3">
-                                              {/* Target Chip */}
-                                              <div className="flex items-center bg-slate-100 text-slate-700 px-2 py-1 rounded-md border border-slate-200 font-medium">
-                                                <span className="text-slate-400 mr-1.5 uppercase text-[9px] tracking-wider font-bold">Meta:</span>
-                                                <span className="font-mono text-xs">{meta.operador} {meta.esperado} {meta.unidad}</span>
-                                              </div>
-
-                                              {/* Badges Layout */}
-                                              <div className="flex gap-1.5 flex-wrap">
-                                                {/* Peso - MOVED HERE */}
-                                                <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200 font-bold shadow-sm">
-                                                  {meta.pesoMeta || 100}%
-                                                </span>
-
-                                                {/* Tolerancia - MOVED HERE */}
-                                                {meta.tolerancia > 0 && (
-                                                  <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200 font-bold shadow-sm">
-                                                    Tol: {meta.tolerancia}%
-                                                  </span>
-                                                )}
-
-                                                {/* Closure Rule */}
-                                                <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-100 font-semibold shadow-sm">
-                                                  {getCierreLabel(meta)}
-                                                </span>
-
-                                                {/* Accumulative */}
-                                                {isAcumulativo && (
-                                                  <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded border border-purple-100 font-semibold shadow-sm flex items-center gap-1">
-                                                    <RefreshCw className="w-3 h-3" /> Acum.
-                                                  </span>
-                                                )}
-
-                                                {/* Over */}
-                                                {meta.permiteOver && (
-                                                  <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-100 font-semibold shadow-sm">
-                                                    Over
-                                                  </span>
-                                                )}
-                                                {/* Effort Recognition */}
-                                                {meta.reconoceEsfuerzo && (
-                                                  <span className="bg-sky-50 text-sky-700 px-2 py-0.5 rounded border border-sky-100 font-semibold shadow-sm flex items-center gap-1">
-                                                    <Lightbulb className="w-3 h-3" /> Esfuerzo
-                                                  </span>
-                                                )}
-                                              </div>
-                                            </div>
+                                  {/* RIGHT: Score & Actions (Span 5) */}
+                                  <div className="lg:col-span-5 flex flex-col h-full gap-4">
+                                    {/* Score Box */}
+                                    <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between relative overflow-hidden flex-1 min-h-[140px]">
+                                      <div className="flex items-start justify-between z-10">
+                                        <div>
+                                          <div className="text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1">
+                                            Estimación Cierre
                                           </div>
-
-                                          <div className="w-32 min-w-[120px]">
-                                            <label className="text-[9px] uppercase font-bold text-slate-400 mb-1 block">Resultado</label>
-                                            {meta.unidad === "Cumple/No Cumple" ? (
-                                              <label className={`flex items-center gap-2 p-1.5 rounded border-2 cursor-pointer transition-all ${meta.resultado ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-slate-50 hover:border-slate-300'}`}>
-                                                <input
-                                                  type="checkbox"
-                                                  className="h-4 w-4 rounded text-emerald-600 focus:ring-emerald-500 border-gray-300"
-                                                  checked={!!meta.resultado}
-                                                  onChange={(e) => {
-                                                    const val = e.target.checked;
-                                                    handleUpdateLocalHito(obj._id, (prev) => {
-                                                      const metas = [...prev.metas];
-                                                      metas[idx] = { ...metas[idx], resultado: val, cumple: val };
-                                                      return { ...prev, metas };
-                                                    });
-                                                  }}
-                                                />
-                                                <span className={`text-xs font-bold ${meta.resultado ? 'text-emerald-700' : 'text-slate-500'}`}>
-                                                  {meta.resultado ? "Cumple" : "No"}
-                                                </span>
-                                              </label>
-                                            ) : (
-                                              <div className="relative">
-                                                <Input
-                                                  type="number"
-                                                  className={`h-8 pl-2 pr-6 text-sm font-semibold border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all text-slate-700 ${meta.resultado === null || meta.resultado === "" || meta.resultado === undefined ? "bg-yellow-50" : "bg-white"}`}
-                                                  placeholder="0.00"
-                                                  value={meta.resultado ?? ""}
-                                                  onChange={(e) => {
-                                                    const val = e.target.value === "" ? null : Number(e.target.value);
-                                                    handleUpdateLocalHito(obj._id, (prev) => {
-                                                      const metas = [...prev.metas];
-                                                      metas[idx] = { ...metas[idx], resultado: val };
-                                                      return { ...prev, metas };
-                                                    });
-                                                  }}
-                                                />
-                                              </div>
-                                            )}
+                                          <div className="text-sm text-slate-600 font-bold" title={getRunningScore(obj, localHito).label}>
+                                            {getRunningScore(obj, localHito).label}
                                           </div>
                                         </div>
-
-                                        {meta.resultado !== null && (
-                                          <div className={`mt-1 flex items-center gap-2 text-[10px] font-medium px-2 py-1.5 rounded border ${cumple ? 'bg-emerald-50 text-emerald-800 border-emerald-100' : 'bg-rose-50 text-rose-800 border-rose-100'}`}>
-                                            <span className="text-sm">{cumple ? "✔" : "✘"}</span>
-                                            <div className="flex-1">
-                                              {cumple ? "Cumple Obj." : (isAcumulativo ? `Progreso: ${valorEvaluado} / ${meta.esperado}` : "No alcanza")}
-                                              {isAcumulativo && (
-                                                <span className="opacity-80 ml-1">
-                                                  (Acumulado: <b>{valorEvaluado}</b>)
-                                                </span>
-                                              )}
-                                            </div>
-                                          </div>
-                                        )}
+                                        <div className={`text-5xl font-black tracking-tight ${getRunningScore(obj, localHito).isPendingThreshold
+                                          ? "text-amber-500"
+                                          : Number(getRunningScore(obj, localHito).value) >= (getRunningScore(obj, localHito).isCount ? 1 : 100)
+                                            ? "text-emerald-500"
+                                            : "text-slate-700"
+                                          }`}>
+                                          {Number(getRunningScore(obj, localHito).value).toFixed(getRunningScore(obj, localHito).decimals || 0)}
+                                          <span className="text-2xl text-slate-300 ml-0.5">
+                                            {getRunningScore(obj, localHito).isCount || getRunningScore(obj, localHito).isValue ? "" : "%"}
+                                          </span>
+                                        </div>
                                       </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
 
-                              {/* Comentarios y Acciones */}
-                              <div className="p-5 bg-slate-50/50">
-                                <div className="mb-3 flex items-center gap-2">
-                                  <MessageSquare className="w-3 h-3 text-slate-400" />
-                                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Cierre & Feedback</span>
-                                </div>
-                                <div className="space-y-3">
-                                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Comentario</label>
-                                  <textarea
-                                    className={`w-full h-20 rounded border-slate-200 p-2 text-xs focus:ring-2 focus:ring-blue-500/20 outline-none resize-none ${!localHito.comentario ? "bg-yellow-50" : "bg-white"}`}
-                                    placeholder="Justificación..."
-                                    value={localHito.comentario}
-                                    onChange={(e) => handleUpdateLocalHito(obj._id, (prev) => ({ ...prev, comentario: e.target.value }))}
-                                  />
-                                </div>
-                                {data.comentarioManager && (
-                                  <div className="bg-slate-50 p-2 rounded border border-slate-100">
-                                    <label className="text-[9px] font-bold text-slate-400 uppercase mb-0.5 block">Feedback Anterior</label>
-                                    <p className="text-xs text-slate-600 italic line-clamp-2">"{data.comentarioManager}"</p>
+                                      <div className="absolute -bottom-6 -right-6 w-32 h-32 bg-slate-50 rounded-full z-0 opacity-60" />
+                                    </div>
+
+                                    <div className="flex items-center justify-end gap-3 mt-2">
+                                      {isTestingMode && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="text-rose-400 hover:text-rose-600 hover:bg-rose-50"
+                                          onClick={() => handleDeleteEvaluacion(obj, localHito.periodo)}
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </Button>
+                                      )}
+
+                                      <div className="flex items-center gap-2">
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="text-slate-400 hover:text-blue-600 hover:bg-blue-50 text-xs px-2"
+                                          onClick={() => handleRecalculate(obj)}
+                                          disabled={savingItems[obj._id]}
+                                          title="Recalcular puntaje manualmente"
+                                        >
+                                          <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${savingItems[obj._id] ? "animate-spin" : ""}`} /> Recalcular
+                                        </Button>
+                                        <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white min-w-[120px]" onClick={() => handleSaveItem(obj, "draft")} disabled={savingItems[obj._id]}>
+                                          <Save className="w-4 h-4 mr-2" /> Guardar
+                                        </Button>
+                                      </div>
+                                    </div>
                                   </div>
-                                )}
-                                <div className="flex items-center justify-between pt-1">
-                                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleRecalculate(obj)} disabled={savingItems[obj._id]}>
-                                    <RefreshCw className={`w-3 h-3 mr-1 ${savingItems[obj._id] ? "animate-spin" : ""}`} /> Recalcular
-                                  </Button>
-                                  <Button size="sm" className="h-7 text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-200" onClick={() => handleSaveItem(obj, "draft")} disabled={savingItems[obj._id]}>
-                                    <Save className="w-3 h-3 mr-1" /> Guardar
-                                  </Button>
+
                                 </div>
                               </div>
 
-                              {/* [TESTING] Delete Button */}
-                              {isTestingMode && (
-                                <div className="mt-8 pt-6 border-t border-slate-200 flex justify-end px-4 pb-4">
-                                  <Button
-                                    variant="outline"
-                                    className="text-rose-600 border-rose-200 hover:bg-rose-50"
-                                    onClick={() => handleDeleteEvaluacion(obj, localHito.periodo)}
-                                  >
-
-                                    <Trash2 className="w-4 h-4 mr-2" /> Borrar Evaluación (Admin)
-                                  </Button>
-                                </div>
-                              )}
                             </div>
                           ) : (
-                            <div className="text-center py-8 text-slate-400">
-                              <Calendar className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                              <p className="text-xs">Seleccioná un hito para evaluar</p>
+                            <div className="p-12 text-center text-slate-400 bg-slate-50/50">
+                              <Calendar className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                              <h3 className="text-sm font-bold text-slate-500">Seleccione un periodo</h3>
+                              <p className="text-xs text-slate-400 mt-1">Haga clic en el cronograma para cargar resultados.</p>
                             </div>
                           )}
                         </CardContent>
@@ -1425,6 +1788,7 @@ export default function EvaluacionFlujo() {
                   );
                 })}
               </div>
+
 
               <div className="space-y-6">
                 <h2 className="text-xl font-semibold flex items-center gap-2 text-blue-700 border-b pb-2">
@@ -1459,9 +1823,9 @@ export default function EvaluacionFlujo() {
                         <CardContent className="pt-0 pb-4 px-4 bg-slate-50/30 border-t border-slate-100">
                           {/* Milestone Selector (Added for Competencias) */}
                           {apt.hitos && apt.hitos.length > 0 && (
-                            <div className="mb-4 mt-4">
-                              <label className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded inline-block font-bold uppercase mb-2 tracking-wide">Cronograma de Hitos</label>
-                              <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-2">
+                            <div className="mb-6 mt-4 flex flex-col items-center bg-slate-50/50 rounded-lg border border-slate-100 p-4">
+                              <label className="text-[10px] text-slate-400 font-bold uppercase mb-3 tracking-widest text-center">Cronograma de Evaluaciones</label>
+                              <div className="flex items-center justify-center gap-2 flex-wrap w-full max-w-4xl">
                                 {apt.hitos.map((h) => {
                                   const status = getSmartHitoStatus(h);
                                   const colorClass = getHitoColorClass(status);
@@ -1473,13 +1837,14 @@ export default function EvaluacionFlujo() {
                                     <div
                                       key={h.periodo}
                                       onClick={() => (isSelectable || (isTestingMode && puedeVer)) && !savingItems[apt._id] && loadItemEvaluacion(apt, h.periodo)}
-                                      className={`flex flex-col items-center justify-center py-1.5 px-1 rounded border transition-all duration-200 relative ${colorClass} 
-                                      ${isSelected ? 'ring-2 ring-offset-1 ring-blue-500 shadow-sm scale-105 z-10' : ''}   
-                                      ${(isSelectable || (isTestingMode && puedeVer)) && !savingItems[apt._id] ? 'cursor-pointer hover:shadow-sm hover:-translate-y-0.5' : 'opacity-40 grayscale cursor-not-allowed'}
-                                      ${isLoading && isSelected ? 'animate-pulse' : ''}`}
+                                      className={`flex flex-col items-center justify-center h-10 w-14 rounded border transition-all duration-200 cursor-pointer select-none
+                                          ${colorClass} 
+                                          ${isSelected ? 'ring-2 ring-offset-1 ring-blue-500 shadow-sm scale-110 z-10 font-bold' : ''}   
+                                          ${(isSelectable || (isTestingMode && puedeVer)) && !savingItems[apt._id] ? 'opacity-90 hover:opacity-100 hover:scale-105 hover:shadow-sm' : 'opacity-40 grayscale cursor-not-allowed'}
+                                          ${isLoading && isSelected ? 'animate-pulse' : ''}`}
                                     >
-                                      <span className="text-[9px] font-black uppercase tracking-tight">{h.periodo}</span>
-                                      <span className="text-[10px] font-semibold mt-0">{h.actual !== null ? `${Math.round(h.actual)}%` : "-"}</span>
+                                      <span className="text-[8px] font-black uppercase tracking-tight leading-none mb-0.5">{h.periodo}</span>
+                                      <span className="text-[10px] font-semibold leading-none">{h.actual !== null ? `${Math.round(h.actual)}` : "-"}</span>
                                     </div>
                                   );
                                 })}
@@ -1584,36 +1949,104 @@ export default function EvaluacionFlujo() {
                             </div>
                           )}
                         </CardContent>
-                      )
-                      }
+                      )}
                     </Card>
                   );
                 })}
               </div>
-            </div>
+            </div >
           )
           }
 
           {/* TAB: FEEDBACK */}
-          {activeTab === "feedback" && (
-            <div className="animate-in fade-in duration-300 space-y-8">
-              {/* TIMELINE */}
-              <div className="bg-gradient-to-br from-white to-slate-50 p-6 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500 opacity-20"></div>
-                <h3 className="text-sm font-bold text-slate-700 mb-8 flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-blue-600" /> Cronograma de Feedback {anio}
-                </h3>
-                <div className="relative flex items-center justify-between px-4 md:px-12">
-                  {/* Connecting Line */}
-                  <div className="absolute left-0 right-0 top-3 h-0.5 bg-slate-200 -z-0 mx-8 md:mx-16"></div>
+          {
+            activeTab === "feedback" && (
+              <div className="animate-in fade-in duration-300 space-y-8">
+                {/* TIMELINE */}
+                <div className="bg-gradient-to-br from-white to-slate-50 p-6 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500 opacity-20"></div>
+                  <h3 className="text-sm font-bold text-slate-700 mb-8 flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-blue-600" /> Cronograma de Feedback {anio}
+                  </h3>
+                  <div className="relative flex items-center justify-between px-4 md:px-12">
+                    {/* Connecting Line */}
+                    <div className="absolute left-0 right-0 top-3 h-0.5 bg-slate-200 -z-0 mx-8 md:mx-16"></div>
 
+                    {[
+                      { id: "Q1", label: "Noviembre", sub: "Inicio", date: `${anio}-12-01` },
+                      { id: "Q2", label: "Febrero", sub: "Seguimiento", date: `${anio + 1}-03-01` },
+                      { id: "Q3", label: "Mayo", sub: "Seguimiento", date: `${anio + 1}-06-01` },
+                      { id: "FINAL", label: "Agosto", sub: "Cierre Anual", date: `${anio + 1}-09-01` }
+                    ].map((p, idx) => {
+                      const fb = feedbacks.find(f => f.periodo === p.id);
+                      const getFeedStatus = () => {
+                        // 1. Explicit Status
+                        if (fb?.estado === "SENT" || fb?.estado === "PENDING_HR" || fb?.estado === "CLOSED") {
+                          return { label: "Enviado", className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
+                        }
+
+                        // 2. Dates
+                        const now = new Date();
+                        // Get period deadline and start
+                        const tlItem = [
+                          { id: "Q1", date: `${anio - 1}-12-01` },
+                          { id: "Q2", date: `${anio}-03-01` },
+                          { id: "Q3", date: `${anio}-06-01` },
+                          { id: "FINAL", date: `${anio}-09-01` }
+                        ].find(t => t.id === p.id);
+
+                        if (!tlItem) return { label: "Desconocido", className: "bg-slate-50 text-slate-500" };
+
+                        const startDate = new Date(tlItem.date);
+                        const deadline = new Date(tlItem.date);
+                        deadline.setDate(deadline.getDate() + 9); // 10 days window
+
+                        if (now > deadline) return { label: "Vencido", className: "bg-rose-50 text-rose-600 border-rose-200" };
+                        if (now >= startDate && now <= deadline) return { label: "Habilitado", className: "bg-blue-50 text-blue-700 border-blue-200" };
+
+                        // Check "En Curso" (In Progress / Current Period)
+                        // If we are BEFORE the start date, but AFTER the previous period end (roughly -3 months)
+                        const periodStart = new Date(startDate);
+                        periodStart.setMonth(periodStart.getMonth() - 3);
+
+                        if (now >= periodStart && now < startDate) return { label: "En Curso", className: "bg-indigo-50 text-indigo-700 border-indigo-200" };
+
+                        return { label: "Futuro", className: "bg-slate-50 text-slate-400 border-slate-200" };
+                      };
+                      const statusInfo = getFeedStatus();
+                      const isDone = statusInfo.label === "Enviado";
+
+                      const isFinal = p.id === "FINAL";
+                      return (
+                        <div key={p.id} className="relative z-10 flex flex-col items-center group">
+                          <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-300 shadow-sm ${isDone ? 'bg-emerald-500 border-emerald-500 scale-110' : 'bg-white border-slate-300 group-hover:border-blue-400'}`}>
+                            {isDone && <div className="w-2 h-2 bg-white rounded-full" />}
+                          </div>
+                          <div className="mt-3 text-center">
+                            <div className={`text-sm font-bold ${isFinal ? 'text-blue-700' : 'text-slate-700'}`}>{p.label}</div>
+                            <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">{p.sub}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+
+                {/* CARDS GRID */}
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
                   {[
-                    { id: "Q1", label: "Noviembre", sub: "Inicio", date: `${anio}-12-01` },
-                    { id: "Q2", label: "Febrero", sub: "Seguimiento", date: `${anio + 1}-03-01` },
-                    { id: "Q3", label: "Mayo", sub: "Seguimiento", date: `${anio + 1}-06-01` },
-                    { id: "FINAL", label: "Agosto", sub: "Cierre Anual", date: `${anio + 1}-09-01` }
-                  ].map((p, idx) => {
-                    const fb = feedbacks.find(f => f.periodo === p.id);
+                    { id: "Q1", title: "Feedback Noviembre", subtitle: "Primer Trimestre" },
+                    { id: "Q2", title: "Feedback Febrero", subtitle: "Segundo Trimestre" },
+                    { id: "Q3", title: "Feedback Mayo", subtitle: "Tercer Trimestre" },
+                    { id: "FINAL", title: "Cierre Anual (Agosto)", subtitle: "Evaluación Final", isFinal: true }
+                  ].map((conf) => {
+                    const periodo = conf.id;
+                    const fb = feedbacks.find(f => f.periodo === periodo); // don't default here, need check existance
+                    const isFinal = conf.isFinal;
+                    const isExpanded = !!expandedFeedback[periodo];
+
+                    // Status Logic similar to MiDesempeno (Enviado, Vencido, Habilitado, En Curso, Futuro)
                     const getFeedStatus = () => {
                       // 1. Explicit Status
                       if (fb?.estado === "SENT" || fb?.estado === "PENDING_HR" || fb?.estado === "CLOSED") {
@@ -1624,11 +2057,11 @@ export default function EvaluacionFlujo() {
                       const now = new Date();
                       // Get period deadline and start
                       const tlItem = [
-                        { id: "Q1", date: `${anio - 1}-12-01` },
-                        { id: "Q2", date: `${anio}-03-01` },
-                        { id: "Q3", date: `${anio}-06-01` },
-                        { id: "FINAL", date: `${anio}-09-01` }
-                      ].find(t => t.id === p.id);
+                        { id: "Q1", date: `${anio}-12-01` },
+                        { id: "Q2", date: `${anio + 1}-03-01` },
+                        { id: "Q3", date: `${anio + 1}-06-01` },
+                        { id: "FINAL", date: `${anio + 1}-09-01` }
+                      ].find(t => t.id === periodo);
 
                       if (!tlItem) return { label: "Desconocido", className: "bg-slate-50 text-slate-500" };
 
@@ -1648,443 +2081,416 @@ export default function EvaluacionFlujo() {
 
                       return { label: "Futuro", className: "bg-slate-50 text-slate-400 border-slate-200" };
                     };
-                    const statusInfo = getFeedStatus();
-                    const isDone = statusInfo.label === "Enviado";
 
-                    const isFinal = p.id === "FINAL";
+                    const statusInfo = getFeedStatus();
+                    const localFbData = fb || { comentario: "", estado: "DRAFT" };
+                    const isLoading = loadingFeedbacks; // Use general loading state or specialized?
+
+
+                    // Función local para calcular breakdown del periodo
+                    const getBreakdown = (p) => {
+                      if (!dashEmpleadoData) return { objetivos: 0, competencias: 0, global: 0, detailsObj: [], detailsComp: [] };
+
+                      // Helper to convert period to a comparable month index (1-12) based on Fiscal Year (Sep-Aug)
+                      const getPeriodMonth = (periodStr) => {
+                        if (!periodStr) return 0;
+
+                        // Handle Feedback Periods (Q1, Q2, etc.)
+                        if (periodStr === "Q1") return 3;   // Sep-Nov
+                        if (periodStr === "Q2") return 6;   // Dec-Feb
+                        if (periodStr === "Q3") return 9;   // Mar-May
+                        if (periodStr === "FINAL") return 12; // Jun-Aug
+
+                        const suffix = periodStr.slice(4); // Remove year "2025"
+
+                        // Handle Hito Periods (M01, Q1, S1, etc.)
+                        if (suffix.startsWith("M")) {
+                          const m = parseInt(suffix.slice(1));
+                          // Map calendar month to fiscal month (Sep=1 ... Aug=12)
+                          return m >= 9 ? m - 8 : m + 4;
+                        }
+                        if (suffix.startsWith("Q")) {
+                          const q = parseInt(suffix.slice(1));
+                          // Assuming Q1=Sep-Nov (1), Q2=Dec-Feb (2), Q3=Mar-May (3), Q4=Jun-Aug (4)
+                          return q * 3;
+                        }
+                        if (suffix.startsWith("S")) {
+                          const s = parseInt(suffix.slice(1));
+                          return s * 6;
+                        }
+                        if (suffix === "FINAL") return 12;
+
+                        return 12;
+                      };
+
+                      const feedbackLimit = getPeriodMonth(p);
+                      const previousLimit = feedbackLimit - 3; // Assuming 3-month windows
+
+                      // Check if there is ANY evaluation in the specific window of this feedback
+                      const hasDataInPeriod = (
+                        dashEmpleadoData.objetivos?.some(obj =>
+                          obj.hitos?.some(h => {
+                            const m = getPeriodMonth(h.periodo);
+                            return m > previousLimit && m <= feedbackLimit && h.actual !== null && h.actual !== undefined;
+                          })
+                        ) ||
+                        dashEmpleadoData.aptitudes?.some(apt =>
+                          apt.hitos?.some(h => {
+                            const m = getPeriodMonth(h.periodo);
+                            return m > previousLimit && m <= feedbackLimit && h.actual !== null && h.actual !== undefined;
+                          })
+                        )
+                      );
+
+                      if (!hasDataInPeriod) {
+                        return { objetivos: null, competencias: null, global: null, detailsObj: [], detailsComp: [] };
+                      }
+
+                      // Objetivos
+                      let totalObjScore = 0;
+                      let totalObjBaseWeight = 0;
+                      const detailsObj = [];
+
+                      dashEmpleadoData.objetivos?.forEach(obj => {
+                        // Filter hitos up to the feedback period
+                        const relevantHitos = obj.hitos?.filter(h => getPeriodMonth(h.periodo) <= feedbackLimit) || [];
+
+                        // Recalculate progress based on relevant hitos
+                        const peso = Number(obj.peso || 0);
+                        totalObjBaseWeight += peso;
+
+                        // Use Shared Utility
+                        const hitosValidos = relevantHitos.filter(h => h.actual != null) || [];
+                        const progreso = calculateObjectiveProgress(obj, hitosValidos);
+
+                        totalObjScore += calculateWeightedScore(progreso, peso);
+
+                        // Weighted contribution for details (score * weight / 100)
+                        const weightedScore = (progreso * peso) / 100;
+
+                        // Calculate Running Score Info (Estimación Cierre context)
+                        const tempObj = { ...obj, hitos: relevantHitos };
+                        const lastHito = relevantHitos.length > 0 ? relevantHitos[relevantHitos.length - 1] : {};
+                        const runningInfo = getRunningScore(tempObj, lastHito);
+
+                        // Extract Meta Info for display
+                        const metaDef = obj.metas?.[0] || {};
+                        const metaTarget = metaDef.esperado ?? metaDef.target ?? 0;
+                        const metaOp = metaDef.operador || "=";
+                        const metaUnit = metaDef.unidad || "";
+
+                        detailsObj.push({
+                          nombre: obj.nombre,
+                          score: weightedScore,
+                          rawScore: progreso,
+                          peso: peso,
+                          // New fields for display
+                          runningValue: runningInfo.value,
+                          runningIsPending: runningInfo.isPendingThreshold,
+                          runningDecimals: runningInfo.decimals,
+                          // Meta Info
+                          metaTarget,
+                          metaOp,
+                          metaUnit
+                        });
+                      });
+                      const scoreObjRaw = totalObjScore; // Already correct scale (sum of weighted scores)
+                      const scoreObj = scoreObjRaw * 0.7; // Weighted contribution (Max 70)
+
+                      // Competencias
+                      let totalCompScore = 0;
+                      let compCount = 0;
+                      const detailsComp = [];
+
+                      dashEmpleadoData.aptitudes?.forEach(apt => {
+                        // Filter hitos up to the feedback period
+                        const relevantHitos = apt.hitos?.filter(h => getPeriodMonth(h.periodo) <= feedbackLimit) || [];
+
+                        // Recalculate score based on relevant hitos (ignoring nulls)
+                        let score = 0;
+                        const puntuaciones = relevantHitos
+                          .map(h => h.actual)
+                          .filter(val => val !== null && val !== undefined);
+
+                        if (puntuaciones.length > 0) {
+                          score = Math.round(puntuaciones.reduce((a, b) => a + b, 0) / puntuaciones.length);
+                        }
+
+                        totalCompScore += score;
+                        compCount++;
+
+                        // For simple average, we just show the score. 
+                        detailsComp.push({ nombre: apt.nombre, score: score, rawScore: score });
+                      });
+                      const scoreCompRaw = compCount > 0 ? (totalCompScore / compCount) : 0;
+                      const scoreComp = scoreCompRaw * 0.3; // Weighted contribution (Max 30)
+
+                      // Global
+                      const global = scoreObj + scoreComp;
+
+                      return { objetivos: scoreObj, competencias: scoreComp, global, detailsObj, detailsComp };
+                    };
+
+                    const breakdown = getBreakdown(periodo);
+                    const scoreDisplay = breakdown.global;
+
                     return (
-                      <div key={p.id} className="relative z-10 flex flex-col items-center group">
-                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-300 shadow-sm ${isDone ? 'bg-emerald-500 border-emerald-500 scale-110' : 'bg-white border-slate-300 group-hover:border-blue-400'}`}>
-                          {isDone && <div className="w-2 h-2 bg-white rounded-full" />}
-                        </div>
-                        <div className="mt-3 text-center">
-                          <div className={`text-sm font-bold ${isFinal ? 'text-blue-700' : 'text-slate-700'}`}>{p.label}</div>
-                          <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">{p.sub}</div>
-                        </div>
-                      </div>
+                      <Card key={periodo} className={`flex flex-col transition-all hover:shadow-md ${isFinal ? "border-blue-200 ring-1 ring-blue-50 bg-blue-50/10" : "border-slate-200"}`}>
+                        <CardHeader className="pb-3 border-b border-slate-100 bg-slate-50/50 rounded-t-xl">
+                          <div className="flex items-center justify-between mb-1">
+                            <Badge variant="outline" className={`font-normal ${statusInfo.className}`}>
+                              {statusInfo.label}
+                            </Badge>
+                            <div className="flex items-center gap-2">
+                              <div className={`h-2 w-2 rounded-full ${localFbData.estado === "SENT" || localFbData.estado === "PENDING_HR" || localFbData.estado === "CLOSED" ? "bg-emerald-500" : "bg-amber-400"}`}></div>
+                              <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-400 hover:text-blue-600" onClick={() => toggleFeedbackDetail(periodo)}>
+                                {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                              </Button>
+                            </div>
+                          </div>
+                          <CardTitle className={`text-base font-bold ${isFinal ? "text-blue-700" : "text-slate-800"}`}>
+                            {conf.title}
+                          </CardTitle>
+                          <p className="text-xs text-slate-500 font-medium">
+                            {conf.subtitle}
+                          </p>
+                        </CardHeader>
+
+                        <CardContent className="flex-1 flex flex-col gap-4 pt-4">
+                          {isFinal && (
+                            <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 flex flex-col gap-2">
+                              <div className="flex items-center justify-between">
+                                <div className="text-xs text-blue-800 font-bold uppercase tracking-wider">Score Final</div>
+                                <div className="text-2xl font-black text-blue-600">{Math.round(scoreDisplay)}%</div>
+                              </div>
+                              <div className="flex items-center gap-2 text-xs">
+                                <div className="flex-1 bg-white/60 border border-blue-200 rounded px-2 py-1 flex justify-between">
+                                  <span className="text-blue-700 font-medium">Obj</span>
+                                  <span className="font-bold text-blue-700">{Math.round(breakdown.objetivos)}%</span>
+                                </div>
+                                <div className="flex-1 bg-white/60 border border-blue-200 rounded px-2 py-1 flex justify-between">
+                                  <span className="text-blue-700 font-medium">Comp</span>
+                                  <span className="font-bold text-blue-700">{Math.round(breakdown.competencias)}%</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {!isFinal && (
+                            <div className="bg-slate-50 p-2 rounded border border-slate-100 flex flex-col gap-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-slate-500 font-medium">Score Parcial:</span>
+                                <span className="text-sm font-bold text-slate-700">{Math.round(scoreDisplay)}%</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-xs">
+                                <div className="flex-1 bg-white border rounded px-2 py-1 flex justify-between">
+                                  <span className="text-slate-500">Obj</span>
+                                  <span className="font-bold text-blue-600">{Math.round(breakdown.objetivos)}%</span>
+                                </div>
+                                <div className="flex-1 bg-white border rounded px-2 py-1 flex justify-between">
+                                  <span className="text-slate-500">Comp</span>
+                                  <span className="font-bold text-amber-600">{Math.round(breakdown.competencias)}%</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* DETALLE EXPANDIBLE */}
+                          {isExpanded && (
+                            <div className="animate-in slide-in-from-top-2 duration-200 border-t pt-3 space-y-3">
+                              {breakdown.detailsObj.length > 0 && (
+                                <div>
+                                  <div className="text-[10px] font-bold text-blue-600 uppercase mb-1 flex items-center gap-1">
+                                    <Target className="w-3 h-3" /> Objetivos
+                                  </div>
+                                  <div className="space-y-1">
+                                    <div className="flex justify-between text-[9px] text-slate-400 font-medium border-b border-slate-100 pb-1 mb-1 px-1">
+                                      <span>Nombre</span>
+                                      <div className="flex gap-2">
+                                        <span className="w-8 text-center">Peso</span>
+                                        <span className="w-8 text-center">Logro</span>
+                                        <span className="w-8 text-right">Pond.</span>
+                                      </div>
+                                    </div>
+                                    {breakdown.detailsObj.map((d, i) => (
+                                      <div key={i} className="flex justify-between items-start text-xs text-slate-600 px-1 py-1.5 hover:bg-slate-50 rounded border-b border-slate-50 last:border-0">
+                                        <div className="flex-1 min-w-0 pr-2">
+                                          <div className="font-medium text-slate-700 leading-snug break-words">
+                                            {d.nombre}
+                                          </div>
+                                          {/* Subtitle with Meta/Running info */}
+                                          <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap leading-tight">
+                                            <span>
+                                              Meta: <span className="font-semibold text-slate-500">{d.metaOp} {d.metaTarget} {d.metaUnit}</span>
+                                            </span>
+                                            <span className="text-slate-300">•</span>
+                                            <span className={`font-bold ${d.runningIsPending ? 'text-amber-600' : 'text-slate-600'}`}>
+                                              {Number(d.runningValue).toFixed(d.runningDecimals || 0)} {d.metaUnit}
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        <div className="flex gap-2 pt-0.5 shrink-0">
+                                          <span className="w-8 text-center text-slate-400 text-[10px]">{d.peso}%</span>
+                                          <span className={`w-8 text-center font-medium ${d.rawScore >= 100 ? 'text-emerald-600' : 'text-slate-600'}`}>
+                                            {d.rawScore !== null ? `${Math.round(d.rawScore)}%` : "-"}
+                                          </span>
+                                          <span className="w-8 text-right font-bold text-blue-600 bg-blue-50 rounded px-1 h-fit">
+                                            {d.score !== null ? `${d.score.toFixed(1)}%` : "-"}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {breakdown.detailsComp.length > 0 && (
+                                <div>
+                                  <div className="text-[10px] font-bold text-amber-600 uppercase mb-1 flex items-center gap-1">
+                                    <Lightbulb className="w-3 h-3" /> Competencias
+                                  </div>
+                                  <div className="space-y-1">
+                                    {breakdown.detailsComp.map((d, i) => (
+                                      <div key={i} className="flex justify-between text-xs text-slate-600">
+                                        <span className="truncate max-w-[140px]">{d.nombre}</span>
+                                        <span className="font-semibold">{d.score !== null ? `${Math.round(d.score)}%` : "-"}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {breakdown.detailsObj.length === 0 && breakdown.detailsComp.length === 0 && (
+                                <div className="text-xs text-slate-400 text-center italic">Sin datos evaluados</div>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="flex flex-col h-full justify-between">
+                            {/* TOP: Input */}
+                            <div className="flex-1 space-y-4">
+                              <textarea
+                                className="w-full h-32 rounded-lg border-slate-200 bg-slate-50/50 p-3 text-sm focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all outline-none resize-none placeholder:text-slate-400 text-slate-700"
+                                placeholder={isFinal ? "Conclusión final del desempeño..." : "Feedback trimestral sobre avance de objetivos..."}
+                                value={localFbData.comentario || ""}
+                                onChange={(e) => handleFeedbackChange(periodo, e.target.value)}
+                              />
+                            </div>
+
+                            {/* BOTTOM: Stepper & Actions */}
+                            <div className="mt-4 space-y-4">
+                              {/* FLOW STEPPER */}
+                              <div className="pt-2">
+                                <div className="flex items-center justify-between relative px-2">
+                                  <div className="absolute left-2 right-2 top-1/2 h-0.5 bg-slate-100 -z-0"></div>
+                                  {[
+                                    { label: "Borrador", status: "DRAFT" },
+                                    { label: "Enviado", status: "SENT" },
+                                    { label: "RRHH", status: "PENDING_HR" },
+                                    { label: "Finalizado", status: "CLOSED" }
+                                  ].map((step, idx) => {
+                                    const order = { "DRAFT": 0, "SENT": 1, "PENDING_HR": 2, "CLOSED": 3 };
+                                    const currentStep = order[localFbData.estado] ?? 0;
+                                    const isActive = idx <= currentStep;
+                                    const isCurrent = idx === currentStep;
+
+                                    const icons = {
+                                      "DRAFT": FileEdit,
+                                      "SENT": Send,
+                                      "PENDING_HR": Users,
+                                      "CLOSED": CheckCircle
+                                    };
+                                    const Icon = icons[step.status] || FileEdit;
+
+                                    return (
+                                      <div key={idx} className="relative z-10 flex flex-col items-center group">
+                                        <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-all duration-300 border-2 ${isActive ? 'bg-blue-600 border-blue-600 text-white shadow-sm scale-110' : 'bg-white border-slate-200 text-slate-300'}`}>
+                                          <Icon className="w-3.5 h-3.5" />
+                                        </div>
+                                        <span className={`text-[9px] mt-1.5 font-medium transition-colors ${isCurrent ? 'text-blue-700' : 'text-slate-400'}`}>{step.label}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* FOOTER ACTIONS - SIMPLIFIED */}
+                              <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+                                <div className="text-[10px] text-slate-400">
+                                  <span className="font-semibold text-slate-500">Habilitado:</span> <br />
+                                  {(() => {
+                                    const tlItem = [
+                                      { id: "Q1", date: `${anio}-12-01` },
+                                      { id: "Q2", date: `${anio + 1}-03-01` },
+                                      { id: "Q3", date: `${anio + 1}-06-01` },
+                                      { id: "FINAL", date: `${anio + 1}-09-01` }
+                                    ].find(t => t.id === periodo);
+
+                                    if (!tlItem) return <span className="text-slate-300">-</span>;
+
+                                    const startDate = new Date(tlItem.date);
+                                    const deadline = new Date(tlItem.date);
+                                    deadline.setDate(deadline.getDate() + 9);
+
+                                    const fmt = (d) => d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" });
+                                    return `${fmt(startDate)} - ${fmt(deadline)}`;
+                                  })()}
+                                </div>
+
+                                <div className="flex gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className={localFbData.estado !== "DRAFT" ? "opacity-50" : ""}
+                                    onClick={() => handleSaveFeedback(periodo, localFbData.comentario, "DRAFT")}
+                                    disabled={localFbData.estado === "SENT" || localFbData.estado === "PENDING_HR" || localFbData.estado === "CLOSED"}
+                                  >
+                                    <Save className="w-3 h-3 mr-1" /> Guardar
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400"
+                                    onClick={() => handleSaveFeedback(periodo, localFbData.comentario, "SENT")}
+                                    disabled={localFbData.estado === "SENT" || localFbData.estado === "PENDING_HR" || localFbData.estado === "CLOSED" || (!localFbData.comentario && localFbData.estado === "DRAFT")}
+                                  >
+                                    <Send className="w-3 h-3 mr-1" /> Enviar
+                                  </Button>
+                                </div>
+                              </div>
+
+
+                              {/* [TESTING] Delete Button INSIDE CARD */}
+                              {isTestingMode && fb && fb._id && (
+                                <div className="mt-4 pt-4 border-t border-rose-100 flex justify-end bg-rose-50/30 p-2 rounded-lg">
+                                  <Button
+                                    variant="ghost"
+                                    className="text-rose-600 hover:bg-rose-100 h-7 text-xs"
+                                    onClick={() => handleDeleteFeedback(fb._id)}
+                                  >
+                                    <Trash2 className="w-3 h-3 mr-2" /> Borrar Feedback
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                        </CardContent>
+                      </Card>
                     );
                   })}
                 </div>
               </div>
-
-
-              {/* CARDS GRID */}
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-                {[
-                  { id: "Q1", title: "Feedback Noviembre", subtitle: "Primer Trimestre" },
-                  { id: "Q2", title: "Feedback Febrero", subtitle: "Segundo Trimestre" },
-                  { id: "Q3", title: "Feedback Mayo", subtitle: "Tercer Trimestre" },
-                  { id: "FINAL", title: "Cierre Anual (Agosto)", subtitle: "Evaluación Final", isFinal: true }
-                ].map((conf) => {
-                  const periodo = conf.id;
-                  const fb = feedbacks.find(f => f.periodo === periodo); // don't default here, need check existance
-                  const isFinal = conf.isFinal;
-                  const isExpanded = !!expandedFeedback[periodo];
-
-                  // Status Logic similar to MiDesempeno (Enviado, Vencido, Habilitado, En Curso, Futuro)
-                  const getFeedStatus = () => {
-                    // 1. Explicit Status
-                    if (fb?.estado === "SENT" || fb?.estado === "PENDING_HR" || fb?.estado === "CLOSED") {
-                      return { label: "Enviado", className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
-                    }
-
-                    // 2. Dates
-                    const now = new Date();
-                    // Get period deadline and start
-                    const tlItem = [
-                      { id: "Q1", date: `${anio}-12-01` },
-                      { id: "Q2", date: `${anio + 1}-03-01` },
-                      { id: "Q3", date: `${anio + 1}-06-01` },
-                      { id: "FINAL", date: `${anio + 1}-09-01` }
-                    ].find(t => t.id === periodo);
-
-                    if (!tlItem) return { label: "Desconocido", className: "bg-slate-50 text-slate-500" };
-
-                    const startDate = new Date(tlItem.date);
-                    const deadline = new Date(tlItem.date);
-                    deadline.setDate(deadline.getDate() + 9); // 10 days window
-
-                    if (now > deadline) return { label: "Vencido", className: "bg-rose-50 text-rose-600 border-rose-200" };
-                    if (now >= startDate && now <= deadline) return { label: "Habilitado", className: "bg-blue-50 text-blue-700 border-blue-200" };
-
-                    // Check "En Curso" (In Progress / Current Period)
-                    // If we are BEFORE the start date, but AFTER the previous period end (roughly -3 months)
-                    const periodStart = new Date(startDate);
-                    periodStart.setMonth(periodStart.getMonth() - 3);
-
-                    if (now >= periodStart && now < startDate) return { label: "En Curso", className: "bg-indigo-50 text-indigo-700 border-indigo-200" };
-
-                    return { label: "Futuro", className: "bg-slate-50 text-slate-400 border-slate-200" };
-                  };
-
-                  const statusInfo = getFeedStatus();
-                  const localFbData = fb || { comentario: "", estado: "DRAFT" };
-                  const isLoading = loadingFeedbacks; // Use general loading state or specialized?
-
-
-                  // Función local para calcular breakdown del periodo
-                  const getBreakdown = (p) => {
-                    if (!dashEmpleadoData) return { objetivos: 0, competencias: 0, global: 0, detailsObj: [], detailsComp: [] };
-
-                    // Helper to convert period to a comparable month index (1-12) based on Fiscal Year (Sep-Aug)
-                    const getPeriodMonth = (periodStr) => {
-                      if (!periodStr) return 0;
-
-                      // Handle Feedback Periods (Q1, Q2, etc.)
-                      if (periodStr === "Q1") return 3;   // Sep-Nov
-                      if (periodStr === "Q2") return 6;   // Dec-Feb
-                      if (periodStr === "Q3") return 9;   // Mar-May
-                      if (periodStr === "FINAL") return 12; // Jun-Aug
-
-                      const suffix = periodStr.slice(4); // Remove year "2025"
-
-                      // Handle Hito Periods (M01, Q1, S1, etc.)
-                      if (suffix.startsWith("M")) {
-                        const m = parseInt(suffix.slice(1));
-                        // Map calendar month to fiscal month (Sep=1 ... Aug=12)
-                        return m >= 9 ? m - 8 : m + 4;
-                      }
-                      if (suffix.startsWith("Q")) {
-                        const q = parseInt(suffix.slice(1));
-                        // Assuming Q1=Sep-Nov (1), Q2=Dec-Feb (2), Q3=Mar-May (3), Q4=Jun-Aug (4)
-                        return q * 3;
-                      }
-                      if (suffix.startsWith("S")) {
-                        const s = parseInt(suffix.slice(1));
-                        return s * 6;
-                      }
-                      if (suffix === "FINAL") return 12;
-
-                      return 12;
-                    };
-
-                    const feedbackLimit = getPeriodMonth(p);
-                    const previousLimit = feedbackLimit - 3; // Assuming 3-month windows
-
-                    // Check if there is ANY evaluation in the specific window of this feedback
-                    const hasDataInPeriod = (
-                      dashEmpleadoData.objetivos?.some(obj =>
-                        obj.hitos?.some(h => {
-                          const m = getPeriodMonth(h.periodo);
-                          return m > previousLimit && m <= feedbackLimit && h.actual !== null && h.actual !== undefined;
-                        })
-                      ) ||
-                      dashEmpleadoData.aptitudes?.some(apt =>
-                        apt.hitos?.some(h => {
-                          const m = getPeriodMonth(h.periodo);
-                          return m > previousLimit && m <= feedbackLimit && h.actual !== null && h.actual !== undefined;
-                        })
-                      )
-                    );
-
-                    if (!hasDataInPeriod) {
-                      return { objetivos: null, competencias: null, global: null, detailsObj: [], detailsComp: [] };
-                    }
-
-                    // Objetivos
-                    let totalObjScore = 0;
-                    let totalObjBaseWeight = 0;
-                    const detailsObj = [];
-
-                    dashEmpleadoData.objetivos?.forEach(obj => {
-                      // Filter hitos up to the feedback period
-                      const relevantHitos = obj.hitos?.filter(h => getPeriodMonth(h.periodo) <= feedbackLimit) || [];
-
-                      // Recalculate progress based on relevant hitos
-                      const peso = Number(obj.peso || 0);
-                      totalObjBaseWeight += peso;
-
-                      // Use Shared Utility
-                      const hitosValidos = relevantHitos.filter(h => h.actual != null) || [];
-                      const progreso = calculateObjectiveProgress(obj, hitosValidos);
-
-                      totalObjScore += calculateWeightedScore(progreso, peso);
-
-                      // Weighted contribution for details (score * weight / 100)
-                      const weightedScore = (progreso * peso) / 100;
-                      detailsObj.push({ nombre: obj.nombre, score: weightedScore, rawScore: progreso, peso: peso });
-                    });
-                    const scoreObjRaw = totalObjScore; // Already correct scale (sum of weighted scores)
-                    const scoreObj = scoreObjRaw * 0.7; // Weighted contribution (Max 70)
-
-                    // Competencias
-                    let totalCompScore = 0;
-                    let compCount = 0;
-                    const detailsComp = [];
-
-                    dashEmpleadoData.aptitudes?.forEach(apt => {
-                      // Filter hitos up to the feedback period
-                      const relevantHitos = apt.hitos?.filter(h => getPeriodMonth(h.periodo) <= feedbackLimit) || [];
-
-                      // Recalculate score based on relevant hitos (ignoring nulls)
-                      let score = 0;
-                      const puntuaciones = relevantHitos
-                        .map(h => h.actual)
-                        .filter(val => val !== null && val !== undefined);
-
-                      if (puntuaciones.length > 0) {
-                        score = Math.round(puntuaciones.reduce((a, b) => a + b, 0) / puntuaciones.length);
-                      }
-
-                      totalCompScore += score;
-                      compCount++;
-
-                      // For simple average, we just show the score. 
-                      detailsComp.push({ nombre: apt.nombre, score: score, rawScore: score });
-                    });
-                    const scoreCompRaw = compCount > 0 ? (totalCompScore / compCount) : 0;
-                    const scoreComp = scoreCompRaw * 0.3; // Weighted contribution (Max 30)
-
-                    // Global
-                    const global = scoreObj + scoreComp;
-
-                    return { objetivos: scoreObj, competencias: scoreComp, global, detailsObj, detailsComp };
-                  };
-
-                  const breakdown = getBreakdown(periodo);
-                  const scoreDisplay = breakdown.global;
-
-                  return (
-                    <Card key={periodo} className={`flex flex-col transition-all hover:shadow-md ${isFinal ? "border-blue-200 ring-1 ring-blue-50 bg-blue-50/10" : "border-slate-200"}`}>
-                      <CardHeader className="pb-3 border-b border-slate-100 bg-slate-50/50 rounded-t-xl">
-                        <div className="flex items-center justify-between mb-1">
-                          <Badge variant="outline" className={`font-normal ${statusInfo.className}`}>
-                            {statusInfo.label}
-                          </Badge>
-                          <div className="flex items-center gap-2">
-                            <div className={`h-2 w-2 rounded-full ${localFbData.estado === "SENT" || localFbData.estado === "PENDING_HR" || localFbData.estado === "CLOSED" ? "bg-emerald-500" : "bg-amber-400"}`}></div>
-                            <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-400 hover:text-blue-600" onClick={() => toggleFeedbackDetail(periodo)}>
-                              {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                            </Button>
-                          </div>
-                        </div>
-                        <CardTitle className={`text-base font-bold ${isFinal ? "text-blue-700" : "text-slate-800"}`}>
-                          {conf.title}
-                        </CardTitle>
-                        <p className="text-xs text-slate-500 font-medium">
-                          {conf.subtitle}
-                        </p>
-                      </CardHeader>
-
-                      <CardContent className="flex-1 flex flex-col gap-4 pt-4">
-                        {isFinal && (
-                          <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 flex flex-col gap-2">
-                            <div className="flex items-center justify-between">
-                              <div className="text-xs text-blue-800 font-bold uppercase tracking-wider">Score Final</div>
-                              <div className="text-2xl font-black text-blue-600">{Math.round(scoreDisplay)}%</div>
-                            </div>
-                            <div className="flex items-center gap-2 text-xs">
-                              <div className="flex-1 bg-white/60 border border-blue-200 rounded px-2 py-1 flex justify-between">
-                                <span className="text-blue-700 font-medium">Obj</span>
-                                <span className="font-bold text-blue-700">{Math.round(breakdown.objetivos)}%</span>
-                              </div>
-                              <div className="flex-1 bg-white/60 border border-blue-200 rounded px-2 py-1 flex justify-between">
-                                <span className="text-blue-700 font-medium">Comp</span>
-                                <span className="font-bold text-blue-700">{Math.round(breakdown.competencias)}%</span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {!isFinal && (
-                          <div className="bg-slate-50 p-2 rounded border border-slate-100 flex flex-col gap-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs text-slate-500 font-medium">Score Parcial:</span>
-                              <span className="text-sm font-bold text-slate-700">{Math.round(scoreDisplay)}%</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-xs">
-                              <div className="flex-1 bg-white border rounded px-2 py-1 flex justify-between">
-                                <span className="text-slate-500">Obj</span>
-                                <span className="font-bold text-blue-600">{Math.round(breakdown.objetivos)}%</span>
-                              </div>
-                              <div className="flex-1 bg-white border rounded px-2 py-1 flex justify-between">
-                                <span className="text-slate-500">Comp</span>
-                                <span className="font-bold text-amber-600">{Math.round(breakdown.competencias)}%</span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* DETALLE EXPANDIBLE */}
-                        {isExpanded && (
-                          <div className="animate-in slide-in-from-top-2 duration-200 border-t pt-3 space-y-3">
-                            {breakdown.detailsObj.length > 0 && (
-                              <div>
-                                <div className="text-[10px] font-bold text-blue-600 uppercase mb-1 flex items-center gap-1">
-                                  <Target className="w-3 h-3" /> Objetivos
-                                </div>
-                                <div className="space-y-1">
-                                  <div className="flex justify-between text-[9px] text-slate-400 font-medium border-b border-slate-100 pb-1 mb-1 px-1">
-                                    <span>Nombre</span>
-                                    <div className="flex gap-2">
-                                      <span className="w-8 text-center">Peso</span>
-                                      <span className="w-8 text-center">Logro</span>
-                                      <span className="w-8 text-right">Pond.</span>
-                                    </div>
-                                  </div>
-                                  {breakdown.detailsObj.map((d, i) => (
-                                    <div key={i} className="flex justify-between text-xs text-slate-600 px-1 py-0.5 hover:bg-slate-50 rounded">
-                                      <span className="truncate max-w-[100px]" title={d.nombre}>{d.nombre}</span>
-                                      <div className="flex gap-2">
-                                        <span className="w-8 text-center text-slate-400 text-[10px]">{d.peso}%</span>
-                                        <span className={`w-8 text-center font-medium ${d.rawScore >= 100 ? 'text-emerald-600' : 'text-slate-600'}`}>
-                                          {d.rawScore !== null ? `${Math.round(d.rawScore)}%` : "-"}
-                                        </span>
-                                        <span className="w-8 text-right font-bold text-blue-600 bg-blue-50 rounded px-1">
-                                          {d.score !== null ? `${d.score.toFixed(1)}%` : "-"}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {breakdown.detailsComp.length > 0 && (
-                              <div>
-                                <div className="text-[10px] font-bold text-amber-600 uppercase mb-1 flex items-center gap-1">
-                                  <Lightbulb className="w-3 h-3" /> Competencias
-                                </div>
-                                <div className="space-y-1">
-                                  {breakdown.detailsComp.map((d, i) => (
-                                    <div key={i} className="flex justify-between text-xs text-slate-600">
-                                      <span className="truncate max-w-[140px]">{d.nombre}</span>
-                                      <span className="font-semibold">{d.score !== null ? `${Math.round(d.score)}%` : "-"}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {breakdown.detailsObj.length === 0 && breakdown.detailsComp.length === 0 && (
-                              <div className="text-xs text-slate-400 text-center italic">Sin datos evaluados</div>
-                            )}
-                          </div>
-                        )}
-
-                        <div className="flex flex-col h-full justify-between">
-                          {/* TOP: Input */}
-                          <div className="flex-1 space-y-4">
-                            <textarea
-                              className="w-full h-32 rounded-lg border-slate-200 bg-slate-50/50 p-3 text-sm focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all outline-none resize-none placeholder:text-slate-400 text-slate-700"
-                              placeholder={isFinal ? "Conclusión final del desempeño..." : "Feedback trimestral sobre avance de objetivos..."}
-                              value={localFbData.comentario || ""}
-                              onChange={(e) => handleFeedbackChange(periodo, e.target.value)}
-                            />
-                          </div>
-
-                          {/* BOTTOM: Stepper & Actions */}
-                          <div className="mt-4 space-y-4">
-                            {/* FLOW STEPPER */}
-                            <div className="pt-2">
-                              <div className="flex items-center justify-between relative px-2">
-                                <div className="absolute left-2 right-2 top-1/2 h-0.5 bg-slate-100 -z-0"></div>
-                                {[
-                                  { label: "Borrador", status: "DRAFT" },
-                                  { label: "Enviado", status: "SENT" },
-                                  { label: "RRHH", status: "PENDING_HR" },
-                                  { label: "Finalizado", status: "CLOSED" }
-                                ].map((step, idx) => {
-                                  const order = { "DRAFT": 0, "SENT": 1, "PENDING_HR": 2, "CLOSED": 3 };
-                                  const currentStep = order[localFbData.estado] ?? 0;
-                                  const isActive = idx <= currentStep;
-                                  const isCurrent = idx === currentStep;
-
-                                  const icons = {
-                                    "DRAFT": FileEdit,
-                                    "SENT": Send,
-                                    "PENDING_HR": Users,
-                                    "CLOSED": CheckCircle
-                                  };
-                                  const Icon = icons[step.status] || FileEdit;
-
-                                  return (
-                                    <div key={idx} className="relative z-10 flex flex-col items-center group">
-                                      <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-all duration-300 border-2 ${isActive ? 'bg-blue-600 border-blue-600 text-white shadow-sm scale-110' : 'bg-white border-slate-200 text-slate-300'}`}>
-                                        <Icon className="w-3.5 h-3.5" />
-                                      </div>
-                                      <span className={`text-[9px] mt-1.5 font-medium transition-colors ${isCurrent ? 'text-blue-700' : 'text-slate-400'}`}>{step.label}</span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-
-                            {/* FOOTER ACTIONS - SIMPLIFIED */}
-                            <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-                              <div className="text-[10px] text-slate-400">
-                                <span className="font-semibold text-slate-500">Habilitado:</span> <br />
-                                {(() => {
-                                  const tlItem = [
-                                    { id: "Q1", date: `${anio}-12-01` },
-                                    { id: "Q2", date: `${anio + 1}-03-01` },
-                                    { id: "Q3", date: `${anio + 1}-06-01` },
-                                    { id: "FINAL", date: `${anio + 1}-09-01` }
-                                  ].find(t => t.id === periodo);
-
-                                  if (!tlItem) return <span className="text-slate-300">-</span>;
-
-                                  const startDate = new Date(tlItem.date);
-                                  const deadline = new Date(tlItem.date);
-                                  deadline.setDate(deadline.getDate() + 9);
-
-                                  const fmt = (d) => d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" });
-                                  return `${fmt(startDate)} - ${fmt(deadline)}`;
-                                })()}
-                              </div>
-
-                              <div className="flex gap-2">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className={localFbData.estado !== "DRAFT" ? "opacity-50" : ""}
-                                  onClick={() => handleSaveFeedback(periodo, localFbData.comentario, "DRAFT")}
-                                  disabled={localFbData.estado === "SENT" || localFbData.estado === "PENDING_HR" || localFbData.estado === "CLOSED"}
-                                >
-                                  <Save className="w-3 h-3 mr-1" /> Guardar
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400"
-                                  onClick={() => handleSaveFeedback(periodo, localFbData.comentario, "SENT")}
-                                  disabled={localFbData.estado === "SENT" || localFbData.estado === "PENDING_HR" || localFbData.estado === "CLOSED" || (!localFbData.comentario && localFbData.estado === "DRAFT")}
-                                >
-                                  <Send className="w-3 h-3 mr-1" /> Enviar
-                                </Button>
-                              </div>
-                            </div>
-
-
-                            {/* [TESTING] Delete Button INSIDE CARD */}
-                            {isTestingMode && fb && fb._id && (
-                              <div className="mt-4 pt-4 border-t border-rose-100 flex justify-end bg-rose-50/30 p-2 rounded-lg">
-                                <Button
-                                  variant="ghost"
-                                  className="text-rose-600 hover:bg-rose-100 h-7 text-xs"
-                                  onClick={() => handleDeleteFeedback(fb._id)}
-                                >
-                                  <Trash2 className="w-3 h-3 mr-2" /> Borrar Feedback
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            </div>
-          )
+            )
           }
-        </div>
-      </div>
+        </div >
+      </div >
 
       {/* Reporte Final Modal */}
-      <ReporteFinal
+      < ReporteFinal
         isOpen={showFinalReport}
-        onClose={() => setShowFinalReport(false)}
+        onClose={() => setShowFinalReport(false)
+        }
         data={dashEmpleadoData}
         empleado={dashEmpleadoData?.empleado}
         anio={anio}

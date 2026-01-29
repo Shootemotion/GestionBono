@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
+import { useTour } from "@/hooks/useTour";
 import { dashEmpleado } from "@/lib/dashboard";
 import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
 import { api } from "@/lib/api";
@@ -299,6 +300,20 @@ export default function MiDesempeno() {
   const [showGraph, setShowGraph] = useState(false); // Collapsible graph state
   const [showFinalReport, setShowFinalReport] = useState(false);
   const [globalAvisos, setGlobalAvisos] = useState([]);
+
+  // TOUR CONFIG
+  const tourSteps = useMemo(() => [
+    { element: '#tour-kpi-summary', popover: { title: 'Resumen de Resultados', description: 'Aquí podés ver rápidamente tu puntaje general, desglosado por Objetivos (70%) y Competencias (30%).' } },
+    { element: '#tour-avisos-section', popover: { title: 'Avisos y Novedades', description: 'Este panel te notificará sobre fechas límite, alertas de acción y comunicaciones importantes de RRHH.' } },
+    { element: '#tour-tabs-sections', popover: { title: 'Secciones', description: 'Navegá entre tus Objetivos y Competencias para ver el detalle de cada evaluación.' } },
+    { element: '#tour-sidebar-nav', popover: { title: 'Navegación Rápida', description: 'Usá este menú para saltar rápidamente a los resultados, detalles de objetivos o la sección de conformidad.' } },
+    { element: '#tour-feedback-status', popover: { title: 'Comentarios del Líder', description: 'Revisá el estado de tu feedback actual y los comentarios dejados por tu evaluador.' } },
+    { element: '#tour-feedback-timeline', popover: { title: 'Línea de Tiempo', description: 'Hacé clic en los periodos (Q1, Q2...) para ver tu evolución y las fechas límite de cada etapa.' } },
+    { element: '#tour-conformidad-section', popover: { title: 'Tu Conformidad', description: 'Aquí podés dar tu conformidad o indicar desacuerdo con la evaluación. También podés dejar comentarios finales para RRHH.' } },
+    { element: '#tour-flow-status', popover: { title: 'Estado del Flujo', description: 'Visualizá en qué etapa se encuentra tu evaluación dentro del proceso formal de la compañía.' } }
+  ], []);
+
+  const { startTour } = useTour(tourSteps);
 
   // Year Selection Logic
   const [selectedYear, setSelectedYear] = useState(() => {
@@ -846,65 +861,7 @@ export default function MiDesempeno() {
         </div>
 
         {/* Evolution Graph (Collapsible) */}
-        <div className="bg-slate-50 rounded-xl border border-slate-100 overflow-hidden">
-          <button
-            onClick={() => setShowGraph(!showGraph)}
-            className="w-full flex items-center justify-between p-4 text-xs font-semibold text-slate-500 uppercase hover:bg-slate-100 transition-colors"
-          >
-            <span>Evolución Anual vs Meta</span>
-            {showGraph ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          </button>
 
-          {showGraph && (
-            <div className="h-48 w-full p-4 pt-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={graphData}
-                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                  onClick={(data) => {
-                    if (data && data.activeLabel) {
-                      setViewPeriod(data.activeLabel);
-                    }
-                  }}
-                >
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#94a3b8' }} />
-                  <YAxis hide domain={[0, maxScore]} />
-                  <Tooltip
-                    cursor={{ fill: 'transparent' }}
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '11px' }}
-                    formatter={(value, name, entry) => {
-                      return [
-                        entry.payload.isVisible ? `${Math.round(value)}%` : '--',
-                        name === 'score' ? 'Resultado Ponderado' : metaLabel
-                      ];
-                    }}
-                    labelFormatter={(label) => `Periodo: ${label}`}
-                  />
-                  <ReferenceLine
-                    y={maxScore}
-                    stroke="#10b981"
-                    strokeDasharray="3 3"
-                    label={{
-                      position: 'right',
-                      value: `${maxScore}%`,
-                      fill: '#10b981',
-                      fontSize: 9
-                    }}
-                  />
-                  <Bar dataKey="score" radius={[2, 2, 0, 0]} maxBarSize={30} style={{ cursor: 'pointer' }}>
-                    {graphData.map((entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={entry.isCurrent ? (activeTab === 'obj' ? '#2563eb' : '#d97706') : '#cbd5e1'}
-                        className="transition-all duration-300 hover:opacity-80"
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
 
         {/* Current Period Detail (V6.6 Clean) */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 overflow-hidden">
@@ -1097,12 +1054,67 @@ export default function MiDesempeno() {
         </div>
 
         {/* Comments */}
-        <div className="bg-white p-4 rounded-lg border border-slate-200">
-          <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">Comentario del Evaluador</label>
-          <p className="text-sm text-slate-600 italic">
-            {displayHito?.comentario || "Sin comentarios."}
-          </p>
+        {/* Evolution Graph (Moved to Bottom) */}
+        <div className="bg-slate-50 rounded-xl border border-slate-100 overflow-hidden">
+          <button
+            onClick={() => setShowGraph(!showGraph)}
+            className="w-full flex items-center justify-between p-4 text-xs font-semibold text-slate-500 uppercase hover:bg-slate-100 transition-colors"
+          >
+            <span>Evolución Anual vs Meta</span>
+            {showGraph ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+
+          {showGraph && (
+            <div className="h-48 w-full p-4 pt-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={graphData}
+                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                  onClick={(data) => {
+                    if (data && data.activeLabel) {
+                      setViewPeriod(data.activeLabel);
+                    }
+                  }}
+                >
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#94a3b8' }} />
+                  <YAxis hide domain={[0, maxScore]} />
+                  <Tooltip
+                    cursor={{ fill: 'transparent' }}
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '11px' }}
+                    formatter={(value, name, entry) => {
+                      return [
+                        entry.payload.isVisible ? `${Math.round(value)}%` : '--',
+                        name === 'score' ? 'Resultado Ponderado' : metaLabel
+                      ];
+                    }}
+                    labelFormatter={(label) => `Periodo: ${label}`}
+                  />
+                  <ReferenceLine
+                    y={maxScore}
+                    stroke="#10b981"
+                    strokeDasharray="3 3"
+                    label={{
+                      position: 'right',
+                      value: `${maxScore}%`,
+                      fill: '#10b981',
+                      fontSize: 9
+                    }}
+                  />
+                  <Bar dataKey="score" radius={[2, 2, 0, 0]} maxBarSize={30} style={{ cursor: 'pointer' }}>
+                    {graphData.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={entry.isCurrent ? (activeTab === 'obj' ? '#2563eb' : '#d97706') : '#cbd5e1'}
+                        className="transition-all duration-300 hover:opacity-80"
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
+
       </div>
     );
   };
@@ -1172,7 +1184,12 @@ export default function MiDesempeno() {
         <div className="max-w-[80%] mx-auto relative z-10">
           <div className="flex justify-between items-end mb-6">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight mb-2">Hola, {empleadoNombre}</h1>
+              <div className="flex items-center gap-4 mb-2">
+                <h1 className="text-3xl font-bold tracking-tight">Hola, {empleadoNombre}</h1>
+                <Button variant="outline" size="sm" onClick={startTour} className="gap-2 bg-slate-800 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700 rounded-full h-8 px-4 text-xs">
+                  <HelpCircle className="w-3.5 h-3.5" /> Tutorial
+                </Button>
+              </div>
               <p className="text-slate-400 text-lg">Seguimiento de evaluaciones y feedback continuo</p>
             </div>
             <div className="hidden md:block text-right">
@@ -1234,7 +1251,8 @@ export default function MiDesempeno() {
             {/* SIDEBAR NAVIGATION (Sticky) - Only show if data exists */}
             <div className="hidden lg:block space-y-2 sticky top-24 h-fit">
               {/* NOTIFICATIONS SECTION */}
-              <div className="bg-white/80 backdrop-blur-sm p-4 rounded-2xl border border-slate-200/60 shadow-sm mb-4">
+              {/* NOTIFICATIONS SECTION */}
+              <div id="tour-avisos-section" className="bg-white/80 backdrop-blur-sm p-4 rounded-2xl border border-slate-200/60 shadow-sm mb-4">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
                   Avisos y Novedades
@@ -1327,7 +1345,8 @@ export default function MiDesempeno() {
               </div>
 
               {/* MENU SECTION */}
-              <div className="bg-white/80 backdrop-blur-sm p-2 rounded-2xl border border-slate-200/60 shadow-sm">
+              {/* MENU SECTION */}
+              <div id="tour-sidebar-nav" className="bg-white/80 backdrop-blur-sm p-2 rounded-2xl border border-slate-200/60 shadow-sm">
                 <button
                   onClick={() => scrollToSection(sectionFeedbackRef)}
                   className="w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-slate-600 hover:bg-blue-50 hover:text-blue-700 transition-all font-medium"
@@ -1362,7 +1381,8 @@ export default function MiDesempeno() {
               {/* SECTION 1: FEEDBACK RESULTS (Timeline + Summary) */}
               <div ref={sectionFeedbackRef} className="scroll-mt-32">
                 {/* Timeline Card */}
-                <div className="bg-white rounded-2xl shadow-xl border border-slate-200/60 p-8 mb-8">
+                {/* Timeline Card */}
+                <div id="tour-feedback-timeline" className="bg-white rounded-2xl shadow-xl border border-slate-200/60 p-8 mb-8">
                   <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-8 flex items-center gap-2">
                     <Calendar className="w-4 h-4" /> Cronograma Anual
                   </h3>
@@ -1419,7 +1439,7 @@ export default function MiDesempeno() {
                 {selectedFeedback ? (
                   <div className="space-y-6">
                     {/* Header Feedback */}
-                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 relative overflow-hidden">
+                    <div id="tour-feedback-status" className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 relative overflow-hidden">
                       <div className="flex justify-between items-start mb-6">
                         <div>
                           <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
@@ -1482,7 +1502,7 @@ export default function MiDesempeno() {
 
                     {/* Summary Scores (V3 KPI Tiles) */}
                     <div className="mt-6 mb-2">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div id="tour-kpi-summary" className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         {(() => {
                           const showScores = ["SENT", "PENDING_HR", "CLOSED", "ACKNOWLEDGED"].includes(selectedFeedback.estado);
 
@@ -1652,7 +1672,7 @@ export default function MiDesempeno() {
                     {/* LEFT COLUMN: LIST */}
                     <div className="w-full lg:w-1/3 flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                       {/* TABS */}
-                      <div className="flex border-b border-slate-100">
+                      <div id="tour-tabs-sections" className="flex border-b border-slate-100">
                         <button
                           onClick={() => setActiveTab('obj')}
                           className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'obj' ? 'text-blue-600 bg-blue-50/50 border-b-2 border-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
@@ -1752,7 +1772,7 @@ export default function MiDesempeno() {
                     No hay validación disponible para este periodo.
                   </div>
                 ) : (
-                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8">
+                  <div id="tour-conformidad-section" className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8">
                     <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2 text-lg">
                       <CheckCircle2 className="w-5 h-5 text-emerald-600" />
                       Conformidad y Validación
@@ -1818,7 +1838,7 @@ export default function MiDesempeno() {
                     </div>
 
                     {/* FEEDBACK FLOW MOVED HERE */}
-                    <div className="pt-8">
+                    <div id="tour-flow-status" className="pt-8">
                       <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2">
                         <span className="w-3 h-3 bg-slate-400 rounded-full" /> Estado del Proceso
                       </h4>
@@ -1873,7 +1893,7 @@ export default function MiDesempeno() {
           </div>
         )}
       </div>
-      {/* Reporte Final Modal */}
+
       {/* Reporte Final Modal */}
       <ReporteFinal
         isOpen={showFinalReport}

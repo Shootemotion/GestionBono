@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
 
 export default function FormularioObjetivos({
   initialData = null,
@@ -17,6 +18,7 @@ export default function FormularioObjetivos({
   onSaveAndContinue,
 }) {
   const isEdit = !!initialData?._id;
+  const currentFiscalYear = getCurrentFiscalYear();
   const currentYear = new Date().getFullYear();
 
   // Base
@@ -24,7 +26,7 @@ export default function FormularioObjetivos({
   const [descripcion, setDescripcion] = useState("");
   const [proceso, setProceso] = useState("");
   const [estado, setEstado] = useState("");
-  const [year, setYear] = useState(initialYear || currentYear);
+  const [year, setYear] = useState(initialData?.year || initialYear || currentFiscalYear);
   const [scopeType, setScopeType] = useState(initialScopeType || "area");
   const [scopeId, setScopeId] = useState(initialScopeId || "");
   const [frecuencia, setFrecuencia] = useState("mensual");

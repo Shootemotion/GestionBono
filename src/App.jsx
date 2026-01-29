@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Suspense, lazy } from 'react';
 import RequireAuth from '@/components/RequireAuth';
 import Navbar from '@/components/Navbar';
+import BonoBot from "@/components/BonoBot/BonoBot";
 import { getToken } from '@/lib/api';
 import { Toaster } from "@/components/ui/sonner";
 import { Spinner } from '@/components/ui/spinner';
@@ -208,6 +209,7 @@ function App() {
           </Routes>
         </Suspense>
       </main>
+      <BonoBot />
       <Toaster richColors position="top-right" />
     </>
   );

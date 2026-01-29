@@ -189,9 +189,13 @@ plantillaSchema.pre("validate", function (next) {
 
   if (!this.scopeRef) this.scopeRef = map[this.scopeType];
 
-  if (!this.fechaInicioFiscal) this.fechaInicioFiscal = getFiscalStart(this.year);
+  // 🔹 FIX: Always recalculate dates if 'year' is modified or if dates are missing
+  if (this.isModified('year') || !this.fechaInicioFiscal) {
+    this.fechaInicioFiscal = getFiscalStart(this.year);
+  }
 
-  if (!this.fechaCierre && !this.fechaCierreCustom) {
+  // 🔹 FIX: Always recalculate end date if 'year' mod, unless custom
+  if ((this.isModified('year') || !this.fechaCierre) && !this.fechaCierreCustom) {
     this.fechaCierre = getFiscalEnd(this.year);
   }
 

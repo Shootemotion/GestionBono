@@ -6,6 +6,8 @@ import Sector from '../models/Sector.model.js';
 import Area from '../models/Area.model.js';
 import Evaluacion from "../models/Evaluacion.model.js";
 import { generarHitos } from "../utils/generarHitos.js";
+import { calcularResultadoMeta } from "../lib/calculoMetas.js";
+import { calcularScoreObjetivoDesdeMetas } from "../lib/scoringGlobal.js";
 
 const asObjectId = (v) => new mongoose.Types.ObjectId(String(v));
 const isValidObjectId = (v) => mongoose.Types.ObjectId.isValid(String(v));
@@ -173,20 +175,47 @@ export async function computeForEmployees(empleadoIds, anio) {
         );
 
         if (p.tipo === "objetivo") {
-          // progreso promedio de hitos (o max si es acumulativo)
-          const isCumulative = p.metas?.some(m => m.acumulativa || m.modoAcumulacion === 'acumulativo');
-          const progresos = hitos.map((h) => h.actual ?? 0);
+          // 🔹 Score Calculation Refactor: Annual Closure Rules (Regla de Cierre)
+          // Old Logic: Average of Period Scores (e.g. 0, 0, 100, 100 -> 50%)
+          // New Logic: 
+          // 1. Gather all inputs per Meta.
+          // 2. Calculate "Annual Meta Score" using calculoMetas (Average/Sum/Last Rule).
+          // 3. Aggregate Annual Meta Scores weighted.
 
-          const progreso = isCumulative
-            ? Math.min(Math.round(progresos.reduce((a, b) => a + b, 0)), 100) // Sum for cumulative, capped at 100? Or allow over? 
-            // If original logic allowed over via 'permiteOver', ensure matches. 
-            // Usually 'target' is 100. If we sum, we should probably cap at 100 unless over allowed.
-            // Using simple sum for now as per user expectation "35+5=40".
-            : (progresos.length ? Math.round(progresos.reduce((a, b) => a + b, 0) / progresos.length) : 0);
+          let progreso = 0;
+
+          if (p.metas && p.metas.length > 0) {
+            const metasAnuales = p.metas.map(metaDef => {
+              // Gather raw inputs for this meta from all hitos
+              const registros = hitos.map(h => {
+                const mRes = h.metas.find(m => m.nombre === metaDef.nombre); // Match by name
+                return {
+                  periodo: h.periodo,
+                  valor: mRes ? mRes.resultado : null
+                };
+              }).filter(r => r.valor !== null && r.valor !== undefined && r.valor !== "");
+
+              // Calculate Single Meta Score for the Year
+              const { scoreMeta } = calcularResultadoMeta(metaDef, registros);
+
+              return {
+                ...metaDef,
+                scoreMeta
+              };
+            });
+
+            // Aggregate to Objective Score
+            progreso = calcularScoreObjetivoDesdeMetas(metasAnuales);
+          } else {
+            // Fallback if no metas (Legacy)
+            const progresos = hitos.map((h) => h.actual ?? 0);
+            progreso = progresos.length ? Math.round(progresos.reduce((a, b) => a + b, 0) / progresos.length) : 0;
+          }
 
           objetivosArr.push({
             _id: p._id,
             nombre: p.nombre,
+            year: p.year,
             descripcion: p.descripcion || "",
             frecuencia: p.frecuencia,
             proceso: p.proceso,
@@ -196,8 +225,9 @@ export async function computeForEmployees(empleadoIds, anio) {
             peso,
             progreso,
             comentario: "",
-            frecuencia: p.frecuencia,
             fechaLimite: p.fechaLimite,
+            reglaCierre: p.reglaCierre,
+            umbralPeriodos: p.umbralPeriodos,
             metas: p.metas || [],
             hitos,
           });
@@ -213,6 +243,7 @@ export async function computeForEmployees(empleadoIds, anio) {
           aptitudesArr.push({
             _id: p._id,
             nombre: p.nombre,
+            year: p.year,
             descripcion: p.descripcion || "",
             metodo: p.metodo,
             peso,
@@ -253,17 +284,33 @@ export async function computeForEmployees(empleadoIds, anio) {
       objetivosArr.forEach(obj => {
         // Filter hitos up to cutoff
         const validHitos = obj.hitos.filter(h => periodOrder.indexOf(h.periodo) <= cutoffIndex);
-        const progresos = validHitos.map(h => h.actual ?? 0);
 
-        const isCumulative = obj.metas?.some(m => m.acumulativa || m.modoAcumulacion === 'acumulativo');
-        const newProgreso = isCumulative
-          ? Math.max(...progresos, 0)
-          : (progresos.length ? Math.round(progresos.reduce((a, b) => a + b, 0) / progresos.length) : 0);
+        // 🔹 FIX: Apply Annual Closure Rules to Cutoff Logic
+        if (obj.metas && obj.metas.length > 0) {
+          const metasAnuales = obj.metas.map(metaDef => {
+            const registros = validHitos.map(h => {
+              const mRes = h.metas.find(m => m.nombre === metaDef.nombre);
+              return {
+                periodo: h.periodo,
+                valor: mRes ? mRes.resultado : null
+              };
+            }).filter(r => r.valor !== null && r.valor !== undefined && r.valor !== "");
 
-        // Apply PermiteOver Logic (Cap at 100 if not allowed)
-        const hasPermiteOver = obj.metas?.some(m => m.permiteOver) || obj.hitos?.some(h => h.metas?.some(m => m.permiteOver));
-        obj.progreso = hasPermiteOver ? newProgreso : Math.min(newProgreso, 100);
+            const { scoreMeta } = calcularResultadoMeta(metaDef, registros);
+            return { ...metaDef, scoreMeta };
+          });
 
+          obj.progreso = calcularScoreObjetivoDesdeMetas(metasAnuales);
+        } else {
+          // Legacy Fallback
+          const progresos = validHitos.map(h => h.actual ?? 0);
+          obj.progreso = progresos.length ? Math.round(progresos.reduce((a, b) => a + b, 0) / progresos.length) : 0;
+        }
+
+        // Apply PermiteOver Logic is handled inside calcularResultadoMeta/calculateScoreObjetivo, 
+        // but let's ensure cap if needed (though new logic usually handles it).
+        // For safety, clamp if the meta definition wasn't explicit or if algo returns >100 without permission.
+        // Actually, calculoMetas already handles maxOver/clamp.
       });
 
       // Re-map aptitudes
@@ -417,6 +464,7 @@ export const dashBySector = async (req, res) => {
 };
 
 export const dashByEmpleado = async (req, res, next) => {
+  console.log("!!! VERSION ESTRICTA ACTIVA -- dashByEmpleado CALLED !!!");
   try {
     const { empleadoId } = req.params;
     const year = Number(req.params.year || req.query.anio || req.query.year || new Date().getFullYear());
@@ -525,18 +573,36 @@ export const dashByEmpleado = async (req, res, next) => {
       );
 
       if (p.tipo === "objetivo") {
+        // 🔹 Score Calculation Refactor: Annual Closure Rules (Regla de Cierre)
+        // (Duplicated logic fix for Individual Dashboard)
 
-        const isCumulative = p.metas?.some(m => m.acumulativa || m.modoAcumulacion === 'acumulativo');
-        const progresos = hitos.map((h) => h.actual ?? 0);
+        let progreso = 0;
 
-        const progreso = isCumulative
-          ? Math.max(...progresos, 0)
-          : (progresos.length ? Math.round(progresos.reduce((a, b) => a + b, 0) / progresos.length) : 0);
+        if (p.metas && p.metas.length > 0) {
+          const metasAnuales = p.metas.map(metaDef => {
+            const registros = hitos.map(h => {
+              const mRes = h.metas.find(m => m.nombre === metaDef.nombre);
+              return {
+                periodo: h.periodo,
+                valor: mRes ? mRes.resultado : null
+              };
+            }).filter(r => r.valor !== null && r.valor !== undefined && r.valor !== "");
+
+            const { scoreMeta } = calcularResultadoMeta(metaDef, registros);
+            return { ...metaDef, scoreMeta };
+          });
+
+          progreso = calcularScoreObjetivoDesdeMetas(metasAnuales);
+        } else {
+          const progresos = hitos.map((h) => h.actual ?? 0);
+          progreso = progresos.length ? Math.round(progresos.reduce((a, b) => a + b, 0) / progresos.length) : 0;
+        }
 
         objetivosArr.push({
           _id: p._id,
           tipo: "objetivo",
           nombre: p.nombre,
+          year: p.year,
           descripcion: p.descripcion || "",
           metodo: p.metodo,
           target: p.target,
@@ -567,6 +633,7 @@ export const dashByEmpleado = async (req, res, next) => {
           _id: p._id,
           tipo: "aptitud",
           nombre: p.nombre,
+          year: p.year,
           descripcion: p.descripcion || "",
           metodo: p.metodo,
           peso,
@@ -608,6 +675,7 @@ export const dashByEmpleado = async (req, res, next) => {
 
     // OVERRIDE if Latest Feedback exists and has valid scores
     if (latestFeedback && latestFeedback.scores?.global != null) {
+      console.log("!!! SNAPSHOT OVERRIDE APPLIED !!!", latestFeedback.scores);
       scoreObj = latestFeedback.scores.obj ?? scoreObj;
       scoreApt = latestFeedback.scores.comp ?? scoreApt;
       scoreFinal = latestFeedback.scores.global;

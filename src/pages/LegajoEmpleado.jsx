@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { Home, Copy, Check, Trophy, FileText, Calendar } from "lucide-react";
+import { Home, Copy, Check, Trophy, FileText, Calendar, HelpCircle } from "lucide-react";
 import { api, API_ORIGIN } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
+import { useTour } from "@/hooks/useTour";
 import CarreraTable from "@/components/CarreraTable.jsx";
 import CapacitacionesTable from "@/components/CapacitacionesTable.jsx";
 import IncidenciasTable from "@/components/IncidenciasTable.jsx";
@@ -192,6 +193,16 @@ export default function LegajoEmpleado() {
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [loadingReport, setLoadingReport] = useState(false);
   const [selectedReportYear, setSelectedReportYear] = useState(null);
+
+  // TOUR STEPS
+  const tourSteps = useMemo(() => [
+    { element: '#tour-legajo-header', popover: { title: 'Encabezado del Legajo', description: 'Aquí ves la información principal del empleado, su foto y acciones rápidas.' } },
+    { element: '#tour-legajo-sidebar', popover: { title: 'Resumen y Contacto', description: 'En esta barra lateral encontrás datos clave, historial de puestos y formas de contacto.' } },
+    { element: '#tour-legajo-tabs', popover: { title: 'Navegación', description: 'Usá estas pestañas para ver el detalle de cada sección: Datos, Capacitaciones, Documentos, etc.' } },
+    { element: '#tour-legajo-content', popover: { title: 'Contenido Detallado', description: 'Aquí se mostrará la información correspondiente a la pestaña seleccionada.' } }
+  ], []);
+
+  const { startTour } = useTour(tourSteps);
 
   // Carga inicial
   useEffect(() => {
@@ -540,7 +551,7 @@ export default function LegajoEmpleado() {
     <div className="min-h-screen bg-[#f5f9fc]">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-8 font-sans">
         {/* Header Moderno con Gradiente Oscuro */}
-        <div className="relative overflow-hidden rounded-3xl bg-white shadow-sm border border-slate-200 group/header">
+        <div id="tour-legajo-header" className="relative overflow-hidden rounded-3xl bg-white shadow-sm border border-slate-200 group/header">
           {/* Cover */}
           <div className="relative h-32 w-full bg-slate-900 overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/40 via-slate-900 to-slate-900" />
@@ -583,6 +594,13 @@ export default function LegajoEmpleado() {
               <div className="flex-1 pb-2 text-center md:text-left">
                 <h1 className="text-3xl font-bold text-slate-900 tracking-tight flex items-center justify-center md:justify-start gap-3">
                   {emp.nombre} {emp.apellido}
+                  <button
+                    onClick={startTour}
+                    className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-indigo-600 rounded-full transition-colors"
+                    title="Iniciar Tutorial"
+                  >
+                    <HelpCircle className="w-5 h-5" />
+                  </button>
                 </h1>
 
                 <div className="flex flex-col md:flex-row items-center gap-x-6 gap-y-1 mt-1 text-slate-500 text-sm font-medium">
@@ -634,7 +652,7 @@ export default function LegajoEmpleado() {
         {/* Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Sidebar IZQUIERDO */}
-          <aside className="lg:col-span-4 space-y-6">
+          <aside id="tour-legajo-sidebar" className="lg:col-span-4 space-y-6">
             {/* Chips resumen */}
             <div className="grid grid-cols-2 gap-4">
               <div className="rounded-2xl bg-white p-4 shadow-sm border border-slate-100 flex flex-col justify-between hover:shadow-md transition-shadow">
@@ -836,10 +854,10 @@ export default function LegajoEmpleado() {
           </aside>
 
           {/* PANEL CENTRAL: Tabs siempre arriba + contenido */}
-          <section className="lg:col-span-8 space-y-6">
+          <section id="tour-legajo-content" className="lg:col-span-8 space-y-6">
             {/* Tabs (sticky) */}
             <div className="sticky top-4 z-20">
-              <div className="rounded-2xl bg-white/90 backdrop-blur-md shadow-sm border border-slate-200/60 p-1.5 flex flex-wrap gap-1">
+              <div id="tour-legajo-tabs" className="rounded-2xl bg-white/90 backdrop-blur-md shadow-sm border border-slate-200/60 p-1.5 flex flex-wrap gap-1">
                 {TABS.map((t) => (
                   <button
                     key={t}

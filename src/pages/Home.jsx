@@ -16,10 +16,13 @@ import {
   CheckCircle,
   DollarSign,
   Building2,
-  Megaphone
+  Megaphone,
+  HelpCircle
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import useCan, { useHasRole } from "@/hooks/useCan";
+
+import { useTour } from "@/hooks/useTour";
 import { API_ORIGIN } from "@/lib/api";
 
 function quarterLabel(d = new Date()) {
@@ -77,6 +80,18 @@ const rolePretty = {
 export default function Home() {
   const { user } = useAuth();
   const periodo = quarterLabel();
+
+  // TOUR STEPS
+  const tourSteps = useMemo(() => [
+    { element: '#tour-hero', popover: { title: 'Bienvenido a GestionBono', description: 'Este es tu panel principal donde podrás ver tu información y navegar por las distintas secciones.' } },
+    { element: '#tour-period', popover: { title: 'Periodo Actual', description: 'Aquí indicamos el trimestre fiscal en curso. Todas las evaluaciones se rigen por este calendario.' } },
+    { element: '#tour-group-0', popover: { title: 'Mi Espacio', description: 'Accedé a tu autoevaluación, resultados personales y legajo.' } },
+    { element: '#tour-group-1', popover: { title: 'Gestión & Seguimiento', description: 'Herramientas para líderes y RRHH: Seguimiento de equipos y gestión de procesos.' } },
+    { element: '#tour-group-2', popover: { title: 'Estructura', description: 'Visualizá la organización de la empresa y los equipos.' } },
+    { element: '#tour-group-3', popover: { title: 'Resultados', description: 'Tableros ejecutivos y configuración de métricas de bono.' } }
+  ], []);
+
+  const { startTour } = useTour(tourSteps);
 
   const { ok: canViewEstructura } = useCan("estructura:ver");
   const { ok: canViewNomina } = useCan("nomina:ver");
@@ -286,7 +301,7 @@ export default function Home() {
           <div className="absolute top-[10%] right-[-5%] w-[400px] h-[400px] bg-purple-600/20 rounded-full blur-3xl mix-blend-screen" />
         </div>
 
-        <div className="relative max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6 z-10">
+        <div id="tour-hero" className="relative max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6 z-10">
           <div className="flex items-center gap-5">
             {/* Avatar with Gradient Ring */}
             <div className="relative group">
@@ -307,10 +322,19 @@ export default function Home() {
             </div>
 
             <div>
-              <h1 className="text-3xl font-bold tracking-tight text-white mb-1.5">
-                Hola, <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
-                  {user?.empleado?.apodo ? user.empleado.apodo : (user?.empleado?.nombre || user?.nombre || displayName.split(" ")[0])}!
+              <h1 className="text-3xl font-bold tracking-tight text-white mb-1.5 flex items-center gap-3">
+                <span>
+                  Hola, <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
+                    {user?.empleado?.apodo ? user.empleado.apodo : (user?.empleado?.nombre || user?.nombre || displayName.split(" ")[0])}!
+                  </span>
                 </span>
+                <button
+                  onClick={startTour}
+                  className="p-1.5 bg-white/10 hover:bg-white/20 text-blue-200 hover:text-white rounded-full transition-colors"
+                  title="Iniciar Tutorial"
+                >
+                  <HelpCircle className="w-5 h-5" />
+                </button>
               </h1>
 
               <div className="flex flex-wrap items-center gap-3 text-sm text-slate-300">
@@ -327,7 +351,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4 bg-slate-800/40 p-4 rounded-2xl border border-slate-700/50 backdrop-blur-md">
+          <div id="tour-period" className="flex items-center gap-4 bg-slate-800/40 p-4 rounded-2xl border border-slate-700/50 backdrop-blur-md">
             <div className="p-2.5 bg-blue-500/20 rounded-xl">
               <CalendarDays className="h-6 w-6 text-blue-400" />
             </div>
@@ -360,7 +384,7 @@ export default function Home() {
             if (allItems.length === 0) return null;
 
             return (
-              <div key={group.title} className="flex flex-col gap-3 w-full sm:w-[280px]">
+              <div id={`tour-group-${GROUPS.indexOf(group)}`} key={group.title} className="flex flex-col gap-3 w-full sm:w-[280px]">
                 {/* Column Header - Fixed height for alignment */}
                 <div className="flex items-center justify-center gap-3 mb-1 px-1 border-b border-slate-200 pb-1.5 min-h-[2.5rem]">
                   <h2 className="text-base font-bold text-slate-800 uppercase tracking-wide leading-tight text-center">

@@ -199,11 +199,31 @@ export const calculateMetaScore = (metaDef, hitos) => {
         return 0; // Fail (Binary)
     }
 
-    // Default: Promedio (Average)
-    // Also handles "ponderado" if we simply treat it as equal for now (user said distinct, but complexity...)
-    // For Ponderado we'd need weights per period. Assuming simple average for MVP unless weights provided.
-    const sum = periodScores.reduce((a, b) => a + b, 0);
-    return Math.round(sum / periodScores.length * 10) / 10;
+    // Default: Promedio / Cierre Único
+    // "Cierre Único" is handled similar to "Ultimo Valor" but usually implies we take a single representative value for the year.
+    // "Promedio": We should Average the INPUTS (e.g. 62.5%) then Check Compliance.
+    // NOT Average the Scores (e.g. 50%).
+
+    let representativeValue = 0;
+
+    if (rule === "cierre_unico") {
+        // Last available value
+        representativeValue = results[results.length - 1]?.actual ?? 0;
+    } else {
+        // "promedio"
+        const sumValues = results.reduce((acc, r) => acc + Number(r.actual), 0);
+        representativeValue = results.length ? sumValues / results.length : 0;
+    }
+
+    const lastConfig = results[results.length - 1]?.config || {
+        reconoceEsfuerzo: metaDef.reconoceEsfuerzo,
+        tolerancia: metaDef.tolerancia,
+        permiteOver: metaDef.permiteOver,
+        operador: metaDef.operador
+    };
+
+    // Calculate Single Score based on Representative Value
+    return calculatePeriodCompliance(representativeValue, metaDef.esperado, lastConfig);
 };
 
 

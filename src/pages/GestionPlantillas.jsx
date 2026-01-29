@@ -711,7 +711,7 @@ export default function GestionPlantillasPage() {
               Gestión de Plantillas
             </h1>
             <p className="text-sm text-muted-foreground">
-              Creá y administrá objetivos y aptitudes base por Año y Alcance.
+              Creá y administrá objetivos y competencias base por Año y Alcance.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -897,7 +897,7 @@ export default function GestionPlantillasPage() {
                         variant="outline"
                         onClick={() => openNew("aptitud")}
                       >
-                        + Nueva Aptitud
+                        + Nueva Competencia
                       </Button>
                     )}
                   </div>
