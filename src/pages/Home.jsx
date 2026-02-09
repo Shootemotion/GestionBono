@@ -233,11 +233,11 @@ export default function Home() {
           bg: "bg-indigo-50"
         },
         {
-          key: "usuarios", // Only for SuperAdmin usually
-          title: "Usuarios",
+          key: "admin-web", // Only for SuperAdmin usually
+          title: "Administración Web",
           desc: "Administración de usuarios y roles.",
           icon: Users,
-          to: "/usuarios",
+          to: "/sistemas",
           allow: user?.isSuper || user?.rol === 'superadmin',
           color: "text-slate-600",
           bg: "bg-slate-100"

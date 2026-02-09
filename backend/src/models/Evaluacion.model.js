@@ -90,6 +90,7 @@ const evaluacionSchema = new mongoose.Schema(
           enum: ["promedio", "umbral_periodos", "cierre_unico"],
           default: "promedio",
         },
+        umbralPeriodos: { type: Number, default: 0 },
 
         // valor cargado en el hito
         resultado: { type: mongoose.Schema.Types.Mixed, default: null },

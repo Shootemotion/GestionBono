@@ -23,11 +23,13 @@ const GestionPlantillas = lazy(() => import('@/pages/GestionPlantillas'));
 const EditorAsignacion = lazy(() => import('@/pages/EditorAsignacion'));
 const CompleteInvite = lazy(() => import('@/components/CompleteInvite'));
 const UsuariosAdmin = lazy(() => import('@/pages/UsuariosAdmin'));
+const RolesAdmin = lazy(() => import('@/pages/RolesAdmin'));
 const GestionDepartamentos = lazy(() => import('./pages/GestionDepartamentos'));
 const SimuladorObjetivos = lazy(() => import('@/pages/SimuladorObjetivos'));
 const ConfiguracionBono = lazy(() => import('@/pages/ConfiguracionBono'));
 const ResultadosBono = lazy(() => import('@/pages/ResultadosBono'));
 const GestionAvisos = lazy(() => import('@/pages/GestionAvisos'));
+const Sistemas = lazy(() => import('@/pages/Sistemas'));
 
 
 function App() {
@@ -183,10 +185,26 @@ function App() {
             <Route path="/complete-invite" element={<CompleteInvite />} />
 
             <Route
+              path="/sistemas"
+              element={
+                <RequireAuth allow={['superadmin']}>
+                  <Sistemas />
+                </RequireAuth>
+              }
+            />
+            <Route
               path="/usuarios"
               element={
-                <RequireAuth allow={['superadmin', 'rrhh']}>
-                  <UsuariosAdmin />
+                <RequireAuth allow={['superadmin']}>
+                  <Sistemas />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/roles"
+              element={
+                <RequireAuth allow={['superadmin']}>
+                  <Sistemas />
                 </RequireAuth>
               }
             />

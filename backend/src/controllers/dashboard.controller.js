@@ -95,6 +95,13 @@ export async function computeForEmployees(empleadoIds, anio) {
     year: Number(anio),
   }).lean();
 
+  // ⚡ OPTIMIZATION: Index evaluations by Key (Emp + Tpl + Per) to avoid O(N) search in loop
+  const evalsMap = new Map();
+  for (const ev of evals) {
+    const key = `${String(ev.empleado)}_${String(ev.plantillaId)}_${ev.periodo}`;
+    evalsMap.set(key, ev);
+  }
+
   return await Promise.all(
     empleados.map(async (e, idx) => {
       const empIdStr = String(e._id);
@@ -138,12 +145,20 @@ export async function computeForEmployees(empleadoIds, anio) {
         // 🔹 Generar hitos con resultados ya guardados
         const hitos = await Promise.all(
           generarHitos(p).map(async (h) => {
+            // [DEBUG REMOVED FOR PERFORMANCE]
+
+            // ⚡ OPTIMIZATION: Use Map lookup instead of .find()
+            const evHito = evalsMap.get(`${empIdStr}_${tplIdStr}_${h.periodo}`);
+
+            /*
+            // OLD SLOW LOGIC
             const evHito = evals.find(
               (ev) =>
                 String(ev.empleado) === empIdStr &&
                 String(ev.plantillaId) === tplIdStr &&
                 ev.periodo === h.periodo
             );
+            */
 
             const metasCombinadas = (p.metas || []).map((m) => {
               const evaluada = evHito?.metasResultados?.find(
@@ -464,7 +479,7 @@ export const dashBySector = async (req, res) => {
 };
 
 export const dashByEmpleado = async (req, res, next) => {
-  console.log("!!! VERSION ESTRICTA ACTIVA -- dashByEmpleado CALLED !!!");
+  // console.log("!!! VERSION ESTRICTA ACTIVA -- dashByEmpleado CALLED !!!");
   try {
     const { empleadoId } = req.params;
     const year = Number(req.params.year || req.query.anio || req.query.year || new Date().getFullYear());

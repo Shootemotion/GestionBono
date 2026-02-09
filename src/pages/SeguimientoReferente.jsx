@@ -4,7 +4,7 @@ import { dashArea, dashSector } from "@/lib/dashboard";
 import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import FilterBar from "@/components/seguimiento/FilterBar";
 import GanttView from "@/components/seguimiento/GanttView";
@@ -152,6 +152,7 @@ function groupItems(items, mode = "item") {
 export default function SeguimientoReferente() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // roles
   const esReferente = Boolean(
@@ -172,25 +173,71 @@ export default function SeguimientoReferente() {
 
   const currentYear = getCurrentFiscalYear();
 
-  // estado
-  const [anio, setAnio] = useState(currentYear);
+  // --- LECTURA DE ESTADO DESDE URL (con fallbacks) ---
+  const anioParam = searchParams.get("anio");
+  const anio = anioParam ? Number(anioParam) : currentYear;
+
+  const areaFiltro = searchParams.get("area") || "todas";
+  const sectorFiltro = searchParams.get("sector") || "todos";
+  const empQuery = searchParams.get("q") || "";
+
+  const mainTab = searchParams.get("tab") || "objetivos"; // "objetivos" | "feedback"
+  const ganttGrouping = searchParams.get("grouping") || "sector_estado";
+  const dueOnly = searchParams.get("dueOnly") === "true";
+
+  // Estado local solo para selecciones efímeras y datos
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-
-  const [areaFiltro, setAreaFiltro] = useState("todas");
-  const [sectorFiltro, setSectorFiltro] = useState("todos");
-  const [empQuery, setEmpQuery] = useState("");
   const [empSelectedId, setEmpSelectedId] = useState(null);
   const [showEmpHints, setShowEmpHints] = useState(false);
-
-  const [mainTab, setMainTab] = useState("objetivos"); // "objetivos" | "feedback"
-  const [tipoFiltro, setTipoFiltro] = useState("todos");
-  // const [view, setView] = useState("gantt"); // Always Gantt
-  // const [zoom, setZoom] = useState("mes"); // Always Mes
-  const [dueOnly, setDueOnly] = useState(false);
-  // const [sortDir, setSortDir] = useState("asc"); // Always Asc
-  const [ganttGrouping, setGanttGrouping] = useState("sector_estado"); // "sector_estado" | "estado_sector"
+  const [tipoFiltro, setTipoFiltro] = useState("todos"); // Este podría ir a URL si se desea
   const [groupBy, setGroupBy] = useState("empleado");
+
+  // --- SETTERS WRAPPERS (Actualizan URL) ---
+  const setAnio = (val) => {
+    setSearchParams(prev => {
+      prev.set("anio", val);
+      return prev;
+    });
+  };
+  const setAreaFiltro = (val) => {
+    setSearchParams(prev => {
+      prev.set("area", val);
+      prev.set("sector", "todos"); // Reset sector al cambiar area
+      return prev;
+    });
+  };
+  const setSectorFiltro = (val) => {
+    setSearchParams(prev => {
+      prev.set("sector", val);
+      return prev;
+    });
+  };
+  const setEmpQuery = (val) => {
+    setSearchParams(prev => {
+      if (val) prev.set("q", val);
+      else prev.delete("q");
+      return prev;
+    });
+  };
+  const setMainTab = (val) => {
+    setSearchParams(prev => {
+      prev.set("tab", val);
+      return prev;
+    });
+  };
+  const setGanttGrouping = (val) => {
+    setSearchParams(prev => {
+      prev.set("grouping", val);
+      return prev;
+    });
+  };
+  const setDueOnly = (val) => {
+    setSearchParams(prev => {
+      prev.set("dueOnly", String(val));
+      return prev;
+    });
+  };
 
   // carga de datos robusta
   useEffect(() => {
@@ -349,6 +396,12 @@ export default function SeguimientoReferente() {
   const sectoresUnicos = useMemo(() => {
     const s = new Map();
     rows.forEach((r) => {
+      // Si hay filtro de área activo, verificar pertenencia
+      if (areaFiltro !== "todas") {
+        const rAreaId = String(r.empleado?.area?._id || r.empleado?.area);
+        if (rAreaId !== String(areaFiltro)) return;
+      }
+
       const sec = r.empleado?.sector;
       if (!sec) return;
       const id = String(sec?._id || sec);
@@ -356,7 +409,7 @@ export default function SeguimientoReferente() {
       s.set(id, { _id: id, nombre });
     });
     return [{ _id: "todos", nombre: "Todos" }, ...Array.from(s.values())];
-  }, [rows]);
+  }, [rows, areaFiltro]);
 
   // hints del buscador
   const empHints = useMemo(() => {
@@ -564,8 +617,18 @@ export default function SeguimientoReferente() {
           </Button>
         </div>
 
+        {/* Loading Overlay */}
+        {loading && (
+          <div className="fixed inset-0 bg-white/50 backdrop-blur-sm z-50 flex items-center justify-center">
+            <div className="bg-white p-6 rounded-2xl shadow-xl border border-slate-100 flex flex-col items-center gap-4">
+              <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+              <div className="text-slate-600 font-medium animate-pulse">Cargando datos...</div>
+            </div>
+          </div>
+        )}
+
         {/* Contenido: Gantt chart siempre */}
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col min-h-[600px] overflow-hidden">
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col min-h-[600px] overflow-hidden relative">
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50/30">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">

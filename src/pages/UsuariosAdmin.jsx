@@ -4,8 +4,21 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import Modal from "@/components/Modal.jsx";
 import { Button } from "@/components/ui/button";
+import {
+  Users,
+  Search,
+  Shield,
+  Key,
+  Link as LinkIcon,
+  UserPlus,
+  RefreshCw,
+  MoreHorizontal,
+  Mail,
+  FileText,
+  Unlink
+} from "lucide-react";
 
-
+// Helper para array
 const toArray = (x) => {
   if (Array.isArray(x)) return x;
   if (x?.items && Array.isArray(x.items)) return x.items;
@@ -13,6 +26,7 @@ const toArray = (x) => {
   if (x?.results && Array.isArray(x.results)) return x.results;
   return [];
 };
+
 export default function UsuariosAdmin() {
   const [empleados, setEmpleados] = useState([]);
   const [users, setUsers] = useState([]);
@@ -20,15 +34,15 @@ export default function UsuariosAdmin() {
 
   // Buscador / filtro
   const [q, setQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState("todos"); // todos | active | desvinculado | suspended | other
+  const [statusFilter, setStatusFilter] = useState("todos");
 
-  // Modal para credenciales temporales (igual que tenías)
+  // Modal para credenciales temporales
   const [tempInfo, setTempInfo] = useState(null);
   const [tempModalOpen, setTempModalOpen] = useState(false);
 
-  // Modal crear cuenta (editar email / rol antes de crear)
+  // Modal crear cuenta
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [createEmpleado, setCreateEmpleado] = useState(null); // empleado objeto
+  const [createEmpleado, setCreateEmpleado] = useState(null);
   const [createEmail, setCreateEmail] = useState("");
   const [createRole, setCreateRole] = useState("visor");
   const [creating, setCreating] = useState(false);
@@ -39,6 +53,8 @@ export default function UsuariosAdmin() {
   const [editEmail, setEditEmail] = useState("");
   const [editRole, setEditRole] = useState("visor");
   const [updating, setUpdating] = useState(false);
+
+  // --- HANDLERS (Igual que antes) ---
 
   const openEditModal = (u) => {
     setEditUser(u);
@@ -58,12 +74,8 @@ export default function UsuariosAdmin() {
     try {
       const res = await api(`/usuarios/${editUser._id}`, {
         method: "PATCH",
-        body: {
-          email: editEmail,
-          rol: editRole
-        }
+        body: { email: editEmail, rol: editRole }
       });
-      // Actualizar local
       setUsers(prev => prev.map(u => (u._id === res.user._id ? res.user : u)));
       toast.success("Usuario actualizado correctamente.");
       closeEditModal();
@@ -75,11 +87,9 @@ export default function UsuariosAdmin() {
     }
   };
 
-  // Carga inicial
   const loadAll = async () => {
     setLoading(true);
     try {
-      // forzamos orden y tamaño generoso por si el backend pagina
       const [emps, usrs] = await Promise.all([
         api("/empleados?sort=-createdAt&limit=1000"),
         api("/usuarios?limit=1000"),
@@ -88,7 +98,7 @@ export default function UsuariosAdmin() {
       setUsers(toArray(usrs));
     } catch (err) {
       console.error(err);
-      toast.error("No se pudieron cargar empleados/usuarios");
+      toast.error("No se pudieron cargar datos");
     } finally {
       setLoading(false);
     }
@@ -96,7 +106,6 @@ export default function UsuariosAdmin() {
 
   useEffect(() => { loadAll(); }, []);
 
-  // Índice rápido de usuario por empleado
   const usersByEmpleado = useMemo(() => {
     const map = {};
     (Array.isArray(users) ? users : toArray(users)).forEach(u => {
@@ -108,22 +117,18 @@ export default function UsuariosAdmin() {
     return map;
   }, [users]);
 
-  // Helper para estado visual del empleado
   const empleadoEstado = (emp) => {
-    // si tenés un campo concreto en el schema (p.ej. emp.status) úsalo
     if (emp?.status) return emp.status;
     if (emp?.activo === false) return "desvinculado";
     return "activo";
   };
 
-  // Filtrado por búsqueda y estado
   const empleadosFiltrados = useMemo(() => {
     const qi = q.trim().toLowerCase();
     const base = Array.isArray(empleados) ? empleados : toArray(empleados);
     return base
       .filter(Boolean)
       .filter(emp => {
-        // filtro por estado
         if (statusFilter !== "todos") {
           const st = empleadoEstado(emp);
           if (statusFilter === "active" && st !== "activo") return false;
@@ -140,7 +145,6 @@ export default function UsuariosAdmin() {
       });
   }, [empleados, q, statusFilter]);
 
-  // Abrir modal crear cuenta (prefill email desde empleado si existe)
   const openCreateModal = (empleado) => {
     setCreateEmpleado(empleado || null);
     const u = usersByEmpleado[empleado?._id];
@@ -156,7 +160,6 @@ export default function UsuariosAdmin() {
     setCreateModalOpen(false);
   };
 
-  // Crear usuario para empleado (o con email editado)
   const handleCreateAccount = async () => {
     if (!createEmail) return toast.warn("Email requerido");
     setCreating(true);
@@ -167,290 +170,370 @@ export default function UsuariosAdmin() {
         empleadoId: createEmpleado ? createEmpleado._id : undefined,
       };
       const res = await api("/usuarios", { method: "POST", body });
+      const { action, user, tempPassword } = res || {};
 
-      const action = res?.action || 'created';
-      const user = res?.user;
-      const tempPassword = res?.tempPassword;
+      if (user) await loadAll();
 
-      if (user) {
-        await loadAll();
-      }
-
-      if (action === 'created') {
-        toast.success("Usuario creado. Compartí la contraseña temporal.");
-      } else if (action === 'linked') {
-        toast.success("Usuario existente vinculado al empleado. Se generó clave temporal.");
-      } else if (action === 'reset') {
-        toast.success("Usuario existente: se reseteó la contraseña temporal.");
-      } else if (action === 'conflict') {
-        toast.error(res?.message || "Conflicto: email vinculado a otro empleado.");
-      } else {
-        toast.success("Operación completada.");
-      }
+      if (action === 'created') toast.success("Usuario creado.");
+      else if (action === 'linked') toast.success("Usuario vinculado.");
+      else if (action === 'reset') toast.success("Contraseña reseteada.");
+      else if (action === 'conflict') toast.error("Conflicto: email en uso.");
+      else toast.success("Hecho.");
 
       if (tempPassword) {
         setTempInfo({ email: user?.email || createEmail, tempPassword });
         setTempModalOpen(true);
       }
-
       closeCreateModal();
     } catch (err) {
       console.error('create account err', err);
-
-      // tu helper api() podría devolver error con err.status y err.data
-      const status = err?.status || err?.response?.status;
-      const data = err?.data || err?.response?.data || {};
-      if (status === 409) {
-        toast.error(data?.message || 'Conflicto: email ya registrado.');
-      } else {
-        toast.error(data?.message || err?.message || 'No se pudo crear el usuario');
-      }
+      toast.error(err?.data?.message || "Error al crear usuario");
     } finally {
       setCreating(false);
     }
   };
 
-  // Resetear contraseña (admin)
   const resetearUsuario = async (user) => {
     try {
       const res = await api(`/usuarios/${user._id}/reset-password`, { method: "PATCH" });
       setUsers(prev => prev.map(u => (u._id === res.user._id ? res.user : u)));
       setTempInfo({ email: res.user.email, tempPassword: res.tempPassword });
       setTempModalOpen(true);
-      toast.success("Contraseña temporal generada");
+      toast.success("Nueva contraseña generada");
     } catch (err) {
-      console.error(err);
-      toast.error(err?.data?.message || "No se pudo resetear la contraseña");
+      toast.error("Error al resetear");
     }
   };
 
-  // Vincular / desvincular
   const unlinkUsuario = async (user) => {
-    if (!confirm("Desvincular este usuario del empleado?")) return;
+    if (!confirm("¿Desvincular este usuario del empleado?")) return;
     try {
       const res = await api(`/usuarios/${user._id}/unlink`, { method: "PATCH" });
       setUsers(prev => prev.map(u => (u._id === res.user._id ? res.user : u)));
       toast.success("Usuario desvinculado");
     } catch (err) {
-      console.error(err);
-      toast.error(err?.data?.message || "No se pudo desvincular");
+      toast.error("Error al desvincular");
     }
   };
 
-  // Cambiar estado del empleado (PUT - reutiliza tu endpoint de empleados)
   const updateEmpleadoStatus = async (empleadoId, newStatus) => {
     try {
-      // En tu backend tu endpoint PUT /empleados/:id espera el objeto actualizado.
-      // Aquí mandamos solo { status: newStatus } y el backend debe mergearlo.
       const updated = await api(`/empleados/${empleadoId}`, { method: "PUT", body: { status: newStatus } });
       setEmpleados(prev => prev.map(e => (e._id === updated._id ? updated : e)));
       toast.success("Estado actualizado");
     } catch (err) {
-      console.error(err);
-      toast.error(err?.data?.message || "No se pudo actualizar el estado");
+      toast.error("Error al actualizar estado");
     }
   };
 
   const copyTemp = () => {
     if (!tempInfo) return;
     const txt = `Usuario: ${tempInfo.email}\nClave temporal: ${tempInfo.tempPassword}`;
+    navigator.clipboard.writeText(txt).then(() => toast.success("Copiado!")).catch(() => toast.error("Error al copiar"));
+  };
 
+  // --- RENDER ---
 
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(txt)
-        .then(() => toast.success("Credenciales copiadas"))
-        .catch(() => toast.error("No se pudo copiar"));
-    } else {
-      const temp = document.createElement("textarea");
-      temp.value = txt;
-      document.body.appendChild(temp);
-      temp.select();
-      document.execCommand("copy");
-      document.body.removeChild(temp);
-      toast.success("Credenciales copiadas (fallback)");
-    }
+  const stats = {
+    total: empleados.length,
+    users: users.length,
+    linked: users.filter(u => u.empleado).length
   };
 
   return (
-    <div className="container-app space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Usuarios y Cuentas</h1>
-          <p className="text-sm text-muted-foreground">
-            Crea cuentas web, resetea contraseñas y vincula personas. Ver / editar email antes de crear cuenta.
-          </p>
+    <div className=" space-y-8 max-w-6xl mx-auto">
+
+      {/* Header Premium */}
+      <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-8 rounded-2xl shadow-xl text-white flex flex-col md:flex-row items-center justify-between gap-8 relative overflow-hidden">
+        {/* Decoración fondo */}
+        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
+
+        <div className="flex gap-6 items-center z-10">
+          <div className="p-4 bg-white/10 rounded-2xl backdrop-blur-sm border border-white/10 shadow-inner">
+            <Users className="w-8 h-8 text-blue-400" />
+          </div>
+          <div>
+            <h4 className="font-bold text-xl text-white tracking-tight">Usuarios y Accesos</h4>
+            <div className="flex flex-col gap-1 mt-2">
+              <span className="text-slate-400 text-sm font-medium">
+                Gestión integral de personal y credenciales
+              </span>
+              <div className="flex items-center gap-4 mt-1">
+                <div className="flex items-baseline gap-1">
+                  <span className="font-mono text-xl font-bold text-white">{stats.total}</span>
+                  <span className="text-xs text-slate-500 uppercase font-bold">Empleados</span>
+                </div>
+                <div className="w-px h-4 bg-white/20"></div>
+                <div className="flex items-baseline gap-1">
+                  <span className="font-mono text-xl font-bold text-blue-300">{stats.linked}</span>
+                  <span className="text-xs text-slate-500 uppercase font-bold">Con Acceso</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={loadAll} disabled={loading}>Refrescar</Button>
+
+        <div className="flex items-center gap-4 z-10">
+
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={loadAll}
+            disabled={loading}
+            className="bg-white/5 border-white/10 text-white hover:bg-white/10 hover:text-white backdrop-blur-md"
+          >
+            <RefreshCw className={`w-5 h-5 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refrescar
+          </Button>
         </div>
       </div>
 
-      {/* Buscador / Filtros */}
-      <div className="rounded-xl bg-card shadow-sm ring-1 ring-border/60 p-3 flex gap-3 items-center">
-        <input
-          placeholder="Buscar por nombre, DNI o email..."
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          className="flex-1 rounded-md border border-border bg-background px-3 py-2"
-        />
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-md border border-border bg-background px-3 py-2">
-          <option value="todos">Todos los estados</option>
-          <option value="active">Activo</option>
-          <option value="desvinculado">Desvinculado</option>
-          <option value="suspended">Suspendido</option>
-          <option value="other">Otro</option>
-        </select>
+      {/* Toolbar: Filtros & Búsqueda */}
+      <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
+        <div className="relative flex-1 w-full max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            placeholder="Buscar por nombre, DNI o email..."
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
+          />
+        </div>
+
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Estado:</span>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2"
+          >
+            <option value="todos">Todos</option>
+            <option value="active">Activos</option>
+            <option value="desvinculado">Desvinculados</option>
+            <option value="suspended">Suspendidos</option>
+          </select>
+        </div>
       </div>
 
-      {/* Tabla */}
-      <div className="rounded-xl bg-card shadow-sm ring-1 ring-border/60 p-3 overflow-x-auto">
-        {loading ? (
-          <div className="text-sm text-muted-foreground">Cargando…</div>
-        ) : (
-          <table className="w-full text-sm">
+      {/* Tabla Premium */}
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
             <thead>
-              <tr className="bg-muted/40 text-muted-foreground">
-                <th className="text-left px-3 py-2">Empleado</th>
-                <th className="text-left px-3 py-2">DNI</th>
-                <th className="text-left px-3 py-2">Email empleado</th>
-                <th className="text-left px-3 py-2">Cuenta web</th>
-                <th className="text-left px-3 py-2">Rol</th>
-                <th className="text-left px-3 py-2">Estado</th>
-                <th className="text-left px-3 py-2">Acciones</th>
+              <tr className="bg-slate-50/50 border-b border-slate-200">
+                <th className="px-6 py-4 font-bold text-slate-600 uppercase text-xs tracking-wider">Empleado</th>
+                <th className="px-6 py-4 font-bold text-slate-600 uppercase text-xs tracking-wider">DNI / Email</th>
+                <th className="px-6 py-4 font-bold text-slate-600 uppercase text-xs tracking-wider">Cuenta Web</th>
+                <th className="px-6 py-4 font-bold text-slate-600 uppercase text-xs tracking-wider">Rol</th>
+                <th className="px-6 py-4 font-bold text-slate-600 uppercase text-xs tracking-wider">Estado</th>
+                <th className="px-6 py-4 text-right font-bold text-slate-600 uppercase text-xs tracking-wider">Acciones</th>
               </tr>
             </thead>
-            <tbody>
-              {(empleadosFiltrados || []).map(emp => {
-                const u = usersByEmpleado[emp._id];
-                const estado = empleadoEstado(emp);
-                return (
-                  <tr key={emp._id} className="border-t border-border/60 odd:bg-background even:bg-muted/20">
-                    <td className="px-3 py-2">{emp.apellido}, {emp.nombre}</td>
-                    <td className="px-3 py-2">{emp.dni}</td>
-                    <td className="px-3 py-2">{emp.email || <span className="text-muted-foreground">—</span>}</td>
-                    <td className="px-3 py-2">{u ? u.email : <span className="text-muted-foreground">Sin cuenta</span>}</td>
-                    <td className="px-3 py-2">{u ? u.rol : '-'}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm">{estado}</span>
+            <tbody className="divide-y divide-slate-100">
+              {loading ? (
+                <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-400">Cargando datos...</td></tr>
+              ) : (
+                (empleadosFiltrados || []).map(emp => {
+                  const u = usersByEmpleado[emp._id];
+                  const estado = empleadoEstado(emp);
+                  const hasAccount = !!u;
+
+                  return (
+                    <tr key={emp._id} className="hover:bg-blue-50/30 transition-colors group">
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-slate-700">{emp.apellido}, {emp.nombre}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-1 text-slate-500 text-xs">
+                            <FileText className="w-3 h-3" /> {emp.dni}
+                          </div>
+                          {emp.email && (
+                            <div className="flex items-center gap-1 text-slate-500 text-xs truncate max-w-[150px]" title={emp.email}>
+                              <Mail className="w-3 h-3" /> {emp.email}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        {hasAccount ? (
+                          <div className="flex items-center gap-2 text-emerald-600 font-medium bg-emerald-50 px-2 py-1 rounded-md w-fit text-xs border border-emerald-100">
+                            <Users className="w-3 h-3" />
+                            {u.email}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-xs italic">Sin cuenta</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        {hasAccount ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 uppercase tracking-wide">
+                            <Shield className="w-3 h-3 mr-1" />
+                            {u.rol}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
                         <select
                           value={estado}
                           onChange={(e) => updateEmpleadoStatus(emp._id, e.target.value)}
-                          className="text-xs rounded-md border border-border bg-background px-2 py-1"
+                          className={`text-xs font-medium px-2 py-1 rounded-md border-0 ring-1 ring-inset focus:ring-2 focus:ring-blue-600 cursor-pointer ${estado === 'activo' ? 'bg-green-50 text-green-700 ring-green-600/20' :
+                            estado === 'desvinculado' ? 'bg-red-50 text-red-700 ring-red-600/20' :
+                              'bg-amber-50 text-amber-700 ring-amber-600/20'
+                            }`}
                         >
-                          <option value="activo">activo</option>
-                          <option value="desvinculado">desvinculado</option>
-                          <option value="suspendido">suspendido</option>
-                          <option value="otro">otro</option>
+                          <option value="activo">Activo</option>
+                          <option value="desvinculado">Desvinculado</option>
+                          <option value="suspendido">Suspendido</option>
+                          <option value="otro">Otro</option>
                         </select>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 flex gap-2">
-                      {!u ? (
-                        <Button size="sm" onClick={() => openCreateModal(emp)}>Crear cuenta</Button>
-                      ) : (
-                        <>
-                          <Button size="sm" variant="outline" onClick={() => openEditModal(u)}>Editar</Button>
-                          <Button size="sm" variant="secondary" onClick={() => resetearUsuario(u)}>Resetear pw</Button>
-                          <Button size="sm" variant="outline" onClick={() => unlinkUsuario(u)}>Desvincular</Button>
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {!empleadosFiltrados.length && (
-                <tr><td colSpan={7} className="px-3 py-4 text-muted-foreground">No hay empleados que coincidan.</td></tr>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex justify-end items-center gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                          {!hasAccount ? (
+                            <Button size="sm" onClick={() => openCreateModal(emp)} className="h-8 text-xs bg-slate-900 hover:bg-slate-800">
+                              <UserPlus className="w-3 h-3 mr-1.5" />
+                              Crear
+                            </Button>
+                          ) : (
+                            <>
+                              <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-500 hover:text-blue-600" onClick={() => openEditModal(u)} title="Editar Rol/Email">
+                                <Search className="w-4 h-4" /> {/* Actually Edit icon usually implies pencil, using search as generic inspect/edit if pencil missing or keep icons simple */}
+                              </Button>
+                              <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-500 hover:text-amber-600" onClick={() => resetearUsuario(u)} title="Resetear Clave">
+                                <Key className="w-4 h-4" />
+                              </Button>
+                              <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-500 hover:text-red-600" onClick={() => unlinkUsuario(u)} title="Desvincular">
+                                <Unlink className="w-4 h-4" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+              {!loading && empleadosFiltrados.length === 0 && (
+                <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-400 italic">No se encontraron resultados.</td></tr>
               )}
             </tbody>
           </table>
-        )}
+        </div>
       </div>
 
-      {/* Modal: crear cuenta (editar/verificar email antes de crear) */}
-      <Modal isOpen={createModalOpen} onClose={closeCreateModal} title="Crear cuenta web">
-        {/* ... content same as before ... */}
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs text-muted-foreground">Empleado</label>
-            <div className="rounded border p-2 bg-muted/10">{createEmpleado ? `${createEmpleado.apellido}, ${createEmpleado.nombre}` : '—'}</div>
-          </div>
-          <div>
-            <label className="block text-xs text-muted-foreground">Email para la cuenta</label>
-            <input className="w-full rounded-md border border-border bg-background px-3 py-2" value={createEmail} onChange={(e) => setCreateEmail(e.target.value)} />
-            <div className="text-xs text-muted-foreground mt-1">Verificá o editá el email si hace falta.</div>
-          </div>
-          <div>
-            <label className="block text-xs text-muted-foreground">Rol</label>
-            <select className="w-full rounded-md border border-border bg-background px-3 py-2" value={createRole} onChange={(e) => setCreateRole(e.target.value)}>
-              <option value="visor">visor</option>
-              <option value="jefe_sector">jefe_sector</option>
-              <option value="jefe_area">jefe_area</option>
-              <option value="rrhh">rrhh</option>
-              <option value="directivo">directivo</option>
-              <option value="superadmin">superadmin</option>
-            </select>
-          </div>
+      {/* --- MODALES (Conservamos funcionalidad, mejoramos look si hiciese falta tocando el componente Modal, aqui solo contenido) --- */}
 
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={closeCreateModal}>Cancelar</Button>
-            <Button onClick={handleCreateAccount} disabled={creating}>{creating ? 'Creando…' : 'Crear cuenta'}</Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Modal: Editar Usuario */}
-      {/* ───────────────────────────────────────────────────────────────── */}
-      <Modal isOpen={editModalOpen} onClose={closeEditModal} title="Editar Usuario">
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs text-muted-foreground">Email</label>
-            <input
-              className="w-full rounded-md border border-border bg-background px-3 py-2"
-              value={editEmail}
-              onChange={(e) => setEditEmail(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-muted-foreground">Rol</label>
-            <select
-              className="w-full rounded-md border border-border bg-background px-3 py-2"
-              value={editRole}
-              onChange={(e) => setEditRole(e.target.value)}
-            >
-              <option value="visor">visor</option>
-              <option value="jefe_sector">jefe_sector</option>
-              <option value="jefe_area">jefe_area</option>
-              <option value="rrhh">rrhh</option>
-              <option value="directivo">directivo</option>
-              <option value="superadmin">superadmin</option>
-            </select>
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={closeEditModal}>Cancelar</Button>
-            <Button onClick={handleUpdateUser} disabled={updating}>{updating ? 'Guardando…' : 'Guardar Cambios'}</Button>
-          </div>
-        </div>
-      </Modal>
-      {/* ───────────────────────────────────────────────────────────────── */}
-
-      {/* Modal: credenciales temporales */}
-      <Modal isOpen={tempModalOpen} onClose={() => setTempModalOpen(false)} title="Credenciales temporales">
-        {tempInfo && (
-          <div className="space-y-3">
-            <p className="text-sm">Compartí estos datos de forma segura con el usuario (y pedile que la cambie al ingresar).</p>
-            <div className="rounded border border-border p-3 bg-muted/20">
-              <div><b>Usuario:</b> {tempInfo.email}</div>
-              <div><b>Clave temporal:</b> <code>{tempInfo.tempPassword}</code></div>
+      {/* Modal: Crear/Vincular */}
+      <Modal isOpen={createModalOpen} onClose={closeCreateModal} title="Configurar Acceso Web">
+        <div className="space-y-4 pt-2">
+          <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 flex items-center gap-3">
+            <div className="h-10 w-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-500">
+              <Users className="w-5 h-5" />
             </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-700">{createEmpleado ? `${createEmpleado.apellido}, ${createEmpleado.nombre}` : '—'}</p>
+              <p className="text-xs text-slate-500">Empleado Seleccionado</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-500 uppercase">Email de acceso</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input className="w-full pl-9 pr-3 py-2 text-sm rounded-md border border-slate-300 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" value={createEmail} onChange={(e) => setCreateEmail(e.target.value)} placeholder="usuario@empresa.com" />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-500 uppercase">Rol / Permisos</label>
+              <div className="relative">
+                <Shield className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <select className="w-full pl-9 pr-3 py-2 text-sm rounded-md border border-slate-300 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white" value={createRole} onChange={(e) => setCreateRole(e.target.value)}>
+                  <option value="visor">Visor (Lectura básica)</option>
+                  <option value="jefe_sector">Jefe de Sector</option>
+                  <option value="jefe_area">Jefe de Área</option>
+                  <option value="rrhh">RRHH</option>
+                  <option value="directivo">Directivo</option>
+                  <option value="superadmin">Super Admin</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={closeCreateModal}>Cancelar</Button>
+            <Button onClick={handleCreateAccount} disabled={creating} className="bg-blue-600 hover:bg-blue-700">
+              {creating ? 'Procesando...' : 'Confirmar Acceso'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal: Editar */}
+      <Modal isOpen={editModalOpen} onClose={closeEditModal} title="Editar Credenciales">
+        <div className="space-y-4 pt-2">
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-500 uppercase">Email</label>
+              <input className="w-full px-3 py-2 text-sm rounded-md border border-slate-300" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-500 uppercase">Rol</label>
+              <select className="w-full px-3 py-2 text-sm rounded-md border border-slate-300 bg-white" value={editRole} onChange={(e) => setEditRole(e.target.value)}>
+                <option value="visor">Visor</option>
+                <option value="jefe_sector">Jefe de Sector</option>
+                <option value="jefe_area">Jefe de Área</option>
+                <option value="rrhh">RRHH</option>
+                <option value="directivo">Directivo</option>
+                <option value="superadmin">Super Admin</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={closeEditModal}>Cancelar</Button>
+            <Button onClick={handleUpdateUser} disabled={updating}>
+              {updating ? 'Guardando...' : 'Guardar Cambios'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal: Credenciales Temporales */}
+      <Modal isOpen={tempModalOpen} onClose={() => setTempModalOpen(false)} title="Credenciales Generadas">
+        {tempInfo && (
+          <div className="space-y-4">
+            <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-lg text-emerald-800 text-sm">
+              <p className="font-semibold mb-1">¡Operación exitosa!</p>
+              <p>Compartí estas credenciales con el usuario. Al iniciar sesión se le pedirá cambiar la contraseña.</p>
+            </div>
+
+            <div className="bg-slate-900 text-slate-100 p-4 rounded-lg font-mono text-sm space-y-2 relative group-clipboard">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Usuario:</span>
+                <span>{tempInfo.email}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Clave:</span>
+                <span className="font-bold text-white selection:bg-blue-500 selection:text-white">{tempInfo.tempPassword}</span>
+              </div>
+            </div>
+
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={copyTemp}>Copiar</Button>
-              <Button onClick={() => setTempModalOpen(false)}>Listo</Button>
+              <Button variant="outline" onClick={copyTemp}>
+                <RefreshCw className="w-4 h-4 mr-2" /> Copiar al portapapeles
+              </Button>
+              <Button onClick={() => setTempModalOpen(false)}>Cerrar</Button>
             </div>
           </div>
         )}
       </Modal>
+
     </div>
   );
 }

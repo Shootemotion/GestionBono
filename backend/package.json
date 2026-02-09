@@ -6,19 +6,21 @@
   "main": "server.js",
   "scripts": {
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --watchAll",
-    "dev": "nodemon server.js"
+    "dev": "nodemon --ignore backups/ --ignore *.log server.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "archiver": "^7.0.1",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.17.1",
-    "multer": "^2.0.2"
+    "multer": "^2.0.2",
+    "node-cron": "^4.2.1"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.28.3",

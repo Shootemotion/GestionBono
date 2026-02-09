@@ -433,10 +433,20 @@ function buildResumenEmpleado(data) {
         const metaGroups = {};
         allMetas.forEach(m => {
           const k = m.metaId || m._id || m.nombre;
-          if (!metaGroups[k]) metaGroups[k] = {
-            def: m,
-            values: []
-          };
+          if (!metaGroups[k]) {
+            metaGroups[k] = {
+              def: m,
+              values: []
+            };
+          } else {
+            // Update def if current m is "better" (has config that current def lacks)
+            const curDef = metaGroups[k].def;
+            const hasRule = m.reglaCierre || m.umbralPeriodos;
+            const curHasRule = curDef.reglaCierre || curDef.umbralPeriodos;
+            if (hasRule && !curHasRule) {
+              metaGroups[k].def = m;
+            }
+          }
         });
 
         // Now populate values per period for each meta
@@ -481,6 +491,9 @@ function buildResumenEmpleado(data) {
           })) || [],
           scoreContrib: (pesosObj[i] * progObj[i]) / 100,
           metodoCalculo: label,
+          plantillaId: o.plantillaId, // Pass through
+          umbralPeriodos: o.umbralPeriodos, // Pass through if exists
+          rawMetas: o.metas, // EXPOSE RAW METAS FOR FALLBACK
           metasDetails
         };
       }),
@@ -886,6 +899,7 @@ export default function EvaluacionFlujo() {
                       reglaCierre: freshMeta.reglaCierre,
                       unidad: freshMeta.unidad,
                       operador: freshMeta.operador,
+                      umbralPeriodos: freshMeta.umbralPeriodos,
                       target: freshMeta.esperado ?? freshMeta.target // Ensure target is synced too? dangerous if custom
                     };
                   }
@@ -1566,6 +1580,17 @@ export default function EvaluacionFlujo() {
                                             : meta.resultado;
                                           const cumple = evaluarCumple(valorEvaluado, meta.esperado, meta.operador, meta.unidad);
 
+                                          // Resolve Umbral (Threshold) value looking at overrides
+
+                                          const metaDef = obj.metas?.[idx];
+                                          let effectiveUmbral = meta.umbralPeriodos;
+                                          if (!effectiveUmbral && meta.config?.umbral) effectiveUmbral = meta.config.umbral;
+                                          if (!effectiveUmbral && metaDef?.umbralPeriodos) effectiveUmbral = metaDef.umbralPeriodos;
+                                          if (!effectiveUmbral && metaDef?.config?.umbral) effectiveUmbral = metaDef.config.umbral;
+                                          if (!effectiveUmbral && obj.umbralPeriodos) effectiveUmbral = obj.umbralPeriodos;
+                                          if (!effectiveUmbral && obj.config?.umbral) effectiveUmbral = obj.config.umbral;
+
+
                                           return (
                                             <tr key={idx} className="group hover:bg-slate-50 transition-colors">
                                               {/* Meta Name */}
@@ -1578,37 +1603,47 @@ export default function EvaluacionFlujo() {
                                               <td className="px-6 py-4 align-top">
                                                 <div className="grid grid-cols-2 gap-2">
                                                   {/* Closing Rule Badge */}
-                                                  <div className="col-span-2">
-                                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200 uppercase tracking-tight w-fit">
-                                                      {(meta.reglaCierre || obj.reglaCierre || "Promedio").replace("_", " ")}
-                                                      {(meta.reglaCierre === "umbral_periodos" || obj.reglaCierre === "umbral_periodos") && (
-                                                        <span className="ml-1 text-slate-400">
-                                                          {`> ${meta.umbralPeriodos || obj.umbralPeriodos || meta.config?.umbral || "?"}`}
-                                                        </span>
-                                                      )}
-                                                    </span>
-                                                  </div>
+                                                  <div className="col-span-2 flex flex-wrap gap-1">
+                                                    {meta.reglaCierre === "promedio" && (
+                                                      <span className="inline-flex justify-center items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-100 text-center uppercase tracking-tight">
+                                                        Promedio
+                                                      </span>
+                                                    )}
+                                                    {meta.reglaCierre === "cierre_unico" && (
+                                                      <span className="inline-flex justify-center items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-700 border border-slate-200 text-center uppercase tracking-tight">
+                                                        Al Cierre
+                                                      </span>
+                                                    )}
+                                                    {meta.reglaCierre === "umbral_periodos" && (
+                                                      <span className="inline-flex justify-center items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100 text-center uppercase tracking-tight" title="Cantidad de periodos requeridos">
+                                                        Umbral: {effectiveUmbral ?? '?'}
+                                                      </span>
+                                                    )}
 
-                                                  {isAcumulativo && (
-                                                    <span className="inline-flex justify-center items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-100 text-center">
-                                                      ACUM
-                                                    </span>
-                                                  )}
-                                                  {meta.reconoceEsfuerzo && (
-                                                    <span className="inline-flex justify-center items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-100 text-center">
-                                                      ESFUERZO
-                                                    </span>
-                                                  )}
-                                                  {meta.permiteOver && (
-                                                    <span className="inline-flex justify-center items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 text-center">
-                                                      OVER
-                                                    </span>
-                                                  )}
-                                                  {meta.pesoMeta && meta.pesoMeta < 100 && (
-                                                    <span className="col-span-2 text-[10px] text-slate-400 font-mono">Peso: {meta.pesoMeta}%</span>
-                                                  )}
+
+                                                    {isAcumulativo && (
+                                                      <span className="inline-flex justify-center items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-100 text-center">
+                                                        ACUM
+                                                      </span>
+                                                    )}
+                                                    {meta.reconoceEsfuerzo && (
+                                                      <span className="inline-flex justify-center items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-100 text-center">
+                                                        ESFUERZO
+                                                      </span>
+                                                    )}
+                                                    {meta.permiteOver && (
+                                                      <span className="inline-flex justify-center items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 text-center">
+                                                        OVER
+                                                      </span>
+                                                    )}
+                                                    {meta.pesoMeta && meta.pesoMeta < 100 && (
+                                                      <span className="col-span-2 text-[10px] text-slate-400 font-mono">Peso: {meta.pesoMeta}%</span>
+                                                    )}
+                                                  </div>
                                                 </div>
                                               </td>
+
+
 
                                               {/* Target */}
                                               <td className="px-6 py-4 align-top text-right">
@@ -1644,7 +1679,7 @@ export default function EvaluacionFlujo() {
                                                       <div className="flex items-center gap-2">
                                                         <Input
                                                           type="number"
-                                                          className={`h-10 w-28 text-base font-bold bg-white text-right pr-3 shadow-sm transition-all
+                                                          className={`h-10 w-full min-w-[120px] max-w-[240px] text-base font-bold bg-white text-right pr-3 shadow-sm transition-all
                                                                     ${cumple ? 'border-emerald-300 text-emerald-700 ring-2 ring-emerald-50' : 'border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100'}
                                                                     ${valorEvaluado !== null && !cumple ? 'border-amber-300 text-amber-700' : ''}
                                                                   `}
@@ -1926,7 +1961,7 @@ export default function EvaluacionFlujo() {
                                 </div>
 
                                 <div className="border-t border-slate-100 pt-3">
-                                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Comentario</label>
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Comentario (Interno)</label>
                                   <textarea
                                     className={`w-full h-20 rounded-lg border-slate-200 p-2 text-xs focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all outline-none resize-none placeholder:text-slate-400 ${!localHito.comentario ? "bg-yellow-50" : "bg-white"}`}
                                     placeholder="Justifica..."

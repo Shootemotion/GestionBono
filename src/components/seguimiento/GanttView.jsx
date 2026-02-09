@@ -99,12 +99,18 @@ function getHybridStatus(hito, fechaRef, itemType) {
 
   // Lógica para Objetivos/Aptitudes (ya no usan flujo de envío)
 
-  // 1. Si ya tiene resultado cargado -> Completado
+  // 1. Prioridad: Estados explícitos de cierre (CERRADO / EVALUADO)
+  //    Esto evita que un hit cerrado aparezca como vencido solo por fecha o falta de 'actual' numérica
+  if (hito?.estado === "CLOSED" || hito?.estado === "CERRADO" || hito?.estado === "EVALUATED") {
+    return "completado"; // O "finalizado" si se prefiere distincion
+  }
+
+  // 2. Si ya tiene resultado cargado -> Completado
   if (hito?.actual !== null && hito?.actual !== undefined) {
     return "completado";
   }
 
-  // 2. Si no tiene fecha ref, asumimos futuro
+  // 3. Si no tiene fecha ref, asumimos futuro
   if (!fechaRef) return "futuro";
 
   const hoy = new Date();
@@ -115,17 +121,29 @@ function getHybridStatus(hito, fechaRef, itemType) {
   const diffMs = ref - hoy;
   const diffDays = Math.ceil(diffMs / MS_PER_DAY);
 
-  // 3. Vencido
-  if (diffDays < 0) return "vencido";
+  // 4. Vencido
+  if (diffDays < 0) {
+    // DEBUG: Log why it is vencido
+    if (itemType === "feedback" || hito?.estado) {
+      console.log(`[GanttView Debug] Vencido detected:`, {
+        itemType,
+        estado: hito?.estado,
+        fechaRef,
+        diffDays,
+        hito
+      });
+    }
+    return "vencido";
+  }
 
-  // 4. Por vencer (próximos 7 días)
+  // 5. Por vencer (próximos 7 días)
   if (diffDays <= 7) return "por_vencer";
 
-  // 5. Borrador (si existe el hito pero no está completo)
+  // 6. Borrador (si existe el hito pero no está completo)
   // Ignoramos MANAGER_DRAFT como estado de flujo, lo tratamos como borrador/en curso
   if (hito?.estado === "MANAGER_DRAFT") return "borrador";
 
-  // 6. Futuro
+  // 7. Futuro
   return "futuro";
 }
 
@@ -580,9 +598,15 @@ export default function GanttView({
                 {hoverData.items.map((it, i) => (
                   <div key={i} className="flex items-start gap-2.5 group">
                     <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0 group-hover:scale-125 transition-transform" />
-                    <span className="text-slate-600 font-medium leading-snug text-xs">
-                      {it.item.nombre}
-                    </span>
+                    <div className="flex flex-col">
+                      <span className="text-slate-600 font-medium leading-snug text-xs">
+                        {it.item.nombre}
+                      </span>
+                      {/* DEBUG INFO VISIBLE */}
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        (Sc: {it.hito.actual ?? "null"} | St: {it.hito.estado || "—"} | ID: {it.item._id.slice(-4)})
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>

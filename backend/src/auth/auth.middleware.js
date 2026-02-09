@@ -2,50 +2,9 @@
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import Usuario from "../models/Usuario.model.js";
+import Role from "../models/Role.model.js"; // Import Role model
 import Area from "../models/Area.model.js";
 import Sector from "../models/Sector.model.js";
-
-/**
- * Capabilities por rol (base).
- */
-const roleCaps = {
-  superadmin: ["*"],
-
-  rrhh: [
-    "estructura:ver", "estructura:crear", "estructura:editar", "estructura:eliminar",
-    "nomina:ver", "nomina:crear", "nomina:editar", "nomina:eliminar", "nomina:evaluar",
-    "objetivos:ver", "objetivos:crear", "objetivos:editar", "objetivos:eliminar",
-    "aptitudes:ver", "aptitudes:crear", "aptitudes:editar", "aptitudes:eliminar",
-    "asignaciones:ver", "asignaciones:editar", "rrhh:evaluaciones:ver",
-    "rrhh:evaluaciones:cierre",
-    "rrhh:evaluaciones:reabrir",
-    "usuarios:manage"
-  ],
-  jefe_area: [
-    "estructura:ver", "nomina:ver", "nomina:editar", "nomina:evaluar",
-    "objetivos:ver", "objetivos:editar",
-    "aptitudes:ver", "aptitudes:editar",
-    "asignaciones:ver", "asignaciones:editar",
-  ],
-  jefe_sector: [
-    "estructura:ver", "nomina:ver", "nomina:evaluar",
-    "objetivos:ver", "nomina:editar",
-    "aptitudes:ver",
-    "asignaciones:ver", "asignaciones:editar",
-  ],
-  directivo: [
-    "estructura:ver", "estructura:crear", "estructura:editar", "estructura:eliminar",
-    "nomina:ver", "nomina:crear", "nomina:editar", "nomina:eliminar", "nomina:evaluar",
-    "objetivos:ver", "objetivos:crear", "objetivos:editar", "objetivos:eliminar",
-    "aptitudes:ver", "aptitudes:crear", "aptitudes:editar", "aptitudes:eliminar",
-    "asignaciones:ver", "asignaciones:editar", "rrhh:evaluaciones:ver",
-    "rrhh:evaluaciones:cierre",
-    "rrhh:evaluaciones:reabrir",
-    "usuarios:manage"
-
-  ],
-  visor: ["estructura:ver", "nomina:ver", "aptitudes:ver"],
-};
 
 const arrayUnion = (a = [], b = []) =>
   Array.from(new Set([...(a || []), ...(b || [])]));
@@ -82,8 +41,6 @@ export const authenticateJWT = async (req, res, next) => {
 
       const payload = jwt.verify(token, process.env.JWT_SECRET);
 
-
-
       const userDoc = await Usuario.findById(payload.sub)
         .populate({
           path: "empleado",
@@ -94,8 +51,22 @@ export const authenticateJWT = async (req, res, next) => {
         return res.status(401).json({ message: "Usuario inválido o inactivo" });
       }
 
-      const rol = userDoc.rol;
-      let permisos = arrayUnion(roleCaps[rol] || [], userDoc.permisos || []);
+      const rolSlug = userDoc.rol;
+
+      // 🔹 Fetch Permissions from DB (vs hardcoded)
+      let rolePerms = [];
+      try {
+        const roleDoc = await Role.findOne({ slug: rolSlug }).select('permissions').lean();
+        if (roleDoc) {
+          rolePerms = roleDoc.permissions;
+        } else {
+          console.warn(`⚠️ Role '${rolSlug}' not found in DB for user ${userDoc.email}. Permissions may be missing.`);
+        }
+      } catch (err) {
+        console.error("Error fetching permissions from DB:", err);
+      }
+
+      let permisos = arrayUnion(rolePerms, userDoc.permisos || []);
 
       // ids en string o null
       const empleadoId = userDoc.empleado?._id ? String(userDoc.empleado._id) : null;
@@ -131,8 +102,8 @@ export const authenticateJWT = async (req, res, next) => {
       }
 
       // 🔹 Rol efectivo (no encajonar en visor)
-      let rolEfectivo = rol;
-      if (rol === "visor") {
+      let rolEfectivo = rolSlug;
+      if (rolSlug === "visor") {
         if (referenteAreas.length > 0) rolEfectivo = "jefe_area";
         else if (referenteSectors.length > 0) rolEfectivo = "jefe_sector";
       }
@@ -140,7 +111,7 @@ export const authenticateJWT = async (req, res, next) => {
       req.user = {
         _id: String(userDoc._id),
         email: userDoc.email,
-        rol,
+        rol: rolSlug,
         rolEfectivo,
         permisos,
 
@@ -160,9 +131,9 @@ export const authenticateJWT = async (req, res, next) => {
         areaId,
         sectorId,
         fullName: buildFullName(userDoc),
-        isSuper: rol === "superadmin",
-        isRRHH: rol === "rrhh",
-        isDirectivo: rol === "directivo",
+        isSuper: rolSlug === "superadmin",
+        isRRHH: rolSlug === "rrhh",
+        isDirectivo: rolSlug === "directivo",
         isJefeArea: rolEfectivo === "jefe_area" || referenteAreas.length > 0,
         isJefeSector: rolEfectivo === "jefe_sector" || referenteSectors.length > 0,
         referenteAreas,
@@ -175,13 +146,16 @@ export const authenticateJWT = async (req, res, next) => {
       return next();
     }
 
-    // Anónimo → visor
+    // Anónimo → visor (Read from DB 'visor' role if possible, or fallback minimal)
+    // NOTE: For anonymity we might want to spare a DB call and just give 0 permissions or minimal
+    // For now, let's keep it safe: basic view perms if strict. Or we could fetch 'visor' from DB too.
+    // To safe DB performace, hardcode fallback for anon or empty array.
     req.user = {
       _id: "anon",
       email: null,
       rol: "visor",
       rolEfectivo: "visor",
-      permisos: roleCaps.visor,
+      permisos: [], // Anon user gets no special permissions by default now
       empleadoId: null,
       areaId: null,
       sectorId: null,

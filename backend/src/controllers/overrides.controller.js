@@ -1,9 +1,33 @@
-// src/controllers/overrides.controller.js
 import OverrideObjetivo from "../models/OverrideObjetivo.model.js";
+import Empleado from "../models/Empleado.model.js";
+import Plantilla from "../models/Plantilla.model.js";
 
 export const upsertOverride = async (req, res) => {
   try {
     const { empleado, year, template, excluido, peso, meta, notas } = req.body;
+
+    // VALIDATION: Check for cross-sector/area assignment
+    // Only check if we are activating/assigning (not forcing exclusion)
+    if (!excluido) {
+      const emp = await Empleado.findById(empleado);
+      const tpl = await Plantilla.findById(template);
+
+      if (emp && tpl) {
+        if (tpl.scopeType === 'sector' && String(tpl.scopeId) !== String(emp.sector)) {
+          return res.status(400).json({
+            success: false,
+            message: `⚠️ Bloqueo de seguridad: No podés asignar la plantilla "${tpl.nombre}" a ${emp.nombre} ${emp.apellido} porque pertenece a otro Sector.`
+          });
+        }
+        if (tpl.scopeType === 'area' && String(tpl.scopeId) !== String(emp.area)) {
+          return res.status(400).json({
+            success: false,
+            message: `⚠️ Bloqueo de seguridad: No podés asignar la plantilla "${tpl.nombre}" a ${emp.nombre} ${emp.apellido} porque pertenece a otra Área.`
+          });
+        }
+      }
+    }
+
     const doc = await OverrideObjetivo.findOneAndUpdate(
       { empleado, year, template },
       { $set: { excluido: !!excluido, peso: peso ?? null, meta: meta ?? null, notas } },

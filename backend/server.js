@@ -26,10 +26,27 @@ import simulacionRoutes from './src/routes/simulacion.routes.js';
 
 import feedbackRoutes from './src/routes/feedback.routes.js';
 import bonoRoutes from './src/routes/bono.routes.js';
+import systemRoutes from './src/routes/system.routes.js';
+import cron from 'node-cron';
+import { runBackup } from './scripts/backup.js';
+import { seedRoles } from './seedRoles.js';
+import rolesRouter from './src/routes/roles.routes.js';
+
+// ... existing imports ...
 import globalAvisoRoutes from './src/routes/globalAviso.routes.js';
 
-// --- CONFIGURACIÓN INICIAL ---
-dotenv.config();
+// --- CRON JOBS ---
+// Run Daily Backup at 03:00 AM
+cron.schedule('0 3 * * *', async () => {
+  console.log('🕒 [Cron] Executing daily backup...');
+  try {
+    await runBackup();
+    console.log('✅ [Cron] Daily backup completed.');
+  } catch (error) {
+    console.error('❌ [Cron] Backup failed:', error);
+  }
+});
+
 const app = express();
 
 // --- MIDDLEWARES GLOBALES ---
@@ -48,6 +65,7 @@ app.use(cors({
       callback(new Error('Not allowed by CORS'));
     }
   },
+  exposedHeaders: ['Content-Disposition'],
   credentials: true
 }));
 app.use(express.json());
@@ -77,6 +95,8 @@ app.use('/api/evaluaciones', evaluacionRoutes);
 app.use('/api/simulacion', simulacionRoutes);
 app.use('/api/feedbacks', feedbackRoutes);
 app.use('/api/avisos', globalAvisoRoutes);
+app.use('/api/system', systemRoutes);
+app.use('/api/roles', rolesRouter);
 
 // Alias útil para debug del usuario autenticado
 app.get('/api/_whoami', whoami);
@@ -142,8 +162,9 @@ const PORT = process.env.PORT || 5000;
 
 mongoose
   .connect(MONGO_URI)
-  .then(() => {
+  .then(async () => {
     console.log('MongoDB conectado exitosamente.');
+    await seedRoles();
     app.listen(PORT, () => {
       console.log(`Servidor corriendo en el puerto ${PORT}`);
     });

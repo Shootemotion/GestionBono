@@ -64,7 +64,9 @@ export const calculatePeriodCompliance = (actual, target, config) => {
     // 1. Check Compliance (Binary)
     let passed = false;
     if (op === ">=") passed = act >= (tgt - tol);
+    else if (op === ">") passed = act > (tgt - tol); // Strict greater
     else if (op === "<=") passed = act <= (tgt + tol);
+    else if (op === "<") passed = act < (tgt + tol); // Strict less
     else if (op === "=") passed = Math.abs(act - tgt) <= tol;
 
     // 2. Calculate Raw Score %
@@ -74,11 +76,8 @@ export const calculatePeriodCompliance = (actual, target, config) => {
         rawPct = passed ? 100 : 0;
     } else {
         // Standard percentage calculation
-        // If operator is <= (e.g. Reduce Defects), lower is better.
-        // 0 defects vs 10 target => 100%? Or more?
-        // Usually: (Target / Actual) * 100 ? Or (Target - Actual)/Target?
-        // Let's assume standard linear for now: (Actual / Target) * 100 for >=.
-        if (op === ">=") {
+        // Treat > like >= (Maximization) and < like <= (Minimization)
+        if (op === ">=" || op === ">") {
             rawPct = (act / tgt) * 100;
         } else {
             // Inverse logic for minimization (Target / Actual) * 100

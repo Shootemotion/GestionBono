@@ -92,8 +92,12 @@ export function calcularScorePeriodoMeta(cfg, valorEvaluado) {
     let cumple = false;
     if (op === ">=") {
         cumple = valNum + tol >= esperado;
+    } else if (op === ">") {
+        cumple = valNum + tol > esperado;
     } else if (op === "<=") {
         cumple = valNum - tol <= esperado;
+    } else if (op === "<") {
+        cumple = valNum - tol < esperado;
     } else if (op === "=") {
         cumple = Math.abs(valNum - esperado) <= tol;
     }
@@ -107,25 +111,28 @@ export function calcularScorePeriodoMeta(cfg, valorEvaluado) {
     // 3) Con reconocimiento de esfuerzo → proporcional
     let score = 0;
 
-    if (op === ">=") {
-        // Mayor es mejor
+    // Treat > like >= (Maximization)
+    if (op === ">=" || op === ">") {
         if (esperado > 0) {
             score = (valNum / esperado) * 100;
         } else {
             // Si esperado es 0, cualquier valor positivo es infinito%, pero asumimos 100 si cumple
             score = cumple ? 100 : 0;
         }
-    } else if (op === "<=") {
-        // Menor es mejor (Minimización)
+    }
+    // Treat < like <= (Minimization)
+    else if (op === "<=" || op === "<") {
         // Formula: (Esperado / Valor) * 100
-        // Si valor <= esperado, score >= 100
+        // Si valor <= esperado (y valor > 0), score >= 100
         if (valNum > 0) {
             score = (esperado / valNum) * 100;
         } else {
-            // Si valor es 0 (y esperado > 0), es "infinito" mejor. Cap at maxOver.
+            // Si valor es 0 (y esperado > 0), idealmente es "infinito" mejor. Cap at maxOver.
             score = cfg.maxOver || 100;
         }
-    } else {
+    }
+    // Equality
+    else {
         // Igualdad (=)
         // Difícil hacer proporcional lineal sin rango.
         // Si cumple (dentro de tolerancia), 100. Si no, 0.

@@ -26,7 +26,8 @@ import {
   Calculator,
   Home,
   Bell,
-  Megaphone
+  Megaphone,
+  HardDrive
 } from 'lucide-react';
 
 
@@ -74,7 +75,7 @@ const DropdownGroup = ({ title, icon, items = [], isOpen, onMouseEnter, onMouseL
               <div className={`p-1.5 rounded-md ${location.pathname === sub.to ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500 group-hover:bg-white'}`}>
                 {sub.icon}
               </div>
-              {sub.label}
+              {sub.label === 'Sistemas' ? 'Administración Web' : sub.label}
             </Link>
           ))}
         </div>
@@ -355,7 +356,8 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                       items={[
                         { to: '/gestion-estructura', label: 'Equipo / Nómina', icon: <Users className="w-4 h-4" />, allowed: canViewEstructura },
                         { to: '/gestion-departamentos', label: 'Departamentos', icon: <Building2 className="w-4 h-4" />, allowed: canViewEstructuraFinal },
-                        { to: '/usuarios', label: 'Usuarios', icon: <Users className="w-4 h-4" />, allowed: isSuperAdmin }
+                        { to: '/gestion-departamentos', label: 'Departamentos', icon: <Building2 className="w-4 h-4" />, allowed: canViewEstructuraFinal },
+                        { to: '/sistemas', label: 'Sistemas', icon: <HardDrive className="w-4 h-4" />, allowed: isSuperAdmin }
                       ]}
                       isOpen={activeMenu === 'Estructura'}
                       onMouseEnter={() => handleMenuEnter('Estructura')}
@@ -604,7 +606,8 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                     <div className="space-y-1">
                       {canViewEstructura && <MobileLink to="/gestion-estructura" label="Nómina / Equipo" />}
                       {canViewEstructuraFinal && <MobileLink to="/gestion-departamentos" label="Departamentos" />}
-                      {isSuperAdmin && <MobileLink to="/usuarios" label="Usuarios" />}
+                      {canViewEstructuraFinal && <MobileLink to="/gestion-departamentos" label="Departamentos" />}
+                      {isSuperAdmin && <MobileLink to="/sistemas" label="Sistemas" />}
                     </div>
                   </div>
 
