@@ -5,7 +5,7 @@ import UsuariosAdmin from "./UsuariosAdmin";
 import RolesAdmin from "./RolesAdmin";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Download, HardDrive, RefreshCw, Shield, Users, Server } from "lucide-react";
+import { Download, HardDrive, RefreshCw, Shield, Users, Server, RotateCcw, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { API_ORIGIN } from "@/lib/api";
 
@@ -103,6 +103,33 @@ const BackupsList = () => {
             });
     };
 
+    const handleRestore = async (backupName) => {
+        if (!confirm(`PELIGRO: ¿Estás seguro de que quieres restaurar el backup "${backupName}"?\n\nESTO SOBREESCRIBIRÁ TODA LA INFORMACIÓN ACTUAL.\n\nEsta acción no se puede deshacer.`)) {
+            return;
+        }
+
+        setLoading(true);
+        const toastId = toast.loading("Restaurando sistema...");
+
+        try {
+            const res = await api(`/system/backups/${backupName}/restore`, { method: 'POST' });
+
+            toast.dismiss(toastId);
+            if (res.success) {
+                toast.success("Sistema restaurado correctamente. Se recomienda recargar la página.");
+                setTimeout(() => window.location.reload(), 2000);
+            } else {
+                throw new Error(res.message || "Error desconocido");
+            }
+        } catch (err) {
+            console.error(err);
+            toast.dismiss(toastId);
+            toast.error("Error al restaurar: " + (err.message || err.toString()));
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const formatBytes = (bytes, decimals = 2) => {
         if (!+bytes) return '0 Bytes';
         const k = 1024;
@@ -195,6 +222,11 @@ const BackupsList = () => {
                                     <Button variant="ghost" size="sm" onClick={() => handleDownload(bk.name)} className="text-blue-600 hover:text-blue-700 hover:bg-blue-100">
                                         <Download className="w-4 h-4 mr-2" />
                                         Descargar
+                                    </Button>
+
+                                    <Button variant="ghost" size="sm" onClick={() => handleRestore(bk.name)} className="text-amber-600 hover:text-amber-700 hover:bg-amber-100">
+                                        <RotateCcw className="w-4 h-4 mr-2" />
+                                        Restaurar
                                     </Button>
                                 </td>
                             </tr>
