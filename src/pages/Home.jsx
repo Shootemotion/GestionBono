@@ -99,6 +99,10 @@ export default function Home() {
   const { ok: hasRoleRRHH } = useHasRole(["rrhh", "jefe_area", "jefe_sector"]);
   const { ok: hasRoleDirectivo } = useHasRole(["directivo"]);
 
+  // Explicit check to be 100% sure we exclude managers (Same logic as Navbar)
+  const userRole = String(user?.rol || "").toLowerCase();
+  const isRealRRHH = userRole === 'rrhh' || user?.isRRHH === true;
+
   const hasReferente = !!(
     user &&
     ((Array.isArray(user.referenteAreas) && user.referenteAreas.length > 0) ||
@@ -183,7 +187,7 @@ export default function Home() {
           desc: "Gestión de cierres y estados.",
           icon: CheckCircle,
           to: "/rrhh-evaluaciones",
-          allow: hasRoleRRHH || hasRoleDirectivo,
+          allow: isRealRRHH || hasRoleDirectivo,
           color: "text-emerald-600",
           bg: "bg-emerald-50"
         },
@@ -193,7 +197,7 @@ export default function Home() {
           desc: "Ajuste de pesos y exclusiones.",
           icon: Users,
           to: "/asignaciones",
-          allow: hasRoleRRHH || hasRoleDirectivo,
+          allow: isRealRRHH || hasRoleDirectivo,
           color: "text-indigo-600",
           bg: "bg-indigo-50"
         },
@@ -203,7 +207,7 @@ export default function Home() {
           desc: "Comunicados globales y alertas.",
           icon: Megaphone,
           to: "/gestion-avisos",
-          allow: hasRoleRRHH || hasRoleDirectivo,
+          allow: isRealRRHH || hasRoleDirectivo,
           color: "text-rose-600",
           bg: "bg-rose-50"
         }
@@ -263,7 +267,7 @@ export default function Home() {
           desc: "Ajustes y parámetros de bonos.",
           icon: DollarSign,
           to: "/configuracion-bono",
-          allow: hasRoleRRHH || hasRoleDirectivo,
+          allow: isRealRRHH || hasRoleDirectivo,
           color: "text-amber-500",
           bg: "bg-amber-50"
         },
@@ -273,7 +277,7 @@ export default function Home() {
           desc: "Visualización de resultados finales.",
           icon: BarChart3,
           to: "/resultados-bono",
-          allow: hasRoleRRHH || hasRoleDirectivo,
+          allow: isRealRRHH || hasRoleDirectivo,
           color: "text-violet-600",
           bg: "bg-violet-50"
         },

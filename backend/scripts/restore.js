@@ -16,9 +16,38 @@ const ensureDir = (dir) => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 };
 
-export const runRestore = async (backupFilename) => {
+export const getBackupPreview = async (backupFilename) => {
+    const backupPath = path.join(BACKUPS_DIR, backupFilename);
+    if (!fs.existsSync(backupPath)) {
+        throw new Error(`Backup file not found: ${backupFilename}`);
+    }
+
+    try {
+        const zip = new AdmZip(backupPath);
+        const zipEntries = zip.getEntries();
+
+        // Filter only JSON files and get collection names
+        const collections = zipEntries
+            .filter(entry => entry.entryName.endsWith('.json') && !entry.isDirectory)
+            .map(entry => {
+                const name = path.basename(entry.entryName, '.json');
+                return {
+                    name,
+                    size: entry.header.size, // Uncompressed size
+                    compressedSize: entry.header.compressedSize
+                }
+            });
+
+        return collections;
+    } catch (error) {
+        console.error(`[Preview] Error reading backup zip:`, error);
+        throw error;
+    }
+};
+
+export const runRestore = async (backupFilename, selectedCollections = null) => {
     let connection = null;
-    const tempExtractDir = path.join(BACKUPS_DIR, 'temp_restore');
+    const tempExtractDir = path.join(BACKUPS_DIR, 'temp_restore_' + Date.now()); // Unique temp dir
 
     try {
         console.log(`[Restore] Starting restore for ${backupFilename}...`);
@@ -48,7 +77,17 @@ export const runRestore = async (backupFilename) => {
         }
 
         // 3. Restore Collections
-        const files = fs.readdirSync(tempExtractDir).filter(f => f.endsWith('.json'));
+        let files = fs.readdirSync(tempExtractDir).filter(f => f.endsWith('.json'));
+
+        // Filter if partial restore
+        if (selectedCollections && Array.isArray(selectedCollections) && selectedCollections.length > 0) {
+            console.log(`[Restore] Partial restore requested for: ${selectedCollections.join(', ')}`);
+            files = files.filter(f => {
+                const colName = path.basename(f, '.json');
+                return selectedCollections.includes(colName);
+            });
+        }
+
         console.log(`[Restore] Found ${files.length} collections to restore.`);
 
         for (const file of files) {

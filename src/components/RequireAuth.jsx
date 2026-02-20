@@ -40,7 +40,8 @@ export default function RequireAuth({ children, allow = null, allowReferente = f
   }
 
   // si el rol del user está en allow -> pasa
-  if (allow.includes(user.rol)) return children;
+  const userRole = String(user.rol || "").toLowerCase();
+  if (allow.includes(userRole)) return children;
 
   // soporte para pasar 'capabilities' en el futuro: se podría chequear user.permisos
 

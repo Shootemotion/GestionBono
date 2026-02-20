@@ -5,13 +5,9 @@ import Evaluacion from "../models/Evaluacion.model.js";
 import Plantilla from "../models/Plantilla.model.js";
 
 import {
-  calcularResultadoMeta,
-} from "./calculoMetas.js";
-
-import {
-  calcularScoreObjetivoDesdeMetas,
-  calcularResultadoGlobalEmpleado,
-} from "./scoringGlobal.js";
+  calculateAnnualObjectiveProgress,
+  calculateGlobalPerformance,
+} from "./scoringEngine.js";
 
 const asId = (v) => (v ? String(v) : null);
 
@@ -47,138 +43,140 @@ export async function recalcularAnualEmpleado({
     .populate("plantillaId", "tipo nombre metas pesoBase")
     .lean();
 
-  // Maps intermedios
-  const objetivosMap = new Map(); // key = plantillaId
-  const aptitudesList = [];
-
-  for (const ev of evals) {
-    const tpl = ev.plantillaId || {};
-    const tipo = tpl.tipo || "objetivo";
-    const plantillaKey = asId(tpl._id) || asId(ev.plantillaId);
-
-    // === APTITUDES: usamos el actual directo ===
-    if (tipo === "aptitud") {
-      aptitudesList.push({
-        evaluacionId: ev._id,
-        plantillaId: plantillaKey,
-        nombre: tpl.nombre || ev.nombre || "(sin nombre)",
-        pesoBase:
-          tpl.pesoBase !== undefined
-            ? Number(tpl.pesoBase)
-            : Number(ev.pesoBase ?? 0),
-        actual: Number(ev.actual ?? ev.escala ?? 0) || 0,
-      });
-      continue;
-    }
-
-    // === OBJETIVOS: vamos a agrupar metas por plantilla + meta ===
-    if (!objetivosMap.has(plantillaKey)) {
-      objetivosMap.set(plantillaKey, {
-        plantillaId: plantillaKey,
-        nombre: tpl.nombre || ev.nombre || "(sin nombre)",
-        pesoBase: Number(tpl.pesoBase ?? ev.pesoBase ?? 0) || 0,
-        metasConfig: Array.isArray(tpl.metas) ? tpl.metas : [],
-        metasMap: new Map(), // keyMeta → { metaId, nombre, config, registros[] }
-      });
-    }
-
-    const grupo = objetivosMap.get(plantillaKey);
-    const metasEv = Array.isArray(ev.metasResultados) ? ev.metasResultados : [];
-
-    for (const mr of metasEv) {
-      const metaId = asId(mr.metaId);
-      const keyMeta = metaId || `${mr.nombre || ""}::${mr.unidad || ""}`;
-
-      // Buscar config original en Plantilla.metas por _id si existe
-      let entry = grupo.metasMap.get(keyMeta);
-      if (!entry) {
-        let metaCfg = grupo.metasConfig.find(
-          (mt) => metaId && asId(mt._id) === metaId
-        );
-
-        if (!metaCfg) {
-          // Fallback: construyo config desde lo que trae metasResultados
-          metaCfg = {
-            nombre: mr.nombre,
-            unidad: mr.unidad,
-            esperado: mr.esperado ?? mr.target ?? null,
-            operador: mr.operador,
-            pesoMeta: mr.pesoMeta,
-            reconoceEsfuerzo: mr.reconoceEsfuerzo,
-            permiteOver: mr.permiteOver,
-            tolerancia: mr.tolerancia,
-            modoAcumulacion: mr.modoAcumulacion,
-            acumulativa: mr.acumulativa,
-            reglaCierre: mr.reglaCierre,
-          };
-        }
-
-        entry = {
-          metaId,
-          nombre: mr.nombre,
-          config: metaCfg,
-          registros: [],
-        };
-        grupo.metasMap.set(keyMeta, entry);
-      }
-
-      entry.registros.push({
-        periodo: ev.periodo,
-        valor: mr.resultado,
-      });
-    }
-  }
 
   // 2) Convertimos los objetivosMap en una lista “bonita” con cálculo anual
   const objetivosList = [];
 
   for (const [, grupo] of objetivosMap.entries()) {
-    const metasDetalladas = [];
 
-    for (const [, metaEntry] of grupo.metasMap.entries()) {
-      const { config, registros, metaId, nombre } = metaEntry;
+    // 🔹 Score Calculation Refactor (Unified Engine)
+    // Construct "hitos" array from metasMap for the engine
+    // The engine expects hitos array like [{ periodo: 'Q1', metas: [{ nombre: 'M1', resultado: 10 }] }]
+    // But here we have the transposed data (meta -> registros).
+    // We can adapt `calculateAnnualObjectiveProgress` OR we can adapt our data.
+    // Since `calculateAnnualObjectiveProgress` expects { metasDefinition, hitos }, let's reconstruct hitos?
+    // In recalculoEmpleado, we already iterated evaluations. We could have built `hitos` array directly.
 
-      const { scoreMeta, cumpleGlobal, periodos } = calcularResultadoMeta(
-        config,
-        registros
-      );
+    // Alternative: We can use the lower level `calcularResultadoMeta` if we want, OR we can refactor `recalculoEmpleado` 
+    // to just iterate evals and group them into hitos FIRST.
 
-      metasDetalladas.push({
-        metaId,
-        nombre,
-        ...config,
-        registros: periodos,
-        scoreMeta,
-        cumpleGlobal,
+    // Let's refactor the loop above to group by (Plantilla + Periodo) instead of just Plantilla.
+    // That matches `dashboard.controller.js` structure better and allows using the engine.
+
+    // ... wait, rewriting the whole file is safer to match the engine pattern.
+    // The current file groups by Plantilla then Meta.
+    // The Engine expects Plantilla -> Hitos (Periodos).
+
+    // Let's RE-WRITE the group logic below to be compatible.
+
+  }
+
+  // RE-IMPLEMENTATION OF LOGIC TO MATCH ENGINE INPUTS
+  // We need to group evals by Plantilla.
+
+  const plantillasMap = new Map();
+
+  for (const ev of evals) {
+    const tpl = ev.plantillaId || {};
+    const tplId = asId(tpl._id) || asId(ev.plantillaId);
+
+    if (!plantillasMap.has(tplId)) {
+      plantillasMap.set(tplId, {
+        def: {
+          _id: tplId,
+          nombre: tpl.nombre || ev.nombre,
+          // We need the full meta definition for the engine!
+          // `ev.plantillaId` populate might have it if it's the doc.
+          // In populate("plantillaId", "tipo nombre metas pesoBase"), we have metas!
+          metas: tpl.metas || [],
+          tipo: tpl.tipo || "objetivo",
+          pesoBase: Number(tpl.pesoBase ?? ev.pesoBase ?? 0),
+        },
+        hitos: []
       });
     }
 
-    const scoreObjetivo = calcularScoreObjetivoDesdeMetas(metasDetalladas);
+    const pEntry = plantillasMap.get(tplId);
 
-    objetivosList.push({
-      plantillaId: grupo.plantillaId,
-      nombre: grupo.nombre,
-      pesoBase: grupo.pesoBase,
-      actual: scoreObjetivo, // este es el 0..100 final del objetivo
-      metas: metasDetalladas,
+    // Add hito
+    pEntry.hitos.push({
+      periodo: ev.periodo,
+      actual: ev.actual,
+      metas: ev.metasResultados
     });
   }
 
+  const objetivosResult = [];
+  const aptitudesResult = [];
+
+  for (const [tplId, { def, hitos }] of plantillasMap.entries()) {
+    const peso = def.pesoBase; // Recalculo doesn't seem to handle overrides? The original code didn't load them!
+    // NOTE: The original code in `recalculoEmpleado.js` did NOT load overrides.
+    // It used `tpl.pesoBase`.
+    // We will stick to that behavior to avoiding scope creep, strictly refactoring computation.
+
+    if (def.tipo === "objetivo") {
+      const { progreso, metasAnuales } = calculateAnnualObjectiveProgress(def.metas, hitos);
+
+      objetivosResult.push({
+        plantillaId: tplId,
+        nombre: def.nombre,
+        pesoBase: peso,
+        peso, // Assuming no override
+        actual: progreso, // Engine returns 'progreso' (0-100)
+        metas: metasAnuales
+      });
+    } else {
+      // Aptitud
+      const puntuaciones = hitos.map(h => h.actual).filter(v => v !== null && v !== undefined);
+      const puntuacion = puntuaciones.length
+        ? Math.round(puntuaciones.reduce((a, b) => a + b, 0) / puntuaciones.length)
+        : 0;
+
+      aptitudesResult.push({
+        evaluacionId: null, // mixed
+        plantillaId: tplId,
+        nombre: def.nombre,
+        pesoBase: peso,
+        peso,
+        actual: puntuacion
+      });
+    }
+  }
+
   // 3) Global: mezcla objetivos / aptitudes (70/30 por defecto)
-  const resumen = calcularResultadoGlobalEmpleado({
-    objetivos: objetivosList,
-    aptitudes: aptitudesList,
-    pesoObj,
-    pesoApt,
-  });
+  // Note: recalculoEmpleado doesn't seem to pass "latestFeedback" for snapshot.
+  // The original code calculated strictly from components.
+  // We will pass null for feedback to keep "Live Recalculation" behavior (ignoring snapshot for now, or should we?)
+  // If the user wants "Real Data", they probably expect the Snapshot found in Dashboard.
+  // But `recalculoEmpleado` is often used to "Fix" data.
+  // Let's stick to strict calculation (null feedback) unless we want to fetch feedback here too.
+  // Original `recalculoEmpleado` imported `calcularResultadoGlobalEmpleado` from `scoringGlobal.js`.
+  // That function did NOT look at feedback snapshots.
+  // So passing `null` preserves EXACT original behavior of this specific file.
+
+  const resumen = calculateGlobalPerformance(
+    objetivosResult,
+    aptitudesResult,
+    null, // No snapshot override in this script
+    { obj: pesoObj, apt: pesoApt }
+  );
+
+  // Adapt return format to match previous output structure exactly if possible, 
+  // or return the new cleaner structure.
+  // Previous output: { objetivos: [{..., actual, metas: [...] }], aptitudes: [...], resumen: { objetivos, aptitudes, global } }
+  // Our new structure is very similar.
 
   return {
     empleado: empleadoId,
     year: anio,
-    objetivos: objetivosList,
-    aptitudes: aptitudesList,
-    resumen,
-    // opcional: podría devolverte también las evaluaciones crudas
+    objetivos: objetivosResult,
+    aptitudes: aptitudesResult,
+    resumen: {
+      objetivos: resumen.scoreObj,
+      aptitudes: resumen.scoreApt,
+      global: resumen.scoreFinal
+    },
     // evals,
   };
 }

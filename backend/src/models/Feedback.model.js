@@ -41,6 +41,20 @@ const FeedbackSchema = new mongoose.Schema(
             estado: { type: String, enum: ["ACK", "CONTEST", "SYSTEM_CLOSED", null], default: null },
             fecha: { type: Date },
         },
+        // Motivo de desacuerdo (si aplica)
+        motivoDesacuerdo: {
+            type: String,
+            enum: [
+                "La nota no refleja el feedback recibido.",
+                "Los objetivos asignados fueron inalcanzables.",
+                "El objetivo no fue comprendido claramente.",
+                "Falta de escucha o comprensión durante la reunión de feedback.",
+                "Incomodidad con el evaluador.",
+                "Ejemplos proporcionados poco pertinentes o poco claros.",
+                null
+            ],
+            default: null
+        },
 
         // Fechas de transición
         submittedToEmployeeAt: Date,

@@ -95,7 +95,7 @@ export default function RRHHFeedbackClosing() {
             if (!structure[areaName]) {
                 structure[areaName] = {
                     id: areaName,
-                    stats: { total: 0, ack: 0, contest: 0, pending: 0, closed: 0 },
+                    stats: { total: 0, ack: 0, contest: 0, system: 0, pending: 0, closed: 0 },
                     managers: {}
                 };
             }
@@ -106,7 +106,7 @@ export default function RRHHFeedbackClosing() {
                 structure[areaName].managers[managerKey] = {
                     id: managerKey,
                     name: managerName,
-                    stats: { total: 0, ack: 0, contest: 0, pending: 0, closed: 0 },
+                    stats: { total: 0, ack: 0, contest: 0, system: 0, pending: 0, closed: 0 },
                     employees: {}
                 };
             }
@@ -115,7 +115,7 @@ export default function RRHHFeedbackClosing() {
                     id: empId,
                     data: empData,
                     items: {}, // Map by period for easy access
-                    stats: { total: 0, ack: 0, contest: 0, pending: 0, closed: 0 }
+                    stats: { total: 0, ack: 0, contest: 0, system: 0, pending: 0, closed: 0 }
                 };
             }
             return structure[areaName].managers[managerKey].employees[empId];
@@ -213,6 +213,7 @@ export default function RRHHFeedbackClosing() {
                     // Independent check for Agreement/Disagreement
                     if (fb.empleadoAck?.estado === "ACK") empNode.stats.ack++;
                     else if (fb.empleadoAck?.estado === "CONTEST") empNode.stats.contest++;
+                    else if (fb.empleadoAck?.estado === "SYSTEM_CLOSED") empNode.stats.system++;
 
                     if (fb.estado !== "CLOSED") empNode.stats.pending++;
                 } else {
@@ -234,12 +235,14 @@ export default function RRHHFeedbackClosing() {
                     manager.stats.total += emp.stats.total;
                     manager.stats.ack += emp.stats.ack;
                     manager.stats.contest += emp.stats.contest;
+                    manager.stats.system += emp.stats.system;
                     manager.stats.pending += emp.stats.pending;
                     manager.stats.closed += emp.stats.closed;
                 });
                 area.stats.total += manager.stats.total;
                 area.stats.ack += manager.stats.ack;
                 area.stats.contest += manager.stats.contest;
+                area.stats.system += manager.stats.system;
                 area.stats.pending += manager.stats.pending;
                 area.stats.closed += manager.stats.closed;
             });
@@ -258,6 +261,7 @@ export default function RRHHFeedbackClosing() {
                 name: area.id,
                 Acuerdo: area.stats.ack,
                 Desacuerdo: area.stats.contest,
+                Sistema: area.stats.system,
                 Pendiente: area.stats.pending,
                 Cerrado: area.stats.closed
             });
@@ -267,6 +271,7 @@ export default function RRHHFeedbackClosing() {
                     name: manager.name,
                     Acuerdo: manager.stats.ack,
                     Desacuerdo: manager.stats.contest,
+                    Sistema: manager.stats.system,
                     Pendiente: manager.stats.pending,
                     Cerrado: manager.stats.closed,
                     area: area.id
@@ -500,6 +505,9 @@ export default function RRHHFeedbackClosing() {
         } else if (fb.empleadoAck?.estado === "CONTEST") {
             borderColor = "border-rose-200";
             statusBadge = <Badge className="bg-rose-100 text-rose-700 hover:bg-rose-100 border-rose-200 text-[10px] px-1.5 py-0">Desacuerdo</Badge>;
+        } else if (fb.empleadoAck?.estado === "SYSTEM_CLOSED") {
+            borderColor = "border-slate-300";
+            statusBadge = <Badge className="bg-slate-100 text-slate-600 hover:bg-slate-100 border-slate-300 text-[10px] px-1.5 py-0">Cerrado por Sistema</Badge>;
         }
 
         return (
@@ -676,8 +684,10 @@ export default function RRHHFeedbackClosing() {
                                                     cursor={{ fill: 'transparent' }}
                                                 />
                                                 <Legend />
+                                                <Legend />
                                                 <Bar dataKey="Acuerdo" stackId="a" fill="#10b981" radius={[0, 4, 4, 0]} barSize={20} />
                                                 <Bar dataKey="Desacuerdo" stackId="a" fill="#f43f5e" radius={[0, 4, 4, 0]} barSize={20} />
+                                                <Bar dataKey="Sistema" stackId="a" fill="#64748b" radius={[0, 4, 4, 0]} barSize={20} />
                                             </BarChart>
                                         </ResponsiveContainer>
                                     </div>
@@ -700,8 +710,10 @@ export default function RRHHFeedbackClosing() {
                                                     cursor={{ fill: 'transparent' }}
                                                 />
                                                 <Legend />
+                                                <Legend />
                                                 <Bar dataKey="Acuerdo" stackId="a" fill="#10b981" radius={[0, 4, 4, 0]} barSize={20} />
                                                 <Bar dataKey="Desacuerdo" stackId="a" fill="#f43f5e" radius={[0, 4, 4, 0]} barSize={20} />
+                                                <Bar dataKey="Sistema" stackId="a" fill="#64748b" radius={[0, 4, 4, 0]} barSize={20} />
                                             </BarChart>
                                         </ResponsiveContainer>
                                     </div>
@@ -730,6 +742,7 @@ export default function RRHHFeedbackClosing() {
                             <div className="flex gap-2 ml-auto items-center">
                                 <StatusPill count={area.stats.ack} type="Acuerdo" icon={CheckCircle} color="bg-emerald-50 text-emerald-700 border-emerald-200" />
                                 <StatusPill count={area.stats.contest} type="Desacuerdo" icon={AlertCircle} color="bg-rose-50 text-rose-700 border-rose-200" />
+                                <StatusPill count={area.stats.system} type="Sistema" icon={Clock} color="bg-slate-50 text-slate-600 border-slate-200" />
                                 <Badge variant="secondary" className="ml-2 bg-slate-100 text-slate-600 hover:bg-slate-200">{area.stats.total} Total</Badge>
 
                                 {/* BULK ACTIONS MENU */}

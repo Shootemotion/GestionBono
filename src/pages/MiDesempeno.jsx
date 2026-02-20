@@ -250,12 +250,22 @@ const ObjectiveCard = ({ obj, currentPeriod, expanded, onToggle }) => {
                 )}
               </div>
 
-              {/* Result Input Display (Read Only) */}
+              {/* Result Input Display (Read Only - Shows RAW VALUE now) */}
               <div className="flex justify-end">
                 <div className="w-32">
-                  <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Resultado</label>
-                  <div className="h-9 w-full rounded border border-slate-200 bg-slate-50 flex items-center px-3 text-sm text-slate-600 font-medium">
-                    {hasResult ? currentHito.actual : "—"}
+                  <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Resultado Final</label>
+                  <div className="h-9 w-full rounded border border-slate-200 bg-slate-50 flex items-center px-3 text-sm text-slate-600 font-bold">
+                    {(() => {
+                      // Find the primary meta result to display as "The Value"
+                      // Assuming single-meta per objective is the dominant pattern for this view
+                      const primaryMeta = currentHito?.metas?.[0];
+                      if (primaryMeta && primaryMeta.resultado !== null) {
+                        return `${primaryMeta.resultado} ${primaryMeta.unidad || ""}`;
+                      }
+                      // Fallback to actual score if no meta result found (legacy)
+                      // But label clearly if it is a score
+                      return hasResult ? `${Number(currentHito.actual).toFixed(1)}%` : "—";
+                    })()}
                   </div>
                 </div>
               </div>
@@ -294,6 +304,7 @@ export default function MiDesempeno() {
   // Estado local para comentarios/ack antes de guardar
   const [localComment, setLocalComment] = useState("");
   const [localAck, setLocalAck] = useState(null);
+  const [localReason, setLocalReason] = useState(""); // Motivo de desacuerdo
 
   // New State for Redesign
   const [activeTab, setActiveTab] = useState("obj"); // "obj" | "comp"
@@ -403,6 +414,7 @@ export default function MiDesempeno() {
     if (selectedFeedback) {
       setLocalComment(selectedFeedback.comentarioEmpleado || "");
       setLocalAck(selectedFeedback.empleadoAck?.estado || null);
+      setLocalReason(selectedFeedback.motivoDesacuerdo || "");
     }
   }, [selectedFeedback]);
 
@@ -652,9 +664,15 @@ export default function MiDesempeno() {
     if (!selectedFeedback) return;
 
     // Validar comentario obligatorio si está en desacuerdo
-    if (localAck === "CONTEST" && !localComment.trim()) {
-      toast.error("Para indicar desacuerdo, es obligatorio ingresar un comentario justificativo.");
-      return;
+    if (localAck === "CONTEST") {
+      if (!localComment.trim()) {
+        toast.error("Para indicar desacuerdo, es obligatorio ingresar un comentario justificativo.");
+        return;
+      }
+      if (!localReason) {
+        toast.error("Por favor, seleccioná un motivo de desacuerdo.");
+        return;
+      }
     }
 
     if (!window.confirm("¿Seguro desea enviar su devolución? Una vez enviada no podrá modificarla.")) return;
@@ -669,7 +687,8 @@ export default function MiDesempeno() {
         empleadoAck: {
           estado: localAck,
           fecha: new Date()
-        }
+        },
+        motivoDesacuerdo: localAck === "CONTEST" ? localReason : null
       };
 
       await api("/feedbacks", {
@@ -849,21 +868,21 @@ export default function MiDesempeno() {
       <div className="space-y-6 animate-in fade-in duration-300">
         {/* Header - Clean & Simple */}
         <div>
-          <h2 className="font-heading text-lg font-bold text-slate-700">{item.nombre}</h2>
-          {item.descripcion && <p className="text-sm text-slate-500 mt-1 font-medium">{item.descripcion}</p>}
+          <h2 className="font-heading text-lg font-bold text-zinc-800">{item.nombre}</h2>
+          {item.descripcion && <p className="text-sm text-zinc-500 mt-1 font-medium">{item.descripcion}</p>}
         </div>
 
         {/* Flattened Detail View */}
         <div className="space-y-6">
           {/* Section Header */}
-          <div className="flex justify-between items-center pb-2 border-b border-slate-200/60">
+          <div className="flex justify-between items-center pb-2 border-b border-zinc-200">
             <div>
-              <h4 className="font-bold text-slate-800 flex items-center gap-2 text-base">
-                <Calendar className="w-5 h-5 text-blue-600" />
+              <h4 className="font-bold text-zinc-700 flex items-center gap-2 text-base">
+                <Calendar className="w-5 h-5 text-zinc-400" />
                 <span>
                   Detalle {displayPeriod}
                   {isMonthly && (
-                    <span className="text-sm font-normal text-slate-400 ml-2">
+                    <span className="text-sm font-normal text-zinc-500 ml-2">
                       ({(() => {
                         if (!displayPeriod.includes('M')) return selectedFeedback?.periodo;
                         const m = parseInt(displayPeriod.split('M')[1]);
@@ -876,18 +895,18 @@ export default function MiDesempeno() {
                   )}
                 </span>
               </h4>
-              <div className="text-xs text-slate-500 mt-1">Desglose de objetivos y resultados</div>
+              <div className="text-xs text-zinc-500 mt-1">Desglose de objetivos y resultados</div>
             </div>
 
             {showScores ? (
               <div className="flex flex-col items-end">
-                <span className="text-3xl font-extrabold text-blue-600 tracking-tight">
+                <span className="text-3xl font-extrabold text-zinc-800 tracking-tight">
                   {displayHito?.actual ?? 0}%
                 </span>
-                <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mt-1">Cumplimiento</span>
+                <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider mt-1">Cumplimiento</span>
               </div>
             ) : (
-              <span className="text-2xl text-slate-300 font-bold">--</span>
+              <span className="text-2xl text-zinc-600 font-bold">--</span>
             )}
           </div>
 
@@ -920,15 +939,39 @@ export default function MiDesempeno() {
                   }
                 }
                 const target = metaResult?.esperado ?? metaDef?.target ?? 0;
-                const rawCompliance = target > 0 ? (valorEvaluado / target) * 100 : 0;
+                const isLessBetter = metaDef?.operador === "<=";
+
+                // Compliance Calculation respects Operator
+                let rawCompliance = 0;
+                if (target > 0) {
+                  if (isLessBetter) {
+                    // For <=, Lower is Better. 
+                    // If value is 0, compliance is infinite/max? Let's cap?
+                    // Standard Formula: (Target / Value) * 100?
+                    // Or linear interp? 
+                    // Usually for tickets: Target 30. Value 15.
+                    // 15 is 100% of 15? No.
+                    // Value 30 is 100%. Value 0 is 200%?
+                    // Let's use: ((Target - (Value - Target)) / Target) * 100? No.
+                    // Simple inversion: (Target / (Value || 1)) * 100.
+                    // If Value <= Target, Compliance >= 100%.
+                    rawCompliance = valorEvaluado > 0 ? (target / valorEvaluado) * 100 : 100; // If 0 tickets, 100% (or more)
+                    if (valorEvaluado === 0) rawCompliance = 100; // Treat 0 as perfect compliance?
+                  } else {
+                    // >= (Default)
+                    rawCompliance = (valorEvaluado / target) * 100;
+                  }
+                }
+
                 const clampedCompliance = Math.min(Math.max(rawCompliance, 0), 100);
+                const isSuccess = isLessBetter ? (valorEvaluado <= target) : (valorEvaluado >= target);
 
                 return (
-                  <div key={idx} className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm hover:shadow-md transition-all group">
+                  <div key={idx} className="bg-white border border-zinc-200 rounded-xl p-6 shadow-sm hover:shadow-md transition-all group">
                     {/* Meta Header */}
                     <div className="flex justify-between items-start mb-6">
-                      <h3 className="text-base font-bold text-slate-800">{metaDef?.nombre}</h3>
-                      <span className="text-[10px] bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-1 rounded-md font-bold uppercase tracking-wide shrink-0 ml-4">
+                      <h3 className="text-base font-bold text-zinc-800">{metaDef?.nombre}</h3>
+                      <span className="text-[10px] bg-zinc-100 border border-zinc-200 text-zinc-600 px-2 py-1 rounded-md font-bold uppercase tracking-wide shrink-0 ml-4">
                         {getCierreLabel(metaDef)}
                       </span>
                     </div>
@@ -937,40 +980,40 @@ export default function MiDesempeno() {
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
                       {/* Left: Configuration Details */}
-                      <div className="lg:col-span-2 bg-slate-50 border border-slate-100 rounded-lg p-5">
-                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1">
+                      <div className="lg:col-span-2 bg-zinc-50 border border-zinc-100 rounded-lg p-5">
+                        <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-3 flex items-center gap-1">
                           <Settings2 className="w-3 h-3" /> Configuración de Meta
                         </div>
                         <div className="flex items-baseline gap-2 mb-3">
-                          <span className="text-sm font-semibold text-slate-500">Objetivo:</span>
-                          <span className="text-xl font-bold text-slate-700">{metaDef?.operador || "="} {target}</span>
+                          <span className="text-sm font-semibold text-zinc-500">Objetivo:</span>
+                          <span className={`${isLessBetter ? 'text-amber-600' : 'text-zinc-800'} text-xl font-bold`}>{metaDef?.operador || "="} {target}</span>
                         </div>
 
-                        <div className="text-[11px] text-slate-500 mb-4 space-y-1.5 font-medium leading-relaxed">
-                          <p>Se evalúa en unidad <span className="text-slate-700 font-semibold">{metaDef?.unidad || "Numérica"}</span>.</p>
+                        <div className="text-[11px] text-zinc-400 mb-4 space-y-1.5 font-medium leading-relaxed">
+                          <p>Se evalúa en unidad <span className="text-zinc-700 font-semibold">{metaDef?.unidad || "Numérica"}</span>.</p>
                           <p>{metaDef?.modoAcumulacion === "acumulativo" ? "El resultado se acumula periodo a periodo." : "El resultado es independiente por periodo."}</p>
-                          <p>Tolerancia permitida de <span className="text-slate-700 font-semibold">{metaDef?.tolerancia ?? 0}</span>.</p>
+                          <p>Tolerancia permitida de <span className="text-zinc-700 font-semibold">{metaDef?.tolerancia ?? 0}</span>.</p>
                         </div>
 
-                        <div className="space-y-2 pt-3 border-t border-slate-200/60">
+                        <div className="space-y-2 pt-3 border-t border-zinc-200/60">
                           {metaDef?.reconoceEsfuerzo ? (
-                            <div className="flex items-start gap-2 text-[11px] text-amber-700 font-medium">
+                            <div className="flex items-start gap-2 text-[11px] text-amber-500 font-medium">
                               <Handshake className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
                               <span>Reconoce esfuerzo parcial si no se alcanza la meta.</span>
                             </div>
                           ) : (
-                            <div className="flex items-start gap-2 text-[11px] text-slate-400">
+                            <div className="flex items-start gap-2 text-[11px] text-zinc-600">
                               <span className="w-3.5 h-3.5 shrink-0" /> <span>No aplica esfuerzo parcial.</span>
                             </div>
                           )}
 
                           {metaDef?.permiteOver ? (
-                            <div className="flex items-start gap-2 text-[11px] text-emerald-700 font-medium">
+                            <div className="flex items-start gap-2 text-[11px] text-emerald-400 font-medium">
                               <TrendingUp className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-500" />
                               <span>Puede superar el 100% (Over Compliance).</span>
                             </div>
                           ) : (
-                            <div className="flex items-start gap-2 text-[11px] text-slate-400">
+                            <div className="flex items-start gap-2 text-[11px] text-zinc-600">
                               <span className="w-3.5 h-3.5 shrink-0" /> <span>Tope máximo 100%.</span>
                             </div>
                           )}
@@ -978,29 +1021,29 @@ export default function MiDesempeno() {
                       </div>
 
                       {/* Right: Execution Result */}
-                      <div className="lg:col-span-1 flex flex-col justify-between bg-blue-50/30 border border-blue-100 rounded-lg p-5 relative overflow-hidden">
+                      <div className="lg:col-span-1 flex flex-col justify-between bg-zinc-50 border border-zinc-200 rounded-lg p-5 relative overflow-hidden">
                         <div>
-                          <div className="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-4 flex items-center gap-1">
+                          <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-1">
                             <Zap className="w-3 h-3" /> Resultado Obtenido
                           </div>
                           {showScores ? (
                             <div className="flex flex-col items-start gap-1 mb-4 relative z-10">
-                              <span className={`text-5xl font-black tracking-tighter ${valorEvaluado >= target ? 'text-emerald-600' : 'text-blue-700'}`}>
+                              <span className={`text-5xl font-black tracking-tighter ${isSuccess ? 'text-emerald-500' : 'text-zinc-700'}`}>
                                 {valorEvaluado ?? "--"}
                               </span>
-                              <span className="text-xs font-bold text-blue-400 uppercase tracking-wide">{Math.round(clampedCompliance)}% Logrado</span>
+                              <span className="text-xs font-bold text-zinc-500 uppercase tracking-wide">{Math.round(clampedCompliance)}% Logrado</span>
                             </div>
                           ) : (
-                            <div className="flex h-32 items-center justify-center text-slate-400 text-sm font-medium italic">
+                            <div className="flex h-32 items-center justify-center text-zinc-600 text-sm font-medium italic">
                               Pendiente
                             </div>
                           )}
                         </div>
 
                         {showScores && (
-                          <div className="w-full h-2 bg-blue-200/50 rounded-full overflow-hidden relative z-10 mt-auto">
+                          <div className="w-full h-2 bg-zinc-200 rounded-full overflow-hidden relative z-10 mt-auto">
                             <div
-                              className={`h-full rounded-full transition-all duration-700 ease-out ${valorEvaluado >= target ? 'bg-emerald-500' : 'bg-blue-600'}`}
+                              className={`h-full rounded-full transition-all duration-700 ease-out ${isSuccess ? 'bg-emerald-500' : 'bg-zinc-600'}`}
                               style={{ width: `${clampedCompliance}%` }}
                             />
                           </div>
@@ -1011,7 +1054,7 @@ export default function MiDesempeno() {
 
                     {/* History Strip */}
                     {showScores && (
-                      <div className="mt-6 pt-4 border-t border-slate-100">
+                      <div className="mt-6 pt-4 border-t border-zinc-100">
                         <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
                           {(() => {
                             const feedbackLimitMonth = getPeriodMonth(selectedFeedback.periodo);
@@ -1019,7 +1062,7 @@ export default function MiDesempeno() {
                               ?.filter(h => getPeriodMonth(h.periodo) <= feedbackLimitMonth)
                               .sort((a, b) => getPeriodMonth(a.periodo) - getPeriodMonth(b.periodo)) || [];
 
-                            if (historyHitos.length === 0) return <span className="col-span-full text-[10px] text-slate-400 italic">Sin historial previo.</span>;
+                            if (historyHitos.length === 0) return <span className="col-span-full text-[10px] text-zinc-600 italic">Sin historial previo.</span>;
 
                             return historyHitos.map((h, hIdx) => {
                               const hMeta = h.metas?.find(m => m.metaId === metaDef?._id || m._id === metaDef?._id || m.nombre === metaDef?.nombre);
@@ -1031,12 +1074,12 @@ export default function MiDesempeno() {
                                 <button
                                   key={hIdx}
                                   onClick={() => setViewPeriod(h.periodo)}
-                                  className={`flex flex-col items-center justify-center p-2 rounded-lg border transition-all hover:scale-[1.02] ${isCurrentH ? 'bg-slate-800 text-white border-slate-800 shadow-md ring-2 ring-slate-200' : 'bg-white text-slate-500 border-slate-200 hover:border-blue-300 hover:text-blue-600'}`}
+                                  className={`flex flex-col items-center justify-center p-2 rounded-lg border transition-all hover:scale-[1.02] ${isCurrentH ? 'bg-zinc-800 text-white border-zinc-800 shadow-md ring-2 ring-zinc-200' : 'bg-white text-zinc-500 border-zinc-200 hover:border-zinc-300 hover:text-zinc-800'}`}
                                 >
-                                  <span className={`text-[9px] font-bold uppercase tracking-wider mb-0.5 ${isCurrentH ? 'text-slate-300' : 'text-slate-400'}`}>
+                                  <span className={`text-[9px] font-bold uppercase tracking-wider mb-0.5 ${isCurrentH ? 'text-zinc-300' : 'text-zinc-400'}`}>
                                     {h.periodo}
                                   </span>
-                                  <span className={`text-sm font-bold leading-none ${isCurrentH ? 'text-white' : ''} ${typeof displayVal === 'number' && !isCurrentH ? (displayVal >= target ? 'text-emerald-600' : 'text-slate-700') : ''}`}>
+                                  <span className={`text-sm font-bold leading-none ${isCurrentH ? 'text-white' : ''} ${typeof displayVal === 'number' && !isCurrentH ? (displayVal >= target ? 'text-emerald-600' : 'text-zinc-700') : ''}`}>
                                     {displayVal}
                                   </span>
                                 </button>
@@ -1050,7 +1093,7 @@ export default function MiDesempeno() {
                 );
               })
             ) : (
-              <div className="text-center py-8 text-slate-400 italic text-sm">
+              <div className="text-center py-8 text-zinc-400 italic text-sm">
                 {activeTab === 'obj' ? "No hay metas detalladas para este hito." : "Las competencias no tienen desglose de metas."}
               </div>
             )}
@@ -1132,7 +1175,7 @@ export default function MiDesempeno() {
       sub: "Inicio",
       date: `${selectedYear}-11-01`,
       actionMonth: "Diciembre",
-      deadlines: { manager: "1-10", employee: "10-15", hr: "15-30" }
+      deadlines: { manager: "10-12", employee: "15-12", hr: "30-12" }
     },
     {
       id: "Q2",
@@ -1140,7 +1183,7 @@ export default function MiDesempeno() {
       sub: "Seguimiento",
       date: `${selectedYear + 1}-02-01`,
       actionMonth: "Marzo",
-      deadlines: { manager: "1-10", employee: "10-15", hr: "15-30" }
+      deadlines: { manager: "10-03", employee: "15-03", hr: "30-03" }
     },
     {
       id: "Q3",
@@ -1148,7 +1191,7 @@ export default function MiDesempeno() {
       sub: "Seguimiento",
       date: `${selectedYear + 1}-05-01`,
       actionMonth: "Junio",
-      deadlines: { manager: "1-10", employee: "10-15", hr: "15-30" }
+      deadlines: { manager: "10-06", employee: "15-06", hr: "30-06" }
     },
     {
       id: "FINAL",
@@ -1156,7 +1199,7 @@ export default function MiDesempeno() {
       sub: "Cierre Anual",
       date: `${selectedYear + 1}-08-30`,
       actionMonth: "Septiembre",
-      deadlines: { manager: "1-10", employee: "10-15", hr: "15-30" }
+      deadlines: { manager: "10-09", employee: "15-09", hr: "30-09" }
     }
   ], [selectedYear]);
 
@@ -1246,9 +1289,9 @@ export default function MiDesempeno() {
                     ) : selectedFeedback?.estado === 'PENDING_HR' ? (
                       <> <Hourglass className="w-3.5 h-3.5 text-slate-400" /> <span>Esperar RRHH</span> </>
                     ) : selectedFeedback?.estado === 'CLOSED' ? (
-                      <> <Trophy className="w-3.5 h-3.5 text-yellow-400" /> <span>Celebrar</span> </>
+                      <> <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> <span>Revisar</span> </>
                     ) : (
-                      <> <Hourglass className="w-3.5 h-3.5 text-slate-400" /> <span>Esperar</span> </>
+                      <> <Calendar className="w-3.5 h-3.5 text-slate-400" /> <span>Programado</span> </>
                     )}
                   </div>
                 </div>
@@ -1326,7 +1369,7 @@ export default function MiDesempeno() {
                       {[
                         { label: "Borrador Inicia", status: "DRAFT", date: selectedFeedback.createdAt, icon: FileEdit, deadlineKey: "manager" },
                         { label: "Enviado a Vos", status: "SENT", date: selectedFeedback.submittedToEmployeeAt, icon: Send, deadlineKey: "employee" },
-                        { label: "Tu Respuesta", status: "PENDING_HR", date: selectedFeedback.empleadoAck?.fecha, icon: Users, deadlineKey: "hr" },
+                        { label: "Tu Respuesta", status: "PENDING_HR", date: selectedFeedback.empleadoAck?.fecha, icon: Users, deadlineKey: "employee" },
                         { label: "Cierre Final", status: "CLOSED", date: selectedFeedback.closedAt, icon: CheckCircle, deadlineKey: null }
                       ].map((step, idx) => {
                         const order = { "DRAFT": 0, "SENT": 1, "PENDING_HR": 2, "CLOSED": 3 };
@@ -1337,7 +1380,16 @@ export default function MiDesempeno() {
 
                         // Get deadline info
                         const periodItem = timelineItems.find(t => t.id === selectedFeedback.periodo);
-                        const deadlineRange = step.deadlineKey && periodItem ? periodItem.deadlines[step.deadlineKey] : null;
+                        let deadlineRange = step.deadlineKey && periodItem ? periodItem.deadlines[step.deadlineKey] : null;
+
+                        // [FIX] Dynamic Deadline for Employee Response
+                        // If feedback is SENT, the real deadline is +5 days from submission, not the static global date.
+                        if (step.deadlineKey === "employee" && selectedFeedback.submittedToEmployeeAt) {
+                          const submissionDate = new Date(selectedFeedback.submittedToEmployeeAt);
+                          const dynamicDeadline = new Date(submissionDate);
+                          dynamicDeadline.setDate(dynamicDeadline.getDate() + 5);
+                          deadlineRange = dynamicDeadline.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' });
+                        }
 
                         return (
                           <div key={idx} className={`flex gap-4 group ${isCompleted ? 'opacity-100' : 'opacity-60'}`}>
@@ -1428,9 +1480,9 @@ export default function MiDesempeno() {
                             <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 bg-slate-800 text-white text-xs rounded-lg p-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
                               <div className="font-bold mb-1 border-b border-slate-600 pb-1">Plazos {p.actionMonth}</div>
                               <div className="grid grid-cols-1 gap-1 text-[10px]">
-                                <div className="flex justify-between"><span className="text-slate-300">Líder:</span> <span>Hasta el {p.deadlines.manager.split('-')[1]}</span></div>
-                                <div className="flex justify-between"><span className="text-slate-300">Empleado:</span> <span>Hasta el {p.deadlines.employee.split('-')[1]}</span></div>
-                                <div className="flex justify-between"><span className="text-slate-300">RRHH:</span> <span>Hasta el {p.deadlines.hr.split('-')[1]}</span></div>
+                                <div className="flex justify-between"><span className="text-slate-300">Líder:</span> <span>Hasta el {p.deadlines.manager.replace('-', '/')}</span></div>
+                                <div className="flex justify-between"><span className="text-slate-300">Empleado:</span> <span>Hasta el {p.deadlines.employee.replace('-', '/')}</span></div>
+                                <div className="flex justify-between"><span className="text-slate-300">RRHH:</span> <span>Hasta el {p.deadlines.hr.replace('-', '/')}</span></div>
                               </div>
                               <div className="absolute bottom-[-4px] left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-800 rotate-45"></div>
                             </div>
@@ -1675,25 +1727,25 @@ export default function MiDesempeno() {
                 ) : (
                   <div className="flex flex-col lg:flex-row gap-6 h-[800px]">
                     {/* LEFT COLUMN: LIST */}
-                    <div className="w-full lg:w-1/3 flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="w-full lg:w-1/3 flex flex-col bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
                       {/* TABS */}
-                      <div id="tour-tabs-sections" className="flex border-b border-slate-100">
+                      <div id="tour-tabs-sections" className="flex border-b border-zinc-100">
                         <button
                           onClick={() => setActiveTab('obj')}
-                          className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'obj' ? 'text-blue-600 bg-blue-50/50 border-b-2 border-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
+                          className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'obj' ? 'text-zinc-800 bg-zinc-50 border-b-2 border-zinc-800' : 'text-zinc-400 hover:bg-zinc-50'}`}
                         >
                           Objetivos
                         </button>
                         <button
                           onClick={() => setActiveTab('comp')}
-                          className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'comp' ? 'text-amber-600 bg-amber-50/50 border-b-2 border-amber-600' : 'text-slate-500 hover:bg-slate-50'}`}
+                          className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'comp' ? 'text-zinc-800 bg-zinc-50 border-b-2 border-zinc-800' : 'text-zinc-400 hover:bg-zinc-50'}`}
                         >
                           Competencias
                         </button>
                       </div>
 
                       {/* LIST ITEMS (Refined V3) */}
-                      <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50">
+                      <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-zinc-50/50">
                         {activeTab === 'obj' ? (
                           periodResults.objetivos.length > 0 ? (
                             periodResults.objetivos.map(obj => (
@@ -1701,18 +1753,18 @@ export default function MiDesempeno() {
                                 key={obj._id}
                                 onClick={() => setSelectedItemId(obj._id)}
                                 className={`w-full text-left rounded-lg border transition-all group overflow-hidden ${selectedItemId === obj._id
-                                  ? 'bg-white border-indigo-200 shadow-md ring-1 ring-indigo-50 relative z-10'
-                                  : 'bg-white border-slate-200 hover:border-indigo-200 hover:shadow-sm'
+                                  ? 'bg-zinc-800 border-zinc-800 shadow-md ring-1 ring-zinc-800 relative z-10'
+                                  : 'bg-white border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-sm'
                                   }`}
                               >
                                 <div className="p-3 pb-2 flex justify-between items-start gap-2">
-                                  <div className={`text-sm font-semibold line-clamp-2 ${selectedItemId === obj._id ? 'text-indigo-900' : 'text-slate-700'}`}>
+                                  <div className={`text-sm font-semibold line-clamp-2 ${selectedItemId === obj._id ? 'text-white' : 'text-zinc-700'}`}>
                                     {obj.nombre}
                                   </div>
                                 </div>
 
                                 {/* Detailed Metrics Footer */}
-                                <div className={`px-3 py-2 grid grid-cols-3 gap-1 text-[10px] font-medium border-t ${selectedItemId === obj._id ? 'bg-indigo-50/50 text-indigo-700 border-indigo-100' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
+                                <div className={`px-3 py-2 grid grid-cols-3 gap-1 text-[10px] font-medium border-t ${selectedItemId === obj._id ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-zinc-50 text-zinc-500 border-zinc-100'}`}>
                                   <div className="flex flex-col">
                                     <span className="text-[9px] opacity-70">Peso</span>
                                     <span className="font-bold">{obj.peso}%</span>
@@ -1749,7 +1801,7 @@ export default function MiDesempeno() {
                                 </div>
 
                                 {/* Dual Progress Footer (Tinted) */}
-                                <div className={`px-3 py-2 flex justify-between text-[10px] font-medium ${selectedItemId === apt._id ? 'bg-orange-50/50 text-orange-700' : 'bg-slate-50 text-slate-500'}`}>
+                                <div className={`px-3 py-2 flex justify-between text-[10px] font-medium ${selectedItemId === apt._id ? 'bg-zinc-700 border-zinc-600 text-zinc-300' : 'bg-zinc-50 text-zinc-500'}`}>
                                   <span>Impacto: <span className="font-bold">30%</span></span>
                                   <span>Calif: <span className="font-bold">{Number(apt.scorePeriodo).toFixed(1)}%</span></span>
                                 </div>
@@ -1763,7 +1815,7 @@ export default function MiDesempeno() {
                     </div>
 
                     {/* RIGHT COLUMN: DETAILS */}
-                    <div className="w-full lg:w-2/3 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 overflow-y-auto">
+                    <div className="w-full lg:w-2/3 bg-white rounded-2xl border border-zinc-200 shadow-sm p-6 overflow-y-auto">
                       {renderDetailView()}
                     </div>
                   </div>
@@ -1784,8 +1836,30 @@ export default function MiDesempeno() {
                     </h3>
 
                     <div className="space-y-6 mb-8 pb-8 border-b border-slate-100">
+                      {localAck === "CONTEST" && (
+                        <div className="mb-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                          <label className="text-sm font-bold text-slate-700 mb-2 block tracking-wide">
+                            Motivo del desacuerdo <span className="text-rose-500">*</span>
+                          </label>
+                          <select
+                            value={localReason}
+                            onChange={(e) => setLocalReason(e.target.value)}
+                            disabled={selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado}
+                            className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                          >
+                            <option value="">Seleccioná un motivo...</option>
+                            <option value="La nota no refleja el feedback recibido.">La nota no refleja el feedback recibido.</option>
+                            <option value="Los objetivos asignados fueron inalcanzables.">Los objetivos asignados fueron inalcanzables.</option>
+                            <option value="El objetivo no fue comprendido claramente.">El objetivo no fue comprendido claramente.</option>
+                            <option value="Falta de escucha o comprensión durante la reunión de feedback.">Falta de escucha o comprensión durante la reunión de feedback.</option>
+                            <option value="Incomodidad con el evaluador.">Incomodidad con el evaluador.</option>
+                            <option value="Ejemplos proporcionados poco pertinentes o poco claros.">Ejemplos proporcionados poco pertinentes o poco claros.</option>
+                          </select>
+                        </div>
+                      )}
+
                       <div>
-                        <label className="text-sm font-medium text-slate-700 mb-2 block">Comentarios para RRHH</label>
+                        <label className="text-sm font-medium text-slate-700 mb-2 block">Comentarios</label>
                         <textarea
                           className="w-full h-32 rounded-xl border border-slate-200 p-4 text-sm focus:ring-2 focus:ring-blue-500/20 outline-none transition-all resize-none bg-slate-50 focus:bg-white"
                           placeholder="Escribí tus comentarios sobre este feedback..."
@@ -1830,7 +1904,7 @@ export default function MiDesempeno() {
                           disabled={selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado || !localAck}
                           className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 px-8 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado ? "Enviado" : "Enviar a RRHH"}
+                          {selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado ? "Enviado" : "Enviar"}
                         </Button>
                       </div>
 

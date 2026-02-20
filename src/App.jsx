@@ -30,6 +30,7 @@ const ConfiguracionBono = lazy(() => import('@/pages/ConfiguracionBono'));
 const ResultadosBono = lazy(() => import('@/pages/ResultadosBono'));
 const GestionAvisos = lazy(() => import('@/pages/GestionAvisos'));
 const Sistemas = lazy(() => import('@/pages/Sistemas'));
+const GestionISO = lazy(() => import('@/pages/GestionISO'));
 
 
 function App() {
@@ -124,7 +125,7 @@ function App() {
             />
             <Route
               path="/plantillas"
-              element={<RequireAuth allow={['superadmin', 'directivo', 'rrhh']}>
+              element={<RequireAuth allow={['superadmin', 'directivo', 'rrhh', 'jefe_area', 'jefe_sector']}>
                 <GestionPlantillas />
               </RequireAuth>
               }
@@ -170,6 +171,14 @@ function App() {
               element={
                 <RequireAuth allow={['superadmin', 'directivo', 'rrhh', 'jefe_area', 'jefe_sector']}>
                   <GestionDepartamentos />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/gestion-iso"
+              element={
+                <RequireAuth allow={['superadmin', 'directivo', 'rrhh']}>
+                  <GestionISO />
                 </RequireAuth>
               }
             />

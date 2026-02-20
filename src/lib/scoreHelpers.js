@@ -1,3 +1,5 @@
+import { calculateObjectiveProgress } from "@/utils/calculos";
+
 // Helper para convertir el string del periodo a un índice de mes comparable (1-12) basado en el Año Fiscal (Sep-Ago)
 export const getCurrentFiscalYear = (date = new Date()) => {
     // Fiscal Year starts in September (Month index 8)
@@ -57,20 +59,14 @@ export const calculatePeriodScores = (data, period) => {
     objetivos.forEach(obj => {
         // Filtrar hitos relevantes hasta el periodo actual
         const relevantHitos = obj.hitos?.filter(h => getPeriodMonth(h.periodo) <= feedbackLimit) || [];
-        let score = 0;
+
+        let effectiveScore = 0;
 
         if (relevantHitos.length > 0) {
-            const isCumulative = obj.metas?.some(m => m.acumulativa || m.modoAcumulacion === 'acumulativo');
-            const progresos = relevantHitos.map(h => h.actual ?? 0);
-            // Si es acumulativo toma el máximo, sino el promedio
-            score = isCumulative
-                ? Math.max(...progresos, 0)
-                : Math.round(progresos.reduce((a, b) => a + b, 0) / progresos.length);
+            // Use Shared Utility for consistent calculation (supports Umbral, Esfuerzo, Mixed Rules, etc.)
+            // calculateObjectiveProgress handles capping internally unless permiteOver is true
+            effectiveScore = calculateObjectiveProgress(obj, relevantHitos);
         }
-
-        // Verificar si permite superar el 100%
-        const hasPermiteOver = obj.metas?.some(m => m.permiteOver) || obj.hitos?.some(h => h.metas?.some(m => m.permiteOver));
-        const effectiveScore = hasPermiteOver ? score : Math.min(score, 100);
 
         totalObjScore += effectiveScore * (obj.peso || 0);
         totalObjWeight += (obj.peso || 0);

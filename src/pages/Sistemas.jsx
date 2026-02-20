@@ -5,7 +5,9 @@ import UsuariosAdmin from "./UsuariosAdmin";
 import RolesAdmin from "./RolesAdmin";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Download, HardDrive, RefreshCw, Shield, Users, Server, RotateCcw, AlertTriangle } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Download, HardDrive, RefreshCw, Shield, Users, Server, RotateCcw, AlertTriangle, Check, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { API_ORIGIN } from "@/lib/api";
 
@@ -14,6 +16,14 @@ const BackupsList = () => {
     const [loading, setLoading] = useState(false);
     const [runningBackup, setRunningBackup] = useState(false);
     const [nextBackupTime, setNextBackupTime] = useState("");
+
+    // Restore Dialog State
+    const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
+    const [selectedBackup, setSelectedBackup] = useState(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [backupPreview, setBackupPreview] = useState([]); // List of collections available
+    const [restoreMode, setRestoreMode] = useState('full'); // 'full' or 'partial'
+    const [selectedCollections, setSelectedCollections] = useState([]);
 
     const calculateTimeUntilBackup = () => {
         const now = new Date();
@@ -103,21 +113,58 @@ const BackupsList = () => {
             });
     };
 
-    const handleRestore = async (backupName) => {
-        if (!confirm(`PELIGRO: ¿Estás seguro de que quieres restaurar el backup "${backupName}"?\n\nESTO SOBREESCRIBIRÁ TODA LA INFORMACIÓN ACTUAL.\n\nEsta acción no se puede deshacer.`)) {
+    const handleInitiateRestore = async (backupName) => {
+        setSelectedBackup(backupName);
+        setRestoreDialogOpen(true);
+        setPreviewLoading(true);
+        setRestoreMode('full');
+        setBackupPreview([]);
+        setSelectedCollections([]);
+
+        try {
+            const res = await api(`/system/backups/${backupName}/preview`);
+            if (Array.isArray(res)) {
+                setBackupPreview(res);
+                // Pre-select all by default? Or none? Let's pre-select all for convenience if they switch to partial
+                setSelectedCollections(res.map(c => c.name));
+            }
+        } catch (e) {
+            console.error("Error loading preview:", e);
+            toast.error("No se pudo cargar la vista previa del backup.");
+        } finally {
+            setPreviewLoading(false);
+        }
+    };
+
+    const handleConfirmRestore = async () => {
+        if (!selectedBackup) return;
+
+        if (restoreMode === 'partial' && selectedCollections.length === 0) {
+            toast.error("Debes seleccionar al menos una colección para restaurar.");
             return;
         }
 
+        const isFullKey = restoreMode === 'full';
+        const collectionsToRestore = isFullKey ? null : selectedCollections;
+
+        if (!confirm(`PELIGRO: ¿Estás seguro de restaurar ${isFullKey ? 'TODO el sistema' : selectedCollections.length + ' colecciones'} desde "${selectedBackup}"?\n\nESTO SOBREESCRIBIRÁ LOS DATOS ACTUALES.`)) {
+            return;
+        }
+
+        setRestoreDialogOpen(false);
         setLoading(true);
         const toastId = toast.loading("Restaurando sistema...");
 
         try {
-            const res = await api(`/system/backups/${backupName}/restore`, { method: 'POST' });
+            const res = await api(`/system/backups/${selectedBackup}/restore`, {
+                method: 'POST',
+                body: JSON.stringify({ collections: collectionsToRestore })
+            });
 
             toast.dismiss(toastId);
             if (res.success) {
-                toast.success("Sistema restaurado correctamente. Se recomienda recargar la página.");
-                setTimeout(() => window.location.reload(), 2000);
+                toast.success("Sistema restaurado correctamente.");
+                setTimeout(() => window.location.reload(), 1500);
             } else {
                 throw new Error(res.message || "Error desconocido");
             }
@@ -127,7 +174,16 @@ const BackupsList = () => {
             toast.error("Error al restaurar: " + (err.message || err.toString()));
         } finally {
             setLoading(false);
+            setSelectedBackup(null);
         }
+    };
+
+    const toggleCollection = (name) => {
+        setSelectedCollections(prev =>
+            prev.includes(name)
+                ? prev.filter(c => c !== name)
+                : [...prev, name]
+        );
     };
 
     const formatBytes = (bytes, decimals = 2) => {
@@ -224,7 +280,7 @@ const BackupsList = () => {
                                         Descargar
                                     </Button>
 
-                                    <Button variant="ghost" size="sm" onClick={() => handleRestore(bk.name)} className="text-amber-600 hover:text-amber-700 hover:bg-amber-100">
+                                    <Button variant="ghost" size="sm" onClick={() => handleInitiateRestore(bk.name)} className="text-amber-600 hover:text-amber-700 hover:bg-amber-100">
                                         <RotateCcw className="w-4 h-4 mr-2" />
                                         Restaurar
                                     </Button>
@@ -258,6 +314,91 @@ const BackupsList = () => {
                     </p>
                 </div>
             </div>
+
+            <Dialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}>
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-amber-600">
+                            <AlertTriangle className="w-5 h-5" />
+                            Confirmar Restauración
+                        </DialogTitle>
+                        <DialogDescription>
+                            Estás a punto de restaurar el backup <strong>{selectedBackup}</strong>.
+                            Esta acción sobreescribirá los datos actuales y es irreversible.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {previewLoading ? (
+                        <div className="py-8 flex justify-center text-slate-400">
+                            <RefreshCw className="w-8 h-8 animate-spin" />
+                        </div>
+                    ) : (
+                        <div className="space-y-6 py-4">
+                            <div className="flex p-1 bg-slate-100 rounded-lg">
+                                <button
+                                    onClick={() => setRestoreMode('full')}
+                                    className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${restoreMode === 'full' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    Restauración Completa
+                                </button>
+                                <button
+                                    onClick={() => setRestoreMode('partial')}
+                                    className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${restoreMode === 'partial' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    Personalizada (Por Colección)
+                                </button>
+                            </div>
+
+                            {restoreMode === 'full' ? (
+                                <div className="bg-amber-50 p-4 rounded-lg border border-amber-100 text-amber-800 text-sm">
+                                    <p className="font-bold flex items-center gap-2">
+                                        <HardDrive className="w-4 h-4" />
+                                        Se reemplazará TODA la base de datos.
+                                    </p>
+                                    <p className="mt-1 opacity-80 pl-6">Todas las colecciones actuales serán eliminadas y reemplazadas por las del backup.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <div className="flex justify-between items-center px-1">
+                                        <span className="text-sm font-bold text-slate-700">Selecciona qué restaurar:</span>
+                                        <div className="flex gap-2">
+                                            <Button variant="ghost" size="xs" className="h-6 text-xs" onClick={() => setSelectedCollections(backupPreview.map(c => c.name))}>Todas</Button>
+                                            <Button variant="ghost" size="xs" className="h-6 text-xs" onClick={() => setSelectedCollections([])}>Ninguna</Button>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto p-2 border rounded-lg bg-slate-50/50">
+                                        {backupPreview.map((col) => (
+                                            <label key={col.name} className="flex items-center space-x-2 p-2 rounded hover:bg-white hover:shadow-sm cursor-pointer border border-transparent hover:border-slate-100 transition-all">
+                                                <Checkbox
+                                                    checked={selectedCollections.includes(col.name)}
+                                                    onCheckedChange={() => toggleCollection(col.name)}
+                                                />
+                                                <span className="text-sm font-medium text-slate-700">{col.name}</span>
+                                                <span className="text-xs text-slate-400 ml-auto">{formatBytes(col.size)}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <p className="text-xs text-slate-500 text-right">
+                                        {selectedCollections.length} de {backupPreview.length} colecciones seleccionadas
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setRestoreDialogOpen(false)}>Cancelar</Button>
+                        <Button
+                            variant="destructive"
+                            onClick={handleConfirmRestore}
+                            disabled={previewLoading || (restoreMode === 'partial' && selectedCollections.length === 0)}
+                            className="bg-amber-600 hover:bg-amber-700"
+                        >
+                            {restoreMode === 'full' ? 'Restaurar TODO' : `Restaurar ${selectedCollections.length} Colecciones`}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 };

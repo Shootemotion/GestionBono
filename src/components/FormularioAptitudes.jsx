@@ -165,13 +165,24 @@ export default function FormularioAptitudes({
       <p className="mt-1 text-xs text-red-600">{String(fieldErrors[name])}</p>
     ) : null;
 
-  // Opciones “Proceso”
-  const PROCESOS = [
-    { value: "", label: "Seleccioná un proceso…" },
-    { value: "Económico", label: "Económico" },
-    { value: "Gestión", label: "Gestión" },
-    { value: "Organizacional", label: "Organizacional" },
-  ];
+  // Procesos cargados dinámicamente desde la BD (ProcesoISO)
+  // Cualquier proceso creado en Gestión ISO aparece aquí automáticamente.
+  // Deduplicados por fullName para evitar duplicados cuando hay docs con/sin year.
+  const [procesosApi, setProcesosApi] = useState([]);
+  useEffect(() => {
+    api("/procesos-iso?activo=true").then((d) => {
+      if (Array.isArray(d)) {
+        const seen = new Set();
+        const unique = d.filter((p) => {
+          if (seen.has(p.fullName)) return false;
+          seen.add(p.fullName);
+          return true;
+        });
+        setProcesosApi(unique);
+      }
+    }).catch(() => { });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const selectedEmpleado = useMemo(() => {
     const lista = Array.isArray(empleados) ? empleados : [];
@@ -426,9 +437,10 @@ export default function FormularioAptitudes({
                 onChange={(e) => setProceso(e.target.value)}
                 aria-invalid={!!fieldErrors.proceso}
               >
-                {PROCESOS.map((p) => (
-                  <option key={p.value || "blank"} value={p.value}>
-                    {p.label}
+                <option value="">Seleccioná un proceso…</option>
+                {procesosApi.map((p) => (
+                  <option key={p._id} value={p.fullName}>
+                    {p.fullName}
                   </option>
                 ))}
               </select>

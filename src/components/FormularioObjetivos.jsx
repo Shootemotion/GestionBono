@@ -46,6 +46,24 @@ export default function FormularioObjetivos({
   const [usarFechaCierreCustom, setUsarFechaCierreCustom] = useState(false);
   const [fechaCierre, setFechaCierre] = useState("");
 
+  // Procesos cargados dinámicamente desde la BD (ProcesoISO)
+  // Deduplicados por fullName para evitar duplicados cuando hay docs con/sin year.
+  const [procesosApi, setProcesosApi] = useState([]);
+  useEffect(() => {
+    api("/procesos-iso?activo=true").then((d) => {
+      if (Array.isArray(d)) {
+        // Deduplicar por fullName (el valor guardado en Plantilla.proceso)
+        const seen = new Set();
+        const unique = d.filter((p) => {
+          if (seen.has(p.fullName)) return false;
+          seen.add(p.fullName);
+          return true;
+        });
+        setProcesosApi(unique);
+      }
+    }).catch(() => { });
+  }, []);
+
   const selectedEmpleado = useMemo(() => {
     const lista = Array.isArray(empleados) ? empleados : [];
     const sid = scopeId != null ? String(scopeId) : "";
@@ -338,18 +356,10 @@ export default function FormularioObjetivos({
       </p>
     ) : null;
 
-  const PROCESOS = [
-    { value: "", label: "Seleccioná un proceso…" },
-    { value: "Económico", label: "Económico" },
-    { value: "Gestión", label: "Gestión" },
-    { value: "Organizacional", label: "Organizacional" },
-  ];
-
   const ESTADO = [
     { value: "", label: "Selecciona un estado…" },
     { value: "Activo", label: "Activo" },
     { value: "Inactivo", label: "Inactivo" },
-
   ];
 
 
@@ -388,9 +398,10 @@ export default function FormularioObjetivos({
                 onChange={(e) => setProceso(e.target.value)}
                 required
               >
-                {PROCESOS.map((p) => (
-                  <option key={p.value || "blank"} value={p.value}>
-                    {p.label}
+                <option value="">Seleccioná un proceso…</option>
+                {procesosApi.map((p) => (
+                  <option key={p._id} value={p.fullName}>
+                    {p.fullName}
                   </option>
                 ))}
               </select>

@@ -173,18 +173,30 @@ export default function GestionPlantillasPage() {
   }, [empOpenHeader, empOpenSidebar]);
 
 
-  // Permisos
-  const isDirectivo =
-    user?.isDirectivo || user?.rol === "director" || user?.rol === "directivo";
+  // Ensure role is normalized
+  const userRole = String(user?.rol || "").toLowerCase();
 
+  const isDirectivo =
+    user?.isDirectivo || userRole === "director" || userRole === "directivo";
+
+  // Permitir a Jefes de Area/Sector (y RRHH explícito si se requiere, pero usuario solo pidió Jefes)
+  // Agregamos chequeo robusto
+  const isManager = userRole === 'jefe_area' || userRole === 'jefe_sector';
+
+  // Asumimos que si pueden ver la página (Navbar allows RRHH), RRHH debería poder editar también?
+  // Por ahora seguimos la instrucción: "en gestion deobjetivos deberian tener la posiblidad..." -> Jefes.
+  // Pero si RRHH no puede, sería extraño. Agrego 'rrhh' para seguridad, o me ciño a Jefes?
+  // El usuario dijo "los jefes... deberian".
+
+  const canManage = isDirectivo || isManager;
 
   const permisos = {
-    canCreateObjetivo: isDirectivo || useCan("objetivos:crear").ok,
-    canCreateAptitud: isDirectivo || useCan("aptitudes:crear").ok,
-    canEditObjetivo: isDirectivo || useCan("objetivos:editar").ok,
-    canEditAptitud: isDirectivo || useCan("aptitudes:editar").ok,
-    canDeleteObjetivo: isDirectivo || useCan("objetivos:eliminar").ok,
-    canDeleteAptitud: isDirectivo || useCan("aptitudes:eliminar").ok,
+    canCreateObjetivo: canManage || useCan("objetivos:crear").ok,
+    canCreateAptitud: canManage || useCan("aptitudes:crear").ok,
+    canEditObjetivo: canManage || useCan("objetivos:editar").ok,
+    canEditAptitud: canManage || useCan("aptitudes:editar").ok,
+    canDeleteObjetivo: canManage || useCan("objetivos:eliminar").ok,
+    canDeleteAptitud: canManage || useCan("aptitudes:eliminar").ok,
   };
 
   // Catálogos

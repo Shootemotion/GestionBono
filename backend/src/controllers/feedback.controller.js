@@ -10,20 +10,38 @@ const checkAutoCloseFeedbacks = async (empleadoId = null) => {
         const now = new Date();
 
         for (const fb of candidates) {
-            let deadline = null;
+            let globalDeadline = null;
             // Fiscal Year Logic: year 2025 => Sep 2025 - Aug 2026
             const y = fb.year;
 
-            if (fb.periodo === "Q1") deadline = new Date(y, 11, 15); // Dec 15 of starting year
-            else if (fb.periodo === "Q2") deadline = new Date(y + 1, 2, 15); // Mar 15 of next year
-            else if (fb.periodo === "Q3") deadline = new Date(y + 1, 5, 15); // Jun 15 of next year
-            else if (fb.periodo === "FINAL") deadline = new Date(y + 1, 8, 15); // Sep 15 of next year
+            if (fb.periodo === "Q1") globalDeadline = new Date(y, 11, 15); // Dec 15 of starting year
+            else if (fb.periodo === "Q2") globalDeadline = new Date(y + 1, 2, 15); // Mar 15 of next year
+            else if (fb.periodo === "Q3") globalDeadline = new Date(y + 1, 5, 15); // Jun 15 of next year
+            else if (fb.periodo === "FINAL") globalDeadline = new Date(y + 1, 8, 15); // Sep 15 of next year
+
+            // Calculate Dynamic Deadline (Submission + 5 Days)
+            let dynamicDeadline = null;
+            if (fb.submittedToEmployeeAt) {
+                dynamicDeadline = new Date(fb.submittedToEmployeeAt);
+                dynamicDeadline.setDate(dynamicDeadline.getDate() + 5);
+            }
+
+            // Determine Effective Deadline (The earliest applicable date)
+            let effectiveDeadline = globalDeadline;
+            if (dynamicDeadline && globalDeadline) {
+                // If dynamic is earlier, use it
+                if (dynamicDeadline < globalDeadline) {
+                    effectiveDeadline = dynamicDeadline;
+                }
+            } else if (dynamicDeadline) {
+                effectiveDeadline = dynamicDeadline;
+            }
 
             // Set end of day for deadline? Or strict start of day? usually End of Day.
-            if (deadline) {
-                deadline.setHours(23, 59, 59, 999);
+            if (effectiveDeadline) {
+                effectiveDeadline.setHours(23, 59, 59, 999);
 
-                if (now > deadline) {
+                if (now > effectiveDeadline) {
                     fb.estado = "PENDING_HR";
                     fb.empleadoAck = {
                         estado: "SYSTEM_CLOSED",
@@ -33,7 +51,7 @@ const checkAutoCloseFeedbacks = async (empleadoId = null) => {
                         fb.comentarioEmpleado = "Cerrado automáticamente por sistema debido a falta de respuesta en plazo.";
                     }
                     await fb.save();
-                    console.log(`Feedback auto-closed for employee ${fb.empleado} period ${fb.periodo}`);
+                    console.log(`Feedback auto-closed for employee ${fb.empleado} period ${fb.periodo} (Deadline: ${effectiveDeadline.toISOString().split('T')[0]})`);
                 }
             }
         }
@@ -52,6 +70,13 @@ export const getFeedbacksByEmpleado = async (req, res) => {
 
         const query = { empleado: empleadoId };
         if (year) query.year = Number(year);
+
+        // Security: If the user is viewing their OWN feedbacks, do NOT show DRAFTs.
+        // DRAFTs are for the creator (Manager) only until sent.
+        const requestorId = req.user?.empleadoId || req.user?.empleado?._id;
+        if (requestorId && String(requestorId) === String(empleadoId)) {
+            query.estado = { $ne: "DRAFT" };
+        }
 
         const feedbacks = await Feedback.find(query)
             .populate({
@@ -76,7 +101,8 @@ export const saveFeedback = async (req, res) => {
             empleado, year, periodo,
             comentario, estado, fechaRealizacion,
             comentarioEmpleado, empleadoAck,
-            scores // Scores calculated by frontend
+            scores, // Scores calculated by frontend
+            motivoDesacuerdo
         } = req.body;
 
         if (!empleado || !year || !periodo) {
@@ -99,6 +125,7 @@ export const saveFeedback = async (req, res) => {
             comentarioEmpleado,
             empleadoAck,
             scores,
+            motivoDesacuerdo,
         };
 
         // Determine if this is a "Manager Action" (creating/updating feedback content)

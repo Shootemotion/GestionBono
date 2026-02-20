@@ -34,6 +34,9 @@ import rolesRouter from './src/routes/roles.routes.js';
 
 // ... existing imports ...
 import globalAvisoRoutes from './src/routes/globalAviso.routes.js';
+import objetivosISORoutes from './src/routes/objetivosISO.routes.js';
+import procesosISORoutes from './src/routes/procesosISO.routes.js';
+import analyticsRoutes from './src/analytics/analytics.routes.js';
 
 // --- CRON JOBS ---
 // Run Daily Backup at 03:00 AM
@@ -76,6 +79,10 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 // 1) Rutas públicas (sin JWT)
 app.use('/api/auth', authRouter);
 
+// Analytics API — autenticación propia por token (no requiere JWT)
+// Power BI conecta aquí usando el header X-Analytics-Token
+app.use('/api/analytics', analyticsRoutes);
+
 // 2) A partir de acá, TODAS las rutas requieren JWT (o mock interno)
 app.use(authenticateJWT);
 
@@ -97,6 +104,8 @@ app.use('/api/feedbacks', feedbackRoutes);
 app.use('/api/avisos', globalAvisoRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/roles', rolesRouter);
+app.use('/api/objetivos-iso', objetivosISORoutes);
+app.use('/api/procesos-iso', procesosISORoutes);
 
 // Alias útil para debug del usuario autenticado
 app.get('/api/_whoami', whoami);

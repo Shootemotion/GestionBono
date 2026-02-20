@@ -2,7 +2,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { runBackup } from '../../scripts/backup.js';
-import { runRestore } from '../../scripts/restore.js';
+import { runRestore, getBackupPreview } from '../../scripts/restore.js';
 
 const router = express.Router();
 
@@ -74,6 +74,7 @@ router.get('/backups/:filename/download', (req, res) => {
 // POST /api/system/backups/:filename/restore - Restore from backup
 router.post('/backups/:filename/restore', async (req, res) => {
     const { filename } = req.params;
+    const { collections } = req.body; // Array of collection names or null for all
 
     // Security check
     if (filename.includes('..') || filename.includes('/') || !filename.endsWith('.zip')) {
@@ -81,11 +82,30 @@ router.post('/backups/:filename/restore', async (req, res) => {
     }
 
     try {
-        await runRestore(filename);
+        await runRestore(filename, collections);
         res.json({ success: true, message: 'System restored successfully' });
     } catch (error) {
         console.error('Restore failed:', error);
         res.status(500).json({ message: 'Restore failed', error: error.message });
+    }
+});
+
+
+
+// GET /api/system/backups/:filename/preview - Get list of collections in backup
+router.get('/backups/:filename/preview', async (req, res) => {
+    const { filename } = req.params;
+
+    if (filename.includes('..') || filename.includes('/') || !filename.endsWith('.zip')) {
+        return res.status(400).json({ message: 'Invalid filename' });
+    }
+
+    try {
+        const collections = await getBackupPreview(filename);
+        res.json(collections);
+    } catch (error) {
+        console.error('Preview failed:', error);
+        res.status(500).json({ message: 'Failed to preview backup', error: error.message });
     }
 });
 

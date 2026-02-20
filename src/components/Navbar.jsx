@@ -27,7 +27,8 @@ import {
   Home,
   Bell,
   Megaphone,
-  HardDrive
+  HardDrive,
+  FileCheck2
 } from 'lucide-react';
 
 
@@ -227,6 +228,12 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
   const { ok: canViewNomina } = useCan('nomina:ver');
   const { ok: canViewEjecutivo } = useCan('seguimiento-ejecutivo:ver');
   const { ok: hasRoleRRHH } = useHasRole(['rrhh', 'jefe_area', 'jefe_sector']);
+  // const { ok: isRealRRHH } = useHasRole(['rrhh']); // Para restringir admin de bonos/cierres
+
+  // Explicit check to be 100% sure we exclude managers
+  const userRole = String(user?.rol || "").toLowerCase();
+  const isRealRRHH = userRole === 'rrhh' || user?.isRRHH === true;
+
   const { ok: hasRoleDirectivo } = useHasRole(['directivo']);
 
   // Si es referente (aunque sea visor)
@@ -339,9 +346,9 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                       items={[
                         { to: '/plantillas', label: 'Objetivos', icon: <Target className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo },
                         { to: '/seguimiento', label: 'Seguimiento', icon: <TrendingUp className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo || canViewNomina || hasReferente },
-                        { to: '/rrhh-evaluaciones', label: 'Cierre Eval.', icon: <CheckCircle className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo },
-                        { to: '/asignaciones', label: 'Asignaciones', icon: <UserPlus className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo },
-                        { to: '/gestion-avisos', label: 'Avisos', icon: <Megaphone className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo }
+                        { to: '/rrhh-evaluaciones', label: 'Cierre Eval.', icon: <CheckCircle className="w-4 h-4" />, allowed: isRealRRHH || hasRoleDirectivo },
+                        { to: '/asignaciones', label: 'Asignaciones', icon: <UserPlus className="w-4 h-4" />, allowed: isRealRRHH || hasRoleDirectivo },
+                        { to: '/gestion-avisos', label: 'Avisos', icon: <Megaphone className="w-4 h-4" />, allowed: isRealRRHH || hasRoleDirectivo }
                       ]}
                       isOpen={activeMenu === 'Gestión'}
                       onMouseEnter={() => handleMenuEnter('Gestión')}
@@ -356,8 +363,8 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                       items={[
                         { to: '/gestion-estructura', label: 'Equipo / Nómina', icon: <Users className="w-4 h-4" />, allowed: canViewEstructura },
                         { to: '/gestion-departamentos', label: 'Departamentos', icon: <Building2 className="w-4 h-4" />, allowed: canViewEstructuraFinal },
-                        { to: '/gestion-departamentos', label: 'Departamentos', icon: <Building2 className="w-4 h-4" />, allowed: canViewEstructuraFinal },
-                        { to: '/sistemas', label: 'Sistemas', icon: <HardDrive className="w-4 h-4" />, allowed: isSuperAdmin }
+                        { to: '/gestion-iso', label: 'Gestión ISO 9000', icon: <FileCheck2 className="w-4 h-4" />, allowed: isRealRRHH || hasRoleDirectivo || isSuperAdmin },
+                        { to: '/sistemas', label: 'Admin. Web', icon: <HardDrive className="w-4 h-4" />, allowed: isSuperAdmin }
                       ]}
                       isOpen={activeMenu === 'Estructura'}
                       onMouseEnter={() => handleMenuEnter('Estructura')}
@@ -371,8 +378,8 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                       icon={<BarChart3 className="w-4 h-4" />}
                       items={[
                         { to: '/seguimiento-ejecutivo', label: 'Tablero Ejec.', icon: <LayoutDashboard className="w-4 h-4" />, allowed: canViewEjecutivo },
-                        { to: '/configuracion-bono', label: 'Config. Bonos', icon: <DollarSign className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo },
-                        { to: '/resultados-bono', label: 'Resultados', icon: <BarChart3 className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo },
+                        { to: '/configuracion-bono', label: 'Config. Bonos', icon: <DollarSign className="w-4 h-4" />, allowed: isRealRRHH || hasRoleDirectivo },
+                        { to: '/resultados-bono', label: 'Resultados', icon: <BarChart3 className="w-4 h-4" />, allowed: isRealRRHH || hasRoleDirectivo },
                         { to: '/simulador', label: 'Simulador', icon: <Calculator className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo || user?.isJefeArea || user?.isJefeSector }
                       ]}
                       isOpen={activeMenu === 'Resultados'}
@@ -595,8 +602,8 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                     <div className="space-y-1">
                       {(hasRoleRRHH || hasRoleDirectivo) && <MobileLink to="/plantillas" label="Objetivos" />}
                       {(hasRoleRRHH || hasRoleDirectivo || canViewNomina || hasReferente) && <MobileLink to="/seguimiento" label="Seguimiento" />}
-                      {(hasRoleRRHH || hasRoleDirectivo) && <MobileLink to="/asignaciones" label="Asignaciones" />}
-                      {(hasRoleRRHH || hasRoleDirectivo) && <MobileLink to="/rrhh-evaluaciones" label="Cierres" />}
+                      {(isRealRRHH || hasRoleDirectivo) && <MobileLink to="/asignaciones" label="Asignaciones" />}
+                      {(isRealRRHH || hasRoleDirectivo) && <MobileLink to="/rrhh-evaluaciones" label="Cierres" />}
                     </div>
                   </div>
 
@@ -606,7 +613,7 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                     <div className="space-y-1">
                       {canViewEstructura && <MobileLink to="/gestion-estructura" label="Nómina / Equipo" />}
                       {canViewEstructuraFinal && <MobileLink to="/gestion-departamentos" label="Departamentos" />}
-                      {canViewEstructuraFinal && <MobileLink to="/gestion-departamentos" label="Departamentos" />}
+                      {(isRealRRHH || hasRoleDirectivo || isSuperAdmin) && <MobileLink to="/gestion-iso" label="Gestión ISO 9000" />}
                       {isSuperAdmin && <MobileLink to="/sistemas" label="Sistemas" />}
                     </div>
                   </div>
@@ -616,8 +623,8 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Resultados</h3>
                     <div className="space-y-1">
                       {(canViewEjecutivo && (hasRoleRRHH || hasRoleDirectivo)) && <MobileLink to="/seguimiento-ejecutivo" label="Tablero Ejecutivo" />}
-                      {(hasRoleRRHH || hasRoleDirectivo) && <MobileLink to="/configuracion-bono" label="Config. Bonos" />}
-                      {(hasRoleRRHH || hasRoleDirectivo) && <MobileLink to="/resultados-bono" label="Resultados Finales" />}
+                      {(isRealRRHH || hasRoleDirectivo) && <MobileLink to="/configuracion-bono" label="Config. Bonos" />}
+                      {(isRealRRHH || hasRoleDirectivo) && <MobileLink to="/resultados-bono" label="Resultados Finales" />}
                       {(hasRoleRRHH || hasRoleDirectivo || user?.isJefeArea || user?.isJefeSector) && <MobileLink to="/simulador" label="Simulador" />}
                     </div>
                   </div>

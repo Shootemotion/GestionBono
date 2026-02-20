@@ -6,8 +6,7 @@ import Sector from '../models/Sector.model.js';
 import Area from '../models/Area.model.js';
 import Evaluacion from "../models/Evaluacion.model.js";
 import { generarHitos } from "../utils/generarHitos.js";
-import { calcularResultadoMeta } from "../lib/calculoMetas.js";
-import { calcularScoreObjetivoDesdeMetas } from "../lib/scoringGlobal.js";
+import { calculateAnnualObjectiveProgress, calculateGlobalPerformance } from "../lib/scoringEngine.js";
 
 const asObjectId = (v) => new mongoose.Types.ObjectId(String(v));
 const isValidObjectId = (v) => mongoose.Types.ObjectId.isValid(String(v));
@@ -190,42 +189,9 @@ export async function computeForEmployees(empleadoIds, anio) {
         );
 
         if (p.tipo === "objetivo") {
+
           // 🔹 Score Calculation Refactor: Annual Closure Rules (Regla de Cierre)
-          // Old Logic: Average of Period Scores (e.g. 0, 0, 100, 100 -> 50%)
-          // New Logic: 
-          // 1. Gather all inputs per Meta.
-          // 2. Calculate "Annual Meta Score" using calculoMetas (Average/Sum/Last Rule).
-          // 3. Aggregate Annual Meta Scores weighted.
-
-          let progreso = 0;
-
-          if (p.metas && p.metas.length > 0) {
-            const metasAnuales = p.metas.map(metaDef => {
-              // Gather raw inputs for this meta from all hitos
-              const registros = hitos.map(h => {
-                const mRes = h.metas.find(m => m.nombre === metaDef.nombre); // Match by name
-                return {
-                  periodo: h.periodo,
-                  valor: mRes ? mRes.resultado : null
-                };
-              }).filter(r => r.valor !== null && r.valor !== undefined && r.valor !== "");
-
-              // Calculate Single Meta Score for the Year
-              const { scoreMeta } = calcularResultadoMeta(metaDef, registros);
-
-              return {
-                ...metaDef,
-                scoreMeta
-              };
-            });
-
-            // Aggregate to Objective Score
-            progreso = calcularScoreObjetivoDesdeMetas(metasAnuales);
-          } else {
-            // Fallback if no metas (Legacy)
-            const progresos = hitos.map((h) => h.actual ?? 0);
-            progreso = progresos.length ? Math.round(progresos.reduce((a, b) => a + b, 0) / progresos.length) : 0;
-          }
+          const { progreso, metasAnuales } = calculateAnnualObjectiveProgress(p.metas, hitos);
 
           objetivosArr.push({
             _id: p._id,
@@ -275,6 +241,13 @@ export async function computeForEmployees(empleadoIds, anio) {
         }
       }
 
+
+
+
+
+
+
+
       // --- Filter feedbacks for this employee ---
       const empFeedbacks = feedbacksArr.filter(f => String(f.empleado) === empIdStr);
 
@@ -285,80 +258,12 @@ export async function computeForEmployees(empleadoIds, anio) {
         .sort((a, b) => periodOrder.indexOf(b.periodo) - periodOrder.indexOf(a.periodo))
         .find(f => f.estado === "CLOSED");
 
-      // Determine Cutoff Period (Default to FINAL if no feedback, or use latest feedback's period)
-      // If no authorized feedback exists, maybe we shouldn't filter? Or assume year-to-date?
-      // For legacy matching, if we have a locked Q2, we should only calc up to Q2.
-      const cutoffPeriod = latestFeedback ? latestFeedback.periodo : "FINAL";
-      const cutoffIndex = periodOrder.indexOf(cutoffPeriod);
-
-      // --- Recalculate based on Cutoff (Live Fallback) ---
-      // We re-iterate or just filter the `hitos` we already generated?
-      // We already generated `hitos` for all periods. We just need to filter them BEFORE averaging.
-
-      // Re-map objectives to apply cutoff
-      objetivosArr.forEach(obj => {
-        // Filter hitos up to cutoff
-        const validHitos = obj.hitos.filter(h => periodOrder.indexOf(h.periodo) <= cutoffIndex);
-
-        // 🔹 FIX: Apply Annual Closure Rules to Cutoff Logic
-        if (obj.metas && obj.metas.length > 0) {
-          const metasAnuales = obj.metas.map(metaDef => {
-            const registros = validHitos.map(h => {
-              const mRes = h.metas.find(m => m.nombre === metaDef.nombre);
-              return {
-                periodo: h.periodo,
-                valor: mRes ? mRes.resultado : null
-              };
-            }).filter(r => r.valor !== null && r.valor !== undefined && r.valor !== "");
-
-            const { scoreMeta } = calcularResultadoMeta(metaDef, registros);
-            return { ...metaDef, scoreMeta };
-          });
-
-          obj.progreso = calcularScoreObjetivoDesdeMetas(metasAnuales);
-        } else {
-          // Legacy Fallback
-          const progresos = validHitos.map(h => h.actual ?? 0);
-          obj.progreso = progresos.length ? Math.round(progresos.reduce((a, b) => a + b, 0) / progresos.length) : 0;
-        }
-
-        // Apply PermiteOver Logic is handled inside calcularResultadoMeta/calculateScoreObjetivo, 
-        // but let's ensure cap if needed (though new logic usually handles it).
-        // For safety, clamp if the meta definition wasn't explicit or if algo returns >100 without permission.
-        // Actually, calculoMetas already handles maxOver/clamp.
-      });
-
-      // Re-map aptitudes
-      aptitudesArr.forEach(apt => {
-        const validHitos = apt.hitos.filter(h => periodOrder.indexOf(h.periodo) <= cutoffIndex);
-        const puntuaciones = validHitos
-          .map(h => h.actual)
-          .filter(val => val !== null && val !== undefined);
-
-        const newPuntuacion = puntuaciones.length
-          ? Math.round(puntuaciones.reduce((a, b) => a + b, 0) / puntuaciones.length)
-          : 0;
-
-        apt.puntuacion = newPuntuacion;
-      });
-
       // --- Re-Calculate Global Scores based on new progressions ---
-      weightedProgressSum = objetivosArr.reduce((acc, curr) => acc + (curr.progreso * curr.peso), 0);
-      weightedAptScoreSum = aptitudesArr.reduce((acc, curr) => acc + (curr.puntuacion * curr.peso), 0);
-
-      // Default to 0 (Strict Mode: Only Show Result if Feedback Exists)
-      let scoreObj = 0;
-      let scoreApt = 0;
-      let scoreFinal = 0;
-      let bono = null;
-
-      // START OVERRIDE CHECK (If snapshot exists, it wins over our recalc)
-      if (latestFeedback && latestFeedback.scores?.global != null) {
-        scoreObj = latestFeedback.scores.obj ?? 0;
-        scoreApt = latestFeedback.scores.comp ?? 0;
-        scoreFinal = latestFeedback.scores.global;
-        bono = `${scoreFinal}%`;
-      }
+      const { scoreObj, scoreApt, scoreFinal, bono } = calculateGlobalPerformance(
+        objetivosArr,
+        aptitudesArr,
+        latestFeedback
+      );
 
 
       return {
@@ -588,30 +493,9 @@ export const dashByEmpleado = async (req, res, next) => {
       );
 
       if (p.tipo === "objetivo") {
-        // 🔹 Score Calculation Refactor: Annual Closure Rules (Regla de Cierre)
-        // (Duplicated logic fix for Individual Dashboard)
 
-        let progreso = 0;
-
-        if (p.metas && p.metas.length > 0) {
-          const metasAnuales = p.metas.map(metaDef => {
-            const registros = hitos.map(h => {
-              const mRes = h.metas.find(m => m.nombre === metaDef.nombre);
-              return {
-                periodo: h.periodo,
-                valor: mRes ? mRes.resultado : null
-              };
-            }).filter(r => r.valor !== null && r.valor !== undefined && r.valor !== "");
-
-            const { scoreMeta } = calcularResultadoMeta(metaDef, registros);
-            return { ...metaDef, scoreMeta };
-          });
-
-          progreso = calcularScoreObjetivoDesdeMetas(metasAnuales);
-        } else {
-          const progresos = hitos.map((h) => h.actual ?? 0);
-          progreso = progresos.length ? Math.round(progresos.reduce((a, b) => a + b, 0) / progresos.length) : 0;
-        }
+        // 🔹 Score Calculation Refactor
+        const { progreso } = calculateAnnualObjectiveProgress(p.metas, hitos);
 
         objetivosArr.push({
           _id: p._id,
@@ -666,36 +550,23 @@ export const dashByEmpleado = async (req, res, next) => {
       }
     }
 
-    // Calculate sums of base weights
-    const sumBasePesoObj = objetivosArr.reduce((acc, curr) => acc + (curr.pesoBase || 0), 0);
-    const sumBasePesoApt = aptitudesArr.reduce((acc, curr) => acc + (curr.pesoBase || 0), 0);
 
-    let scoreObj = sumPesoObj > 0 ? weightedProgressSum / sumPesoObj : 0;
-    let scoreApt = sumPesoApt > 0 ? weightedAptScoreSum / sumPesoApt : 0;
-    let scoreFinal = Math.round((0.7 * scoreObj + 0.3 * scoreApt) * 10) / 10;
-    let bono = (objetivosArr.length > 0 || aptitudesArr.length > 0) ? `${scoreFinal}%` : null;
 
-    // Filter feedbacks for this employee
-    const empFeedbacks = feedbacksArr.filter(f => String(f.empleado) === empIdStr);
 
-    // --- LOGIC: Use Latest Feedback for Bonus ---
     const periodOrder = ["Q1", "Q2", "Q3", "FINAL"];
-    // Find latest non-DRAFT
-    const latestFeedback = empFeedbacks
+
+    // Find latest non-DRAFT feedback (The "Effective" one)
+    const latestFeedback = feedbacksArr
+      .filter(f => String(f.empleado) === empIdStr)
       .sort((a, b) => periodOrder.indexOf(b.periodo) - periodOrder.indexOf(a.periodo))
-      .find(f => f.estado !== "DRAFT");
+      .find(f => f.estado === "CLOSED");
 
-    const cutoffPeriod = latestFeedback ? latestFeedback.periodo : "FINAL";
-
-
-    // OVERRIDE if Latest Feedback exists and has valid scores
-    if (latestFeedback && latestFeedback.scores?.global != null) {
-      console.log("!!! SNAPSHOT OVERRIDE APPLIED !!!", latestFeedback.scores);
-      scoreObj = latestFeedback.scores.obj ?? scoreObj;
-      scoreApt = latestFeedback.scores.comp ?? scoreApt;
-      scoreFinal = latestFeedback.scores.global;
-      bono = `${scoreFinal}%`;
-    }
+    // --- Re-Calculate Global Scores based on new progressions ---
+    const { scoreObj, scoreApt, scoreFinal, bono } = calculateGlobalPerformance(
+      objetivosArr,
+      aptitudesArr,
+      latestFeedback
+    );
 
     return res.json({
       empleado: {
@@ -713,11 +584,10 @@ export const dashByEmpleado = async (req, res, next) => {
         sumPesoApt, weightedAptScoreSum,
         scoreObjRaw: scoreObj,
         scoreAptRaw: scoreApt,
-        latestFeedbackPeriod: latestFeedback?.periodo,
-        cutoffPeriod
+        latestFeedbackPeriod: latestFeedback?.periodo
       },
       // Mostrar feedback solo si está CERRADO
-      feedbacks: empFeedbacks.filter(f => f.estado === "CLOSED"),
+      feedbacks: feedbacksArr.filter(f => f.estado === "CLOSED"),
       scoreObj, scoreApt, scoreFinal, bono,
 
     });
