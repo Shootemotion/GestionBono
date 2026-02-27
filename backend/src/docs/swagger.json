@@ -1,0 +1,173 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "DiagnosLab API - Analytics",
+        "version": "1.0.0",
+        "description": "Documentación interactiva de los endpoints expuestos para consumo de Inteligencia de Negocios (Power BI, Excel, etc) en Laboratorio Diagnos.",
+        "contact": {
+            "name": "Soporte Técnico"
+        }
+    },
+    "servers": [
+        {
+            "url": "http://evaluacion.diagnoslab.com.ar",
+            "description": "Servidor de Producción"
+        },
+        {
+            "url": "http://localhost:5007",
+            "description": "Servidor de Desarrollo (Local)"
+        }
+    ],
+    "components": {
+        "securitySchemes": {
+            "ApiKeyAuth": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "X-Analytics-Token",
+                "description": "Token estático de integración general. Ej: diagnos_analytics_2025_powerbi"
+            },
+            "ApiQueryAuth": {
+                "type": "apiKey",
+                "in": "query",
+                "name": "token",
+                "description": "Alternativa por Query Param para plataformas como Excel Web."
+            }
+        }
+    },
+    "security": [
+        {
+            "ApiKeyAuth": []
+        }
+    ],
+    "paths": {
+        "/api/analytics/empleados": {
+            "get": {
+                "tags": [
+                    "Capital Humano"
+                ],
+                "summary": "Obtener la Nómina de Empleados",
+                "description": "Devuelve la lista completa de empleados activos e inactivos enriquecida con datos demográficos (legajo, apodo, antigüedad, teléfono, emails).",
+                "responses": {
+                    "200": {
+                        "description": "Devuelve un array de objetos con el detalle de planillas."
+                    },
+                    "401": {
+                        "description": "No Autorizado (Token Inválido o Ausente)."
+                    }
+                }
+            }
+        },
+        "/api/analytics/evaluaciones": {
+            "get": {
+                "tags": [
+                    "Sistema de Desempeño"
+                ],
+                "summary": "Obtener progreso de Evaluaciones",
+                "description": "Extrae el estado, las notas globales y de objetivos/competencias, además del progreso de las evaluaciones de desempeño para todos los empleados por periodo.",
+                "responses": {
+                    "200": {
+                        "description": "Performance Snapshot JSON."
+                    }
+                }
+            }
+        },
+        "/api/analytics/feedback": {
+            "get": {
+                "tags": [
+                    "Sistema de Desempeño"
+                ],
+                "summary": "Listado de Feedbacks Cruzados",
+                "description": "Lista el historial completo de encuentros y feedbacks dados por los líderes a los empleados. Informa comentarios cruzados (Líder, Empleado, RRHH) y el estado del acuse de recibo.",
+                "responses": {
+                    "200": {
+                        "description": "Array con logs de Feedback."
+                    }
+                }
+            }
+        },
+        "/api/analytics/bonos": {
+            "get": {
+                "tags": [
+                    "Liquidaciones"
+                ],
+                "summary": "Reportes de Bonos Anuales",
+                "description": "Extrae los reportes de puntajes consolidados anuales (nota final del año y porcentaje de bono liquidado en sueldo).",
+                "responses": {
+                    "200": {
+                        "description": "Array con liquidaciones para Payroll."
+                    }
+                }
+            }
+        },
+        "/api/analytics/plantillas": {
+            "get": {
+                "tags": [
+                    "Sistema de Desempeño"
+                ],
+                "summary": "Catálogo de Plantillas y Versionado",
+                "description": "Extrae las plantillas matrices (objetivos y habilidades) que exigen metas a los sectores, junto a su trazabilidad de cambios (parentPlantillaId, versión).",
+                "responses": {
+                    "200": {
+                        "description": "Array con plantillas operativas."
+                    }
+                }
+            }
+        },
+        "/api/analytics/iso": {
+            "get": {
+                "tags": [
+                    "Calidad ISO 9001"
+                ],
+                "summary": "Mapeo de Procesos y Objetivos Mapeados",
+                "description": "Extrae el compendio histórico de Procesos de Calidad y sus respectivos Objetivos adheridos, con los datos de contacto del Representante asociado.",
+                "responses": {
+                    "200": {
+                        "description": "Array en forma tabular plana de Auditorías y Procesos."
+                    }
+                }
+            }
+        },
+        "/api/analytics/areas": {
+            "get": {
+                "tags": [
+                    "Estructura Organizacional"
+                ],
+                "summary": "Directorio de Áreas",
+                "description": "Extrae el registro de Direcciones/Áreas primarias corporativas y sus líderes o responsables en línea.",
+                "responses": {
+                    "200": {
+                        "description": "Colección de áreas."
+                    }
+                }
+            }
+        },
+        "/api/analytics/sectores": {
+            "get": {
+                "tags": [
+                    "Estructura Organizacional"
+                ],
+                "summary": "Directorio de Dependencias",
+                "description": "Extrae la lista plana de subsectores que reportan jerárquicamente a las áreas padre.",
+                "responses": {
+                    "200": {
+                        "description": "Listado de sectores."
+                    }
+                }
+            }
+        },
+        "/api/analytics/usuarios": {
+            "get": {
+                "tags": [
+                    "Catálogos de Sistema"
+                ],
+                "summary": "Directorio de Usuarios IT",
+                "description": "Cruza el estado del login online (ej. Activo/Inactivo) o roles de sistema (Visor/Jefaturas) contra la nómina real actual del empleado asignado.",
+                "responses": {
+                    "200": {
+                        "description": "JSON Plano de usuarios combinados con legajos."
+                    }
+                }
+            }
+        }
+    }
+}

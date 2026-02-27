@@ -21,7 +21,8 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.17.1",
     "multer": "^2.0.2",
-    "node-cron": "^4.2.1"
+    "node-cron": "^4.2.1",
+    "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.28.3",

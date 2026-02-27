@@ -11,10 +11,7 @@ import { api } from "@/lib/api";
 import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
-import { XCircle } from "lucide-react";
-
-
-// helper de paginación robusto
+import { XCircle, History } from "lucide-react";
 async function fetchAll(path, { pageSize = 200, params = {} } = {}) {
   const out = [];
   let page = 1;
@@ -673,6 +670,23 @@ export default function GestionPlantillasPage() {
       reload();
     }
   };
+
+  const handleAprobarVersion = async (tpl) => {
+    if (!confirm(`¿Estás seguro de que querés aprobar la nueva versión de "${tpl.nombre}"? Esto desactivará la versión anterior y migrará los datos de evaluación en curso.`)) {
+      return;
+    }
+
+    try {
+      const res = await api(`/templates/${tpl._id}/aprobar-version`, { method: "PUT" });
+      toast.success(`Versión aprobada: ${res.message || "Cambios guardados."}`);
+
+      setRefreshKey((k) => k + 1);
+      reload();
+    } catch (e) {
+      console.error(e);
+      toast.error("Error al intentar aprobar la versión de la plantilla");
+    }
+  };
   const clearAlcance = () => {
     setScopeType("");
     setScopeId("");
@@ -734,6 +748,10 @@ export default function GestionPlantillasPage() {
             <Button onClick={() => nav("/simulador")} variant="outline" className="gap-2">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-calculator"><rect width="16" height="20" x="4" y="2" rx="2" /><line x1="8" x2="16" y1="6" y2="6" /><line x1="16" x2="16" y1="14" y2="18" /><path d="M16 10h.01" /><path d="M12 10h.01" /><path d="M8 10h.01" /><path d="M12 14h.01" /><path d="M8 14h.01" /><path d="M12 18h.01" /><path d="M8 18h.01" /></svg>
               Simulador
+            </Button>
+            <Button onClick={() => nav(`/versiones-timeline?year=${year}`)} className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm border-0">
+              <History className="w-4 h-4" />
+              Línea de Versiones
             </Button>
           </div>
         </div>
@@ -1030,18 +1048,36 @@ export default function GestionPlantillasPage() {
                       </div>
                     )}
 
-                    <button
-                      onClick={() =>
-                        setTipoFiltro(
-                          tipoFiltro === "activas" ? "todos" : "activas"
-                        )
-                      }
-                      className="px-3 py-2 rounded-md border text-sm bg-background"
-                    >
-                      {tipoFiltro === "activas"
-                        ? "Mostrando Activas"
-                        : "Todas"}
-                    </button>
+                    {(isDirectivo || userRole === "rrhh") ? (
+                      <div className="relative">
+                        <select
+                          value={tipoFiltro}
+                          onChange={(e) => setTipoFiltro(e.target.value)}
+                          className="appearance-none px-3 py-2 pr-8 rounded-md border border-slate-200 text-sm bg-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-100 text-slate-700 hover:bg-slate-50 cursor-pointer shadow-sm transition-all"
+                        >
+                          <option value="activas">⭐ Activas (+ Pendientes)</option>
+                          <option value="pendientes">⏳ Solo Pendientes de Aprob.</option>
+                          <option value="inactivas">🚫 Archivo / Inactivas</option>
+                          <option value="todos">📦 Mostrar Todas</option>
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
+                          <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() =>
+                          setTipoFiltro(
+                            tipoFiltro === "activas" ? "todos" : "activas"
+                          )
+                        }
+                        className="px-3 py-2 rounded-md border text-sm bg-background font-medium hover:bg-slate-50 transition-colors"
+                      >
+                        {tipoFiltro === "activas"
+                          ? "⭐ Mostrando Activas"
+                          : "📦 Mostrar Todas"}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1078,10 +1114,13 @@ export default function GestionPlantillasPage() {
                     onClone={openClone}
                     onDelete={handleDelete}
                     onToggleActive={handleToggleActive}
+                    onAprobarVersion={handleAprobarVersion}
                     permisos={permisos}
                     areas={areas}
                     sectores={sectores}
                     empleados={empleados}
+                    isRealRRHH={user?.isRRHH || userRole === "rrhh"}
+                    hasRoleDirectivo={isDirectivo}
                   />
                 )}
               </div>
@@ -1115,10 +1154,13 @@ export default function GestionPlantillasPage() {
                     onClone={openClone}
                     onDelete={handleDelete}
                     onToggleActive={handleToggleActive}
+                    onAprobarVersion={handleAprobarVersion}
                     permisos={permisos}
                     areas={areas}
                     sectores={sectores}
                     empleados={empleados}
+                    isRealRRHH={user?.isRRHH || userRole === "rrhh"}
+                    hasRoleDirectivo={isDirectivo}
                   />
                 )}
               </div>
@@ -1178,6 +1220,7 @@ export default function GestionPlantillasPage() {
           }}
         />
       </div>
+
     </div>
   );
 }

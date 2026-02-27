@@ -72,7 +72,7 @@ export function ReferenceRulesDialog() {
                                     <strong>Exige constancia.</strong> Requiere que se cumpla la meta en una cantidad mínima de periodos (N) para pagar el bono.
                                     <br />
                                     <ul className="list-disc pl-4 mt-1 space-y-1">
-                                        <li>Si cumple >= N periodos: Cobra el Promedio Real.</li>
+                                        <li>Si cumple &gt;= N periodos: Cobra el Promedio Real.</li>
                                         <li>Si cumple &lt; N periodos: Cobra 0%.</li>
                                     </ul>
                                     <em className="text-slate-400 block mt-1">Ej: 'Umbral 3 meses'. Si cumpliste solo 2 meses, tu bono es 0.</em>

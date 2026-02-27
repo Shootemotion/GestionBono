@@ -42,10 +42,16 @@ export async function analyticsFeedback(req, res) {
                 score_comp: fb.scores?.comp ?? null,
                 score_global: fb.scores?.global ?? null,
 
+                comentario_lider: fb.comentario ?? null,
+                comentario_empleado: fb.comentarioEmpleado ?? null,
+                comentario_rrhh: fb.comentarioRRHH ?? null,
+
                 empleadoAck: fb.empleadoAck?.estado ?? null,
+                fecha_ack_empleado: fb.empleadoAck?.fecha ? new Date(fb.empleadoAck.fecha).toISOString() : null,
                 motivoDesacuerdo: fb.motivoDesacuerdo ?? null,
 
                 fechaRealizacion: fb.fechaRealizacion ? new Date(fb.fechaRealizacion).toISOString().split("T")[0] : null,
+                fecha_enviado_empleado: fb.submittedToEmployeeAt ? new Date(fb.submittedToEmployeeAt).toISOString() : null,
                 closedAt: fb.closedAt ? new Date(fb.closedAt).toISOString() : null,
                 createdAt: fb.createdAt ? new Date(fb.createdAt).toISOString() : null,
             };

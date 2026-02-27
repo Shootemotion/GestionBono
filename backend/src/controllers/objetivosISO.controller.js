@@ -12,7 +12,9 @@ export async function getAll(req, res) {
         const filter = {};
         if (activo !== undefined) filter.activo = activo === "true";
         if (year !== undefined) filter.year = Number(year);
-        const items = await ObjetivoISO.find(filter).sort({ codigo: 1, nombre: 1 });
+        const items = await ObjetivoISO.find(filter)
+            .populate("representante", "nombre apellido legajo")
+            .sort({ codigo: 1, nombre: 1 });
         res.json(items);
     } catch (err) {
         res.status(500).json({ message: "Error al obtener objetivos ISO", error: err.message });
@@ -21,7 +23,8 @@ export async function getAll(req, res) {
 
 export async function getById(req, res) {
     try {
-        const item = await ObjetivoISO.findById(req.params.id);
+        const item = await ObjetivoISO.findById(req.params.id)
+            .populate("representante", "nombre apellido legajo");
         if (!item) return res.status(404).json({ message: "No encontrado" });
         res.json(item);
     } catch (err) {
@@ -31,7 +34,7 @@ export async function getById(req, res) {
 
 export async function create(req, res) {
     try {
-        const { codigo, nombre, descripcion, year, activo } = req.body;
+        const { codigo, nombre, descripcion, year, activo, representante } = req.body;
         if (!nombre?.trim()) return res.status(400).json({ message: "El nombre es obligatorio." });
         if (!year) return res.status(400).json({ message: "El año fiscal es obligatorio." });
 
@@ -41,7 +44,12 @@ export async function create(req, res) {
             descripcion: descripcion?.trim() || "",
             year: Number(year),
             activo: activo !== false,
+            representante: representante || null,
         });
+
+        // Hacemos populate antes de enviarlo
+        await item.populate("representante", "nombre apellido legajo");
+
         res.status(201).json(item);
     } catch (err) {
         res.status(500).json({ message: "Error al crear objetivo ISO", error: err.message });
@@ -50,7 +58,7 @@ export async function create(req, res) {
 
 export async function update(req, res) {
     try {
-        const { codigo, nombre, descripcion, year, activo } = req.body;
+        const { codigo, nombre, descripcion, year, activo, representante } = req.body;
         if (nombre !== undefined && !nombre?.trim())
             return res.status(400).json({ message: "El nombre es obligatorio." });
 
@@ -62,9 +70,11 @@ export async function update(req, res) {
                 ...(descripcion !== undefined && { descripcion: descripcion.trim() }),
                 ...(year !== undefined && { year: Number(year) }),
                 ...(activo !== undefined && { activo }),
+                ...(representante !== undefined && { representante: representante || null }),
             },
             { new: true, runValidators: true }
-        );
+        ).populate("representante", "nombre apellido legajo");
+
         if (!updated) return res.status(404).json({ message: "No encontrado" });
         res.json(updated);
     } catch (err) {

@@ -5,6 +5,13 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import multer from 'multer';
+import fs from 'fs';
+import swaggerUi from 'swagger-ui-express';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Auth & middlewares
 import { authenticateJWT, whoami } from './src/auth/auth.middleware.js';
@@ -78,6 +85,15 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // 1) Rutas públicas (sin JWT)
 app.use('/api/auth', authRouter);
+
+// --- SWAGGER API DOCS ---
+const swaggerPath = path.join(__dirname, 'src', 'docs', 'swagger.json');
+if (fs.existsSync(swaggerPath)) {
+  const swaggerDocument = JSON.parse(fs.readFileSync(swaggerPath, 'utf8'));
+  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
+    customSiteTitle: "DiagnosLab API Docs"
+  }));
+}
 
 // Analytics API — autenticación propia por token (no requiere JWT)
 // Power BI conecta aquí usando el header X-Analytics-Token

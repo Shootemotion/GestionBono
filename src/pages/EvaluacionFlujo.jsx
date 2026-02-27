@@ -1021,7 +1021,18 @@ export default function EvaluacionFlujo() {
       }
 
       const res = await dashEmpleado(selectedEmpleadoId, anio);
-      if (res) setDashEmpleadoData(res);
+      if (res) {
+        setDashEmpleadoData(res);
+
+        // --- FIX FRONTEND TIMELINE REFRESH ---
+        // Find the updated item in the newly fetched dashboard data.
+        const updatedItemObj = res.objetivos?.items?.find(o => o._id === item._id)
+          || res.aptitudes?.items?.find(a => a._id === item._id);
+
+        if (updatedItemObj) {
+          setSelectedItem({ type: isApt ? 'competencia' : 'objetivo', id: item._id, data: updatedItemObj });
+        }
+      }
 
     } catch (e) {
       console.error(e);

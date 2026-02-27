@@ -26,6 +26,7 @@ const UsuariosAdmin = lazy(() => import('@/pages/UsuariosAdmin'));
 const RolesAdmin = lazy(() => import('@/pages/RolesAdmin'));
 const GestionDepartamentos = lazy(() => import('./pages/GestionDepartamentos'));
 const SimuladorObjetivos = lazy(() => import('@/pages/SimuladorObjetivos'));
+const VersionesTimelinePage = lazy(() => import('@/pages/VersionesTimelinePage'));
 const ConfiguracionBono = lazy(() => import('@/pages/ConfiguracionBono'));
 const ResultadosBono = lazy(() => import('@/pages/ResultadosBono'));
 const GestionAvisos = lazy(() => import('@/pages/GestionAvisos'));
@@ -223,6 +224,15 @@ function App() {
               element={
                 <RequireAuth allow={['superadmin', 'rrhh', 'directivo', 'jefe_area', 'jefe_sector']}>
                   <SimuladorObjetivos />
+                </RequireAuth>
+              }
+            />
+
+            <Route
+              path="/versiones-timeline"
+              element={
+                <RequireAuth allow={['superadmin', 'rrhh', 'directivo', 'jefe_area', 'jefe_sector']}>
+                  <VersionesTimelinePage />
                 </RequireAuth>
               }
             />

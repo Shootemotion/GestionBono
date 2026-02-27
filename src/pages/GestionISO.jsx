@@ -12,7 +12,7 @@ import FormularioObjetivoISO from "@/components/FormularioObjetivoISO.jsx";
 import FormularioProceso from "@/components/FormularioProceso.jsx";
 import { Button } from "@/components/ui/button";
 import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
-import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Info } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Info, UserCheck } from "lucide-react";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 function fiscalLabel(y) {
@@ -205,7 +205,7 @@ export default function GestionISO() {
                 {/* Header */}
                 <div className="flex flex-wrap items-center justify-between gap-4">
                     <div>
-                        <h1 className="text-xl font-semibold tracking-tight">Gestión ISO 9000</h1>
+                        <h1 className="text-xl font-semibold tracking-tight">Gestión ISO 9001</h1>
                         <p className="text-sm text-muted-foreground flex items-center gap-1">
                             <Info size={12} className="inline" />
                             Las plantillas se asocian automáticamente: <code className="bg-slate-100 px-1 rounded text-xs">Plantilla.proceso === "P01 - Nombre"</code>
@@ -252,7 +252,7 @@ export default function GestionISO() {
                         <section className="rounded-xl bg-white shadow-md ring-1 ring-border/60 flex flex-col">
                             <div className="flex items-center justify-between px-4 py-3 border-b">
                                 <div className="flex items-center gap-2">
-                                    <h2 className="text-sm font-bold">Objetivos ISO</h2>
+                                    <h2 className="text-sm font-bold">Objetivos - Mejora de Calidad</h2>
                                     <span className="text-[11px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">{objetivos.length}</span>
                                 </div>
                                 {canEdit && (
@@ -285,28 +285,40 @@ export default function GestionISO() {
                         ${selected ? "ring-2 ring-blue-500 bg-blue-50 border-blue-200" : "bg-white border-slate-200 hover:border-blue-200"}`}
                                             onClick={() => { setSelectedObjId(selected ? null : id); setSelectedProcId(null); }}
                                         >
-                                            <div className="flex items-center gap-3 px-3 py-2.5">
-                                                {obj.codigo && (
-                                                    <span className={`shrink-0 text-[10px] font-black px-2 py-0.5 rounded-full
-                            ${selected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"}`}>
-                                                        {obj.codigo}
+                                            <div className="flex flex-col gap-2 px-3 py-2.5">
+                                                <div className="flex items-start gap-3">
+                                                    {obj.codigo && (
+                                                        <span className={`shrink-0 mt-0.5 text-[10px] font-black px-2 py-0.5 rounded-full
+                                                            ${selected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"}`}>
+                                                            {obj.codigo}
+                                                        </span>
+                                                    )}
+                                                    <span className={`text-sm font-semibold flex-1 leading-tight ${selected ? "text-blue-800" : "text-slate-800"}`}>
+                                                        {obj.nombre}
                                                     </span>
-                                                )}
-                                                <span className={`text-sm font-semibold flex-1 leading-tight ${selected ? "text-blue-800" : "text-slate-800"}`}>
-                                                    {obj.nombre}
-                                                </span>
-                                                <span className={`shrink-0 text-[11px] font-bold px-2 py-0.5 rounded-full
-                          ${selected ? "bg-blue-200 text-blue-900" : "bg-slate-100 text-slate-500"}`}>
-                                                    {cantP}P
-                                                </span>
-                                                {canEdit && (
-                                                    <div className="flex gap-1 ml-1">
-                                                        {actionBtn("Editar",
-                                                            () => setModalObj({ open: true, data: obj }),
-                                                            "text-blue-500 hover:text-blue-700")}
-                                                        {actionBtn("Eliminar",
-                                                            () => handleEliminarObj(id),
-                                                            "text-rose-500 hover:text-rose-700")}
+                                                    <span className={`shrink-0 mt-0.5 text-[11px] font-bold px-2 py-0.5 rounded-full
+                                                        ${selected ? "bg-blue-200 text-blue-900" : "bg-slate-100 text-slate-500"}`}>
+                                                        {cantP}P
+                                                    </span>
+                                                    {canEdit && (
+                                                        <div className="flex gap-1 ml-1 mt-0.5">
+                                                            {actionBtn("Editar",
+                                                                () => setModalObj({ open: true, data: obj }),
+                                                                "text-blue-500 hover:text-blue-700")}
+                                                            {actionBtn("Eliminar",
+                                                                () => handleEliminarObj(id),
+                                                                "text-rose-500 hover:text-rose-700")}
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Representante de Calidad */}
+                                                {obj.representante && (
+                                                    <div className="flex items-center gap-1.5 ml-[2.75rem]">
+                                                        <UserCheck size={11} className="text-emerald-600" />
+                                                        <span className="text-[10px] font-medium text-slate-500">
+                                                            Rep. Calidad: <span className="text-slate-700">{obj.representante.nombre} {obj.representante.apellido}</span>
+                                                        </span>
                                                     </div>
                                                 )}
                                             </div>
@@ -461,7 +473,7 @@ export default function GestionISO() {
 
                 {/* ── Modales ─────────────────────────────────────────────────── */}
                 <Modal isOpen={modalObj.open} onClose={() => setModalObj({ open: false, data: null })}
-                    title={modalObj.data ? "Editar Objetivo ISO" : "Nuevo Objetivo ISO"}>
+                    title={modalObj.data ? "Editar Obj. Mejora de Calidad" : "Nuevo Obj. Mejora de Calidad"}>
                     {modalObj.open && (
                         <FormularioObjetivoISO
                             initialData={modalObj.data}

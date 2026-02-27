@@ -17,7 +17,8 @@ import {
   DollarSign,
   Building2,
   Megaphone,
-  HelpCircle
+  HelpCircle,
+  FileCheck2
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import useCan, { useHasRole } from "@/hooks/useCan";
@@ -159,7 +160,7 @@ export default function Home() {
       ]
     },
     {
-      title: "Gestión & Seguimiento",
+      title: "Gestión",
       items: [
         {
           key: "objetivos",
@@ -172,8 +173,33 @@ export default function Home() {
           bg: "bg-slate-100"
         },
         {
+          key: "avisos",
+          title: "Gestión de Avisos",
+          desc: "Comunicados globales y alertas.",
+          icon: Megaphone,
+          to: "/gestion-avisos",
+          allow: isRealRRHH || hasRoleDirectivo,
+          color: "text-rose-600",
+          bg: "bg-rose-50"
+        },
+        {
+          key: "gestion-iso",
+          title: "Gestión ISO 9001",
+          desc: "Administración de procesos y objetivos ISO 9001.",
+          icon: FileCheck2,
+          to: "/gestion-iso",
+          allow: isRealRRHH || hasRoleDirectivo,
+          color: "text-teal-600",
+          bg: "bg-teal-50"
+        }
+      ]
+    },
+    {
+      title: "Seguimiento",
+      items: [
+        {
           key: "seguimiento",
-          title: "Seguimiento",
+          title: "Seguimiento Objetivos",
           desc: "Monitoreo de avance por áreas y sectores.",
           icon: TrendingUp,
           to: "/seguimiento",
@@ -183,33 +209,13 @@ export default function Home() {
         },
         {
           key: "cierres",
-          title: "Cierres de Evaluación",
+          title: "Cierre de Evaluaciones",
           desc: "Gestión de cierres y estados.",
           icon: CheckCircle,
           to: "/rrhh-evaluaciones",
           allow: isRealRRHH || hasRoleDirectivo,
           color: "text-emerald-600",
           bg: "bg-emerald-50"
-        },
-        {
-          key: "asignaciones",
-          title: "Editor de Asignaciones",
-          desc: "Ajuste de pesos y exclusiones.",
-          icon: Users,
-          to: "/asignaciones",
-          allow: isRealRRHH || hasRoleDirectivo,
-          color: "text-indigo-600",
-          bg: "bg-indigo-50"
-        },
-        {
-          key: "avisos",
-          title: "Gestión de Avisos",
-          desc: "Comunicados globales y alertas.",
-          icon: Megaphone,
-          to: "/gestion-avisos",
-          allow: isRealRRHH || hasRoleDirectivo,
-          color: "text-rose-600",
-          bg: "bg-rose-50"
         }
       ]
     },
@@ -218,8 +224,8 @@ export default function Home() {
       items: [
         {
           key: "estructura",
-          title: "Gestión de Equipo",
-          desc: "Nómina, estructura y organigrama.",
+          title: "Nómina",
+          desc: "Estructura y organigrama del equipo.",
           icon: Users,
           to: "/gestion-estructura",
           allow: canViewEstructura && (hasRoleRRHH || hasRoleDirectivo || user?.isJefeArea || user?.isJefeSector),
@@ -228,8 +234,8 @@ export default function Home() {
         },
         {
           key: "departamentos",
-          title: "Gestión Departamentos",
-          desc: "Administración de departamentos.",
+          title: "Departamentos",
+          desc: "Administración de departamentos y reportes.",
           icon: Building2,
           to: "/gestion-departamentos",
           allow: canViewEstructura && (hasRoleRRHH || hasRoleDirectivo || user?.isJefeArea || user?.isJefeSector), // Using same logic roughly
@@ -380,7 +386,7 @@ export default function Home() {
       {/* Main Content - Centered Flex Layout */}
       <div className="max-w-7xl mx-auto px-6 lg:px-8 mt-4 pb-12 relative z-20">
 
-        <div className="flex flex-wrap justify-center gap-6 items-start">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 lg:gap-6 items-start">
           {GROUPS.map((group) => {
             // Show ALL items, handled visibly by permissions later
             const allItems = group.items;
@@ -388,7 +394,7 @@ export default function Home() {
             if (allItems.length === 0) return null;
 
             return (
-              <div id={`tour-group-${GROUPS.indexOf(group)}`} key={group.title} className="flex flex-col gap-3 w-full sm:w-[280px]">
+              <div id={`tour-group-${GROUPS.indexOf(group)}`} key={group.title} className="flex flex-col gap-3">
                 {/* Column Header - Fixed height for alignment */}
                 <div className="flex items-center justify-center gap-3 mb-1 px-1 border-b border-slate-200 pb-1.5 min-h-[2.5rem]">
                   <h2 className="text-base font-bold text-slate-800 uppercase tracking-wide leading-tight text-center">
@@ -407,17 +413,17 @@ export default function Home() {
                         <Link
                           to={item.to}
                           key={item.key}
-                          className="group bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-lg hover:border-blue-300 hover:-translate-y-1 transition-all duration-200 flex flex-col items-center text-center justify-between h-[160px]"
+                          className="group bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-lg hover:border-blue-300 hover:-translate-y-1 transition-all duration-200 flex flex-col items-center text-center justify-between min-h-[170px]"
                         >
-                          <div className={`h-11 w-11 shrink-0 rounded-lg ${item.bg} flex items-center justify-center group-hover:scale-110 transition-transform`}>
+                          <div className={`h-11 w-11 shrink-0 rounded-lg ${item.bg} flex items-center justify-center group-hover:scale-110 transition-transform mb-2`}>
                             <Icon className={`h-6 w-6 ${item.color}`} />
                           </div>
 
-                          <div className="w-full px-1 flex flex-col items-center gap-1">
-                            <h3 className="text-sm font-bold text-slate-800 group-hover:text-blue-600 transition-colors line-clamp-1" title={item.title}>
+                          <div className="w-full px-1 flex flex-col items-center gap-1.5 flex-1 justify-center">
+                            <h3 className="text-sm font-bold text-slate-800 group-hover:text-blue-600 transition-colors line-clamp-2 leading-tight" title={item.title}>
                               {item.title}
                             </h3>
-                            <p className="text-xs text-slate-500 leading-relaxed line-clamp-2 h-[2.5em]" title={item.desc}>
+                            <p className="text-xs text-slate-500 leading-snug line-clamp-3" title={item.desc}>
                               {item.desc}
                             </p>
                           </div>
@@ -429,17 +435,17 @@ export default function Home() {
                         <div
                           key={item.key}
                           onClick={() => toast.info("Debe solicitar acceso al área de sistemas")}
-                          className="bg-slate-50 rounded-xl p-4 border border-slate-200 flex flex-col items-center text-center justify-between h-[160px] cursor-not-allowed opacity-60 grayscale transition-all"
+                          className="bg-slate-50 rounded-xl p-4 border border-slate-200 flex flex-col items-center text-center justify-between min-h-[170px] cursor-not-allowed opacity-60 grayscale transition-all"
                         >
-                          <div className="h-11 w-11 shrink-0 rounded-lg bg-slate-200 flex items-center justify-center">
+                          <div className="h-11 w-11 shrink-0 rounded-lg bg-slate-200 flex items-center justify-center mb-2">
                             <Icon className="h-6 w-6 text-slate-400" />
                           </div>
 
-                          <div className="w-full px-1 flex flex-col items-center gap-1">
-                            <h3 className="text-sm font-bold text-slate-500 line-clamp-1" title={item.title}>
+                          <div className="w-full px-1 flex flex-col items-center gap-1.5 flex-1 justify-center">
+                            <h3 className="text-sm font-bold text-slate-500 line-clamp-2 leading-tight" title={item.title}>
                               {item.title}
                             </h3>
-                            <p className="text-xs text-slate-400 leading-relaxed line-clamp-2 h-[2.5em]" title={item.desc}>
+                            <p className="text-xs text-slate-400 leading-snug line-clamp-3" title={item.desc}>
                               {item.desc}
                             </p>
                           </div>

@@ -9,6 +9,7 @@ const objetivoISOSchema = new mongoose.Schema(
         // Año fiscal de inicio: 2025 → período 2025-2026  (Sep/2025 → Ago/2026)
         year: { type: Number, required: true },
         activo: { type: Boolean, default: true },
+        representante: { type: mongoose.Schema.Types.ObjectId, ref: 'Empleado', default: null },
     },
     { timestamps: true }
 );

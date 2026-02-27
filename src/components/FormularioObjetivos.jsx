@@ -3,6 +3,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter
+} from "@/components/ui/dialog";
 import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
 
 export default function FormularioObjetivos({
@@ -45,6 +53,10 @@ export default function FormularioObjetivos({
 
   const [usarFechaCierreCustom, setUsarFechaCierreCustom] = useState(false);
   const [fechaCierre, setFechaCierre] = useState("");
+
+  const [versionDialogOpen, setVersionDialogOpen] = useState(false);
+  const [motivoVersion, setMotivoVersion] = useState("");
+  const [comentarioVersion, setComentarioVersion] = useState("");
 
   // Procesos cargados dinámicamente desde la BD (ProcesoISO)
   // Deduplicados por fullName para evitar duplicados cuando hay docs con/sin year.
@@ -222,7 +234,7 @@ export default function FormularioObjetivos({
   };
 
   // Submit
-  const handleSubmit = async (e, opts = { seguir: false }) => {
+  const handleSubmit = async (e, opts = { seguir: false, esVersion: false }) => {
     e.preventDefault();
     setFieldErrors({});
 
@@ -308,14 +320,28 @@ export default function FormularioObjetivos({
 
     setIsSubmitting(true);
     try {
-      const saved = isEdit
-        ? await api(`/templates/${initialData._id}`, {
-          method: "PUT",
+      let saved;
+      if (opts.esVersion) {
+        body.motivoVersion = motivoVersion;
+        body.comentarioVersion = comentarioVersion;
+        // Enviar a versionar
+        const { plantilla } = await api(`/templates/${initialData._id}/versionar`, {
+          method: "POST",
           body,
-        })
-        : await api("/templates", { method: "POST", body });
+        });
+        saved = plantilla;
+        toast.success("Nueva versión creada correctamente y enviada para aprobación");
+      } else {
+        saved = isEdit
+          ? await api(`/templates/${initialData._id}`, {
+            method: "PUT",
+            body,
+          })
+          : await api("/templates", { method: "POST", body });
 
-      toast.success(isEdit ? "Objetivo actualizado" : "Objetivo creado");
+        toast.success(isEdit ? "Objetivo actualizado" : "Objetivo creado");
+      }
+
       if (opts.seguir && !isEdit) onSaveAndContinue?.(saved);
       else onSaved?.(saved);
     } catch (err) {
@@ -370,6 +396,17 @@ export default function FormularioObjetivos({
     <form onSubmit={(e) => handleSubmit(e)} className="flex flex-col h-full">
       {/* Contenido Scrollable */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
+
+        {isEdit && initialData?.activo && initialData?.estadoAprobacion !== "pendiente" && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-2 flex gap-3 text-blue-800">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
+            <div className="text-sm">
+              <p className="font-semibold mb-1">Estás editando la Versión {initialData.version || 1} (Activa).</p>
+              <p>Podés hacer correcciones menores y <strong>guardar cambios (sobrescribir)</strong>, o si son cambios que afectan metas/números, podés <strong>Crear Nueva Versión (v{(initialData.version || 1) + 1})</strong>. La nueva versión se enviará a estado "Pendiente de Aprobación" para revisión de RRHH/Directores.</p>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* IZQUIERDA */}
           <div className="space-y-4">
@@ -961,7 +998,16 @@ export default function FormularioObjetivos({
       </div>
 
       {/* Botones (Sticky Footer) */}
-      <div className="flex-none p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-2 z-10">
+      <div className="flex-none p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-2 z-10 items-center">
+        {isEdit && initialData?.activo && initialData?.estadoAprobacion !== "pendiente" && (
+          <div className="flex-1 mr-4">
+            <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded border border-amber-200 flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>
+              Si modificás una plantilla activa con evaluaciones en curso, podés afectar los datos históricos. Considerá crear una nueva versión.
+            </div>
+          </div>
+        )}
+
         <Button
           type="button"
           variant="outline"
@@ -974,20 +1020,90 @@ export default function FormularioObjetivos({
           <Button
             type="button"
             variant="secondary"
-            onClick={(e) => handleSubmit(e, { seguir: true })}
+            onClick={(e) => handleSubmit(e, { seguir: true, esVersion: false })}
             disabled={isSubmitting}
           >
             {isSubmitting ? "Guardando…" : "Crear y seguir"}
           </Button>
         )}
+
+        {isEdit && (
+          <Button
+            type="button"
+            variant="secondary"
+            className="border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 font-bold shadow-sm"
+            onClick={() => setVersionDialogOpen(true)}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? "Guardando…" : `+ Crear Versión ${(initialData.version || 1) + 1} (Enviar a Aprobar)`}
+          </Button>
+        )}
+
         <Button type="submit" disabled={isSubmitting}>
           {isSubmitting
             ? "Guardando…"
             : isEdit
-              ? "Guardar cambios"
+              ? "Actualizar V" + (initialData.version || 1) + " (Sobrescribir)"
               : "Crear objetivo"}
         </Button>
       </div>
+
+      {/* DIÁLOGO DE REVERSION */}
+      <Dialog open={versionDialogOpen} onOpenChange={setVersionDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Solicitar Nueva Versión (v{(initialData?.version || 1) + 1})</DialogTitle>
+            <DialogDescription>
+              Por favor, indicá el motivo principal de este reversionado y completá con un comentario aclaratorio para que RRHH o el Director puedan evaluarlo.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Motivo (Obligatorio)</label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                value={motivoVersion}
+                onChange={(e) => setMotivoVersion(e.target.value)}
+              >
+                <option value="">-- Seleccionar motivo --</option>
+                <option value="Cambio en la estrategia organizacional">Cambio en la estrategia organizacional</option>
+                <option value="Factores externos imprevistos">Factores externos imprevistos</option>
+                <option value="Ajuste de presupuestos o recursos">Ajuste de presupuestos o recursos</option>
+                <option value="Error en la definición original de la meta">Error en la definición original de la meta</option>
+                <option value="Reasignación de tareas del empleado">Reasignación de tareas del empleado</option>
+                <option value="Otro / Situación excepcional">Otro / Situación excepcional</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Comentario adicional (Obligatorio)</label>
+              <textarea
+                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                placeholder="Explicá brevemente por qué es necesario este cambio..."
+                value={comentarioVersion}
+                onChange={(e) => setComentarioVersion(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" type="button" onClick={() => setVersionDialogOpen(false)} disabled={isSubmitting}>Cancelar</Button>
+            <Button
+              type="button"
+              onClick={(e) => {
+                if (!motivoVersion || !comentarioVersion.trim()) {
+                  toast.error("El motivo y el comentario son obligatorios para solicitar una nueva versión.");
+                  return;
+                }
+                setVersionDialogOpen(false);
+                handleSubmit(e, { seguir: false, esVersion: true });
+              }}
+              disabled={isSubmitting || !motivoVersion || !comentarioVersion.trim()}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              Enviar Solicitud
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </form>
   );
 }

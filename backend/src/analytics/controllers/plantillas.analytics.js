@@ -56,6 +56,11 @@ export async function analyticsPlantillas(req, res) {
                 frecuencia: pl.frecuencia ?? null,
                 pesoBase: pl.pesoBase ?? null,
                 activo: pl.activo ?? false,
+                version: pl.version ?? 1,
+                parentPlantillaId: pl.parentPlantillaId ? String(pl.parentPlantillaId) : null,
+                estadoAprobacion: pl.estadoAprobacion ?? "aprobada",
+                motivoVersion: pl.motivoVersion ?? null,
+                comentarioVersion: pl.comentarioVersion ?? null,
                 cantMetas: Array.isArray(pl.metas) ? pl.metas.length : 0,
                 fechaInicioFiscal: pl.fechaInicioFiscal
                     ? new Date(pl.fechaInicioFiscal).toISOString().split("T")[0]

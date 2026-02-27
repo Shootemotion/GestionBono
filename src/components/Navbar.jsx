@@ -339,19 +339,31 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                       closeMenu={closeMenu}
                     />
 
-                    {/* --- Gestión & Seguimiento --- */}
+                    {/* --- Gestión --- */}
                     <DropdownGroup
                       title="Gestión"
                       icon={<Target className="w-4 h-4" />}
                       items={[
                         { to: '/plantillas', label: 'Objetivos', icon: <Target className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo },
-                        { to: '/seguimiento', label: 'Seguimiento', icon: <TrendingUp className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo || canViewNomina || hasReferente },
-                        { to: '/rrhh-evaluaciones', label: 'Cierre Eval.', icon: <CheckCircle className="w-4 h-4" />, allowed: isRealRRHH || hasRoleDirectivo },
-                        { to: '/asignaciones', label: 'Asignaciones', icon: <UserPlus className="w-4 h-4" />, allowed: isRealRRHH || hasRoleDirectivo },
-                        { to: '/gestion-avisos', label: 'Avisos', icon: <Megaphone className="w-4 h-4" />, allowed: isRealRRHH || hasRoleDirectivo }
+                        { to: '/gestion-avisos', label: 'Avisos', icon: <Megaphone className="w-4 h-4" />, allowed: isRealRRHH || hasRoleDirectivo },
+                        { to: '/gestion-iso', label: 'Gestión ISO', icon: <FileCheck2 className="w-4 h-4" />, allowed: isRealRRHH || hasRoleDirectivo }
                       ]}
                       isOpen={activeMenu === 'Gestión'}
                       onMouseEnter={() => handleMenuEnter('Gestión')}
+                      onMouseLeave={handleMenuLeave}
+                      closeMenu={closeMenu}
+                    />
+
+                    {/* --- Seguimiento --- */}
+                    <DropdownGroup
+                      title="Seguimiento"
+                      icon={<TrendingUp className="w-4 h-4" />}
+                      items={[
+                        { to: '/seguimiento', label: 'Seguimiento Objetivos', icon: <TrendingUp className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo || canViewNomina || hasReferente },
+                        { to: '/rrhh-evaluaciones', label: 'Cierre Evaluaciones', icon: <CheckCircle className="w-4 h-4" />, allowed: isRealRRHH || hasRoleDirectivo }
+                      ]}
+                      isOpen={activeMenu === 'Seguimiento'}
+                      onMouseEnter={() => handleMenuEnter('Seguimiento')}
                       onMouseLeave={handleMenuLeave}
                       closeMenu={closeMenu}
                     />
@@ -361,9 +373,8 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                       title="Estructura"
                       icon={<Building2 className="w-4 h-4" />}
                       items={[
-                        { to: '/gestion-estructura', label: 'Equipo / Nómina', icon: <Users className="w-4 h-4" />, allowed: canViewEstructura },
+                        { to: '/gestion-estructura', label: 'Nómina', icon: <Users className="w-4 h-4" />, allowed: canViewEstructura },
                         { to: '/gestion-departamentos', label: 'Departamentos', icon: <Building2 className="w-4 h-4" />, allowed: canViewEstructuraFinal },
-                        { to: '/gestion-iso', label: 'Gestión ISO 9000', icon: <FileCheck2 className="w-4 h-4" />, allowed: isRealRRHH || hasRoleDirectivo || isSuperAdmin },
                         { to: '/sistemas', label: 'Admin. Web', icon: <HardDrive className="w-4 h-4" />, allowed: isSuperAdmin }
                       ]}
                       isOpen={activeMenu === 'Estructura'}
@@ -600,10 +611,18 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                   <div>
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Gestión</h3>
                     <div className="space-y-1">
-                      {(hasRoleRRHH || hasRoleDirectivo) && <MobileLink to="/plantillas" label="Objetivos" />}
-                      {(hasRoleRRHH || hasRoleDirectivo || canViewNomina || hasReferente) && <MobileLink to="/seguimiento" label="Seguimiento" />}
-                      {(isRealRRHH || hasRoleDirectivo) && <MobileLink to="/asignaciones" label="Asignaciones" />}
-                      {(isRealRRHH || hasRoleDirectivo) && <MobileLink to="/rrhh-evaluaciones" label="Cierres" />}
+                      {(hasRoleRRHH || hasRoleDirectivo) && <MobileLink to="/plantillas" label="Gestión Objetivos" />}
+                      {(isRealRRHH || hasRoleDirectivo) && <MobileLink to="/gestion-avisos" label="Gestión Avisos" />}
+                      {(isRealRRHH || hasRoleDirectivo) && <MobileLink to="/gestion-iso" label="Gestión ISO" />}
+                    </div>
+                  </div>
+
+                  {/* Seguimiento */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Seguimiento</h3>
+                    <div className="space-y-1">
+                      {(hasRoleRRHH || hasRoleDirectivo || canViewNomina || hasReferente) && <MobileLink to="/seguimiento" label="Seguimiento Objetivos" />}
+                      {(isRealRRHH || hasRoleDirectivo) && <MobileLink to="/rrhh-evaluaciones" label="Cierre Evaluaciones" />}
                     </div>
                   </div>
 
@@ -611,9 +630,8 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                   <div>
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Estructura</h3>
                     <div className="space-y-1">
-                      {canViewEstructura && <MobileLink to="/gestion-estructura" label="Nómina / Equipo" />}
+                      {canViewEstructura && <MobileLink to="/gestion-estructura" label="Nómina" />}
                       {canViewEstructuraFinal && <MobileLink to="/gestion-departamentos" label="Departamentos" />}
-                      {(isRealRRHH || hasRoleDirectivo || isSuperAdmin) && <MobileLink to="/gestion-iso" label="Gestión ISO 9000" />}
                       {isSuperAdmin && <MobileLink to="/sistemas" label="Sistemas" />}
                     </div>
                   </div>

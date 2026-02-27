@@ -11,7 +11,8 @@ import {
   CheckCircle2,
   XCircle,
   Calendar,
-  Globe
+  Globe,
+  Check
 } from "lucide-react";
 
 export default function PlantillasList({
@@ -20,10 +21,13 @@ export default function PlantillasList({
   onClone,
   onDelete,
   onToggleActive,
+  onAprobarVersion,
   permisos,
   areas = [],
   sectores = [],
-  empleados = []
+  empleados = [],
+  isRealRRHH,
+  hasRoleDirectivo
 }) {
   if (!plantillas.length) {
     return (
@@ -110,9 +114,21 @@ export default function PlantillasList({
                       <Calendar className="w-3 h-3" /> {p.year || "—"}
                     </span>
 
+                    {p.version && p.version > 1 && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200/60">
+                        v{p.version}
+                      </span>
+                    )}
+
                     {hasOverride && (
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200/60">
                         OVERRIDE
+                      </span>
+                    )}
+
+                    {p.estadoAprobacion === "pendiente" && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
+                        VERSIÓN PENDIENTE APROBACIÓN
                       </span>
                     )}
                   </div>
@@ -133,17 +149,21 @@ export default function PlantillasList({
                   </div>
 
                   {/* Status Toggle moved here */}
-                  <div className="mt-2" onClick={(e) => e.stopPropagation()}>
-                    <label className="relative inline-flex items-center cursor-pointer group/toggle" title={activo ? "Desactivar" : "Activar"}>
-                      <input
-                        type="checkbox"
-                        className="sr-only peer"
-                        checked={activo}
-                        onChange={() => onToggleActive?.(p)}
-                        disabled={!canEdit}
-                      />
-                      <div className={`w-8 h-4 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-100 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all ${activo ? 'bg-emerald-500 peer-checked:bg-emerald-500' : 'bg-slate-300'}`}></div>
-                    </label>
+                  <div className="mt-2 text-right" onClick={(e) => e.stopPropagation()}>
+                    {p.estadoAprobacion === "pendiente" ? (
+                      <span className="text-[10px] uppercase font-bold text-amber-600 block mb-1">Inactiva (Revisar)</span>
+                    ) : (
+                      <label className="relative inline-flex items-center cursor-pointer group/toggle" title={activo ? "Desactivar" : "Activar"}>
+                        <input
+                          type="checkbox"
+                          className="sr-only peer"
+                          checked={activo}
+                          onChange={() => onToggleActive?.(p)}
+                          disabled={!canEdit}
+                        />
+                        <div className={`w-8 h-4 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-100 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all ${activo ? 'bg-emerald-500 peer-checked:bg-emerald-500' : 'bg-slate-300'}`}></div>
+                      </label>
+                    )}
                   </div>
                 </div>
               </div>
@@ -167,7 +187,7 @@ export default function PlantillasList({
                     <span className="text-[9px] uppercase font-bold text-slate-400 mb-0.5 flex items-center gap-1">
                       <Settings2 className="w-3 h-3" /> Proceso
                     </span>
-                    <span className="text-xs font-medium text-slate-600 truncate" title={proceso}>
+                    <span className="text-xs font-medium text-slate-600 break-words leading-tight" title={proceso}>
                       {proceso}
                     </span>
                   </div>
@@ -183,6 +203,17 @@ export default function PlantillasList({
                     </span>
                   </div>
                 </div>
+
+                {/* INFO DE REVERSIONADO (SOLO PENDIENTES) */}
+                {p.estadoAprobacion === "pendiente" && p.motivoVersion && (
+                  <div className="mt-4 bg-amber-50/60 border border-amber-200/60 rounded p-2.5">
+                    <span className="text-[10px] uppercase font-bold text-amber-800 block mb-0.5">Motivo del Reversionado:</span>
+                    <span className="text-xs font-semibold text-amber-900 block mb-1">{p.motivoVersion}</span>
+                    {p.comentarioVersion && (
+                      <p className="text-xs text-amber-700 italic border-l-2 border-amber-300 pl-2 py-0.5 mt-1">"{p.comentarioVersion}"</p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -193,7 +224,7 @@ export default function PlantillasList({
                 onClick={() => onEdit?.(p)}
                 disabled={!canEdit}
               >
-                <Edit3 className="w-3.5 h-3.5" /> Editar
+                <Edit3 className="w-3.5 h-3.5" /> Editar / Versionar
               </button>
               <button
                 className="flex-1 py-3 text-xs font-medium text-slate-500 hover:text-amber-600 hover:bg-amber-50/50 transition-colors uppercase tracking-wide flex items-center justify-center gap-2"
@@ -201,6 +232,16 @@ export default function PlantillasList({
               >
                 <Copy className="w-3.5 h-3.5" /> Clonar
               </button>
+
+              {p.estadoAprobacion === "pendiente" && (isRealRRHH || hasRoleDirectivo) && (
+                <button
+                  className="flex-1 py-3 text-xs font-bold text-emerald-600 hover:bg-emerald-50/50 transition-colors uppercase tracking-wide flex items-center justify-center gap-2"
+                  onClick={() => onAprobarVersion?.(p)}
+                >
+                  <Check className="w-3.5 h-3.5" /> Aprobar
+                </button>
+              )}
+
               <button
                 className="flex-1 py-3 text-xs font-medium text-slate-500 hover:text-rose-600 hover:bg-rose-50/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wide flex items-center justify-center gap-2"
                 onClick={() => onDelete?.(p)}
@@ -212,6 +253,6 @@ export default function PlantillasList({
           </li>
         );
       })}
-    </ul>
+    </ul >
   );
 }

@@ -161,6 +161,14 @@ const plantillaSchema = new mongoose.Schema(
     pesoBase: { type: Number, min: 0, max: 100, required: true },
 
     activo: { type: Boolean, default: false, index: true },
+
+    /* --- VERSIONADO --- */
+    version: { type: Number, default: 1 },
+    parentPlantillaId: { type: mongoose.Schema.Types.ObjectId, ref: "Plantilla", default: null },
+    estadoAprobacion: { type: String, enum: ["aprobada", "pendiente", "rechazada"], default: "aprobada", index: true },
+    motivoVersion: { type: String },
+    comentarioVersion: { type: String },
+
     metadata: { type: mongoose.Schema.Types.Mixed },
   },
   { timestamps: true }
