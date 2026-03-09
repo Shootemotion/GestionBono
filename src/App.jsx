@@ -1,11 +1,14 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useState, useCallback } from 'react';
 import RequireAuth from '@/components/RequireAuth';
 import Navbar from '@/components/Navbar';
 import BonoBot from "@/components/BonoBot/BonoBot";
 import { getToken } from '@/lib/api';
 import { Toaster } from "@/components/ui/sonner";
 import { Spinner } from '@/components/ui/spinner';
+import { useAuth } from '@/context/AuthContext';
+import { useInactivityTimer } from '@/hooks/useInactivityTimer';
+import { LogIn, Clock } from 'lucide-react';
 
 // Lazy Import Pages
 const EvaluacionFlujo = lazy(() => import('@/pages/EvaluacionFlujo'));
@@ -37,9 +40,48 @@ const GestionISO = lazy(() => import('@/pages/GestionISO'));
 function App() {
   const location = useLocation();
   const authed = !!getToken();
+  const { logout } = useAuth();
+  const [timedOut, setTimedOut] = useState(false);
+
+  // Handle inactivity: log out and show overlay
+  const handleInactivity = useCallback(() => {
+    logout();
+    setTimedOut(true);
+  }, [logout]);
+
+  // Only run the timer when the user is authenticated
+  useInactivityTimer(handleInactivity, 600_000, authed);
 
   // Ocultamos el navbar en /login
   const showNavbar = authed && location.pathname !== '/login';
+
+  // Locked-out overlay
+  if (timedOut) {
+    return (
+      <div className="fixed inset-0 bg-slate-900 flex flex-col items-center justify-center z-[9999] text-center px-6">
+        <div className="absolute inset-0 bg-blue-900/10 backdrop-blur-2xl" />
+        <div className="relative z-10 flex flex-col items-center gap-6">
+          <div className="w-20 h-20 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center shadow-2xl">
+            <Clock className="w-9 h-9 text-blue-400" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black text-white tracking-tight mb-2">Sesión cerrada por inactividad</h1>
+            <p className="text-slate-400 text-sm max-w-xs">Tu sesión fue cerrada automáticamente por seguridad después de 10 minutos sin actividad.</p>
+          </div>
+          <button
+            onClick={() => {
+              setTimedOut(false);
+              window.location.href = '/login';
+            }}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-6 py-3 rounded-xl shadow-lg hover:shadow-blue-500/30 transition-all"
+          >
+            <LogIn className="w-4 h-4" />
+            Iniciar sesión nuevamente
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

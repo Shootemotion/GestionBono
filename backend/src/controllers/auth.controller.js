@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import Usuario from '../models/Usuario.model.js';
 import crypto from 'crypto';
+import { sendCredentialsEmail } from '../utils/mailer.js';
 
 // helper: devuelve usuario sin passwordHash ni campos sensibles
 const safeUser = (u) => {
@@ -96,6 +97,42 @@ export const resetUserPassword = async (req, res, next) => {
 
     return res.json({ user: safeUser(user), tempPassword }); // ⚠️ mostrar solo una vez
   } catch (err) { next(err); }
+};
+
+/**
+ * POST /api/auth/forgot-password
+ * body: { email }
+ * (public)
+ */
+export const forgotPassword = async (req, res, next) => {
+  try {
+    let { email } = req.body || {};
+    email = String(email || '').trim().toLowerCase();
+
+    if (!email) {
+      return res.status(400).json({ message: 'El email es requerido' });
+    }
+
+    const user = await Usuario.findOne({ email });
+    // Por seguridad, retornamos éxito incluso si no existe,
+    // para no revelar qué correos están registrados.
+    if (!user || !user.activo) {
+      return res.json({ ok: true, message: 'Si el correo existe, se enviaron las instrucciones.' });
+    }
+
+    const tempPassword = crypto.randomBytes(4).toString('hex'); // 8 chars
+    user.passwordHash = await bcrypt.hash(tempPassword, 10);
+    user.status = 'invited'; // fuerza cambio al ingresar
+    await user.save();
+
+    await sendCredentialsEmail(user.email, tempPassword, true);
+
+    console.info(`forgotPassword: reset password requested via login for ${user.email}`);
+
+    res.json({ ok: true, message: 'Si el correo existe, se enviaron las instrucciones.' });
+  } catch (err) {
+    next(err);
+  }
 };
 
 /**
@@ -208,7 +245,7 @@ export const login = async (req, res, next) => {
 export async function resetSuperadmin(req, res, next) {
   try {
     const token = req.headers['x-setup-token'] || req.query.token;
-   
+
     if (!token || token !== process.env.ADMIN_SETUP_TOKEN) {
       return res.status(403).json({ message: 'No autorizado' });
     }

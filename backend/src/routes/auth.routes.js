@@ -3,11 +3,12 @@ import { Router } from 'express';
 import { authenticateJWT, whoami } from '../auth/auth.middleware.js';
 import { bootstrapSuperadmin, login, me } from '../controllers/auth.controller.js';
 import { resetSuperadmin } from '../controllers/auth.controller.js';
-import { completeInvite, changePassword } from "../controllers/auth.controller.js";
+import { completeInvite, changePassword, forgotPassword } from "../controllers/auth.controller.js";
 const router = Router();
 
 router.post('/bootstrap-superadmin', bootstrapSuperadmin);
 router.post('/login', login);
+router.post('/forgot-password', forgotPassword);
 router.post('/reset-superadmin', resetSuperadmin);
 router.get('/me', authenticateJWT, me);
 router.get('/_whoami', authenticateJWT, whoami); // alias útil en dev

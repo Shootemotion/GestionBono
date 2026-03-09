@@ -7,9 +7,17 @@
 // === HELPERS ===
 
 /**
- * Parses numeric value, treating null/undefined as 0.
+ * Parses numeric value, treating null/undefined as 0,
+ * and converting Spanish comma decimals to dots (e.g. "0,5" -> 0.5)
  */
-const val = (v) => Number(v || 0);
+const val = (v) => {
+    if (v === null || v === undefined || v === '') return 0;
+    if (typeof v === 'string') {
+        const parsed = Number(v.replace(',', '.'));
+        return isNaN(parsed) ? 0 : parsed;
+    }
+    return isNaN(Number(v)) ? 0 : Number(v);
+};
 
 /**
  * Resolves the "Period Index" for chronological sorting.
@@ -67,7 +75,7 @@ export const calculatePeriodCompliance = (actual, target, config) => {
     else if (op === ">") passed = act > (tgt - tol); // Strict greater
     else if (op === "<=") passed = act <= (tgt + tol);
     else if (op === "<") passed = act < (tgt + tol); // Strict less
-    else if (op === "=") passed = Math.abs(act - tgt) <= tol;
+    else if (op === "=" || op === "==" || op === "===") passed = Math.abs(act - tgt) <= tol;
 
     // 2. Calculate Raw Score %
     let rawPct = 0;
@@ -177,25 +185,53 @@ export const calculateMetaScore = (metaDef, hitos) => {
     }
 
     if (rule === "umbral_Periodos" || rule === "umbral_periodos") {
-        // "Necesito X períodos cumplidos"
-        // Assuming metaDef.umbralPeriodos holds the number required
-        const required = metaDef.umbralPeriodos || results.length; // Default to all? or 1?
-        const passedCount = periodScores.filter(s => s >= 100).length; // Assuming 100 means passed
+        /**
+         * UMBRAL: Each period is evaluated with BINARY logic (pass/fail).
+         * reconoceEsfuerzo does NOT apply inside each period — a period either passes or it doesn't.
+         * reconoceEsfuerzo ONLY applies at the count level:
+         *   - If reconoceEsfuerzo=true: measures absolute progress towards the total goal (e.g. 2 passed / 12 required = 16.6%)
+         *   - If reconoceEsfuerzo=false: adaptive scoring based on evaluated periods (e.g. 2 passed / 2 evaluated so far = 100%)
+         */
+        const required = metaDef.umbralPeriodos || results.length;
 
-        // Binary or Proportional? "Cuenta cuántos... vs total"?
-        // Usually logic is: "If you met 3/4, do you get 75% or 0%?"
-        // If "Umbral" implies a Cutoff, it's likely Binary.
-        // "Necesito X periodos cumplidos de N".
-        // If I need 3 and I have 2 => 0%.
-        // If I have 3 => 100%.
+        // Force binary evaluation per period (ignore reconoceEsfuerzo at this level)
+        const binaryPeriodScores = results.map(r =>
+            calculatePeriodCompliance(r.actual, r.target, {
+                ...r.config,
+                reconoceEsfuerzo: false, // Always binary per period for umbral
+                permiteOver: false,      // No over in binary pass/fail
+            })
+        );
+
+        // Filter out nulls to see how many were actually evaluated
+        const evaluatedScores = binaryPeriodScores.filter(s => s !== null);
+        const evaluatedCount = evaluatedScores.length;
+
+        // A period "passes" if it reaches 100% (binary = either 0 or 100)
+        const passedCount = evaluatedScores.filter(s => s >= 100).length;
+
+        // Already met or exceeded threshold → full score
         if (passedCount >= required) return 100;
 
-        // If "Reconoce Esfuerzo" is active, give proportional credit for the periods achieved
+        // Preliminary scoring while in progress
         if (metaDef.reconoceEsfuerzo && required > 0) {
+            // Proportional credit over the total requirement
             return (passedCount / required) * 100;
+        } else if (evaluatedCount > 0) {
+            // Adaptive score based on periods evaluated so far relative to what was needed.
+
+            // If evaluated count >= required periods, they failed to meet it in the given time
+            // Hard fail - threshold not met
+            if (evaluatedCount >= required) {
+                return 0; // The goal is lost
+            } else {
+                // Give them adaptive credit based on evaluated so far (preliminary)
+                return (passedCount / evaluatedCount) * 100;
+            }
         }
 
-        return 0; // Fail (Binary)
+        // Catch-all (no periods evaluated yet, etc.)
+        return 0;
     }
 
     // Default: Promedio / Cierre Único

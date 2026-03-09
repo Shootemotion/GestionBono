@@ -1026,8 +1026,8 @@ export default function EvaluacionFlujo() {
 
         // --- FIX FRONTEND TIMELINE REFRESH ---
         // Find the updated item in the newly fetched dashboard data.
-        const updatedItemObj = res.objetivos?.items?.find(o => o._id === item._id)
-          || res.aptitudes?.items?.find(a => a._id === item._id);
+        const updatedItemObj = res.objetivos?.find(o => o._id === item._id)
+          || res.aptitudes?.find(a => a._id === item._id);
 
         if (updatedItemObj) {
           setSelectedItem({ type: isApt ? 'competencia' : 'objetivo', id: item._id, data: updatedItemObj });
@@ -1488,6 +1488,44 @@ export default function EvaluacionFlujo() {
                                     const isSelectable = status === "vencido" || status === "por_vencer" || status === "evaluado";
                                     const isLoading = savingItems[item._id] && !localHito;
 
+                                    // Calculate what to display in the period chip
+                                    let hitoDisplay = h.actual;
+
+                                    if (isObj && h.actual !== null) {
+                                      const isUmbral = item.metas?.some(m => m.reglaCierre === 'umbral_periodos');
+
+                                      if (isUmbral) {
+                                        // For umbral: recalculate progress with binary-per-period logic
+                                        // using only hitos up to and including this hito's period
+                                        const hitoOrder = (hPeriodo) => {
+                                          if (!hPeriodo) return 0;
+                                          const monthMap = { 'M09': 1, 'M10': 2, 'M11': 3, 'M12': 4, 'M01': 5, 'M02': 6, 'M03': 7, 'M04': 8, 'M05': 9, 'M06': 10, 'M07': 11, 'M08': 12 };
+                                          const suffix = hPeriodo.replace(/^\d{4}/, '');
+                                          return monthMap[suffix] || 0;
+                                        };
+                                        const maxOrder = hitoOrder(h.periodo);
+                                        const hitosUpTo = item.hitos?.filter(hh => hh.periodo && hitoOrder(hh.periodo) <= maxOrder) || [];
+                                        hitoDisplay = hitosUpTo.length > 0
+                                          ? calculateObjectiveProgress(item, hitosUpTo)
+                                          : null;
+                                      } else {
+                                        // Non-umbral: existing acum logic
+                                        const acumMeta = item.metas?.find(m => m.modoAcumulacion === "acumulativo" || m.acumulativa);
+                                        if (acumMeta) {
+                                          const metaId = acumMeta.metaId || acumMeta._id;
+                                          const hitoResult = h.metas?.find(m => String(m.metaId || m._id) === String(metaId))?.resultado;
+                                          const acumVal = getAccumulatedValue(item, metaId, h.periodo, hitoResult);
+                                          const target = Number(acumMeta.esperado || 0);
+                                          if (target > 0) {
+                                            hitoDisplay = Math.round((acumVal / target) * 100);
+                                          }
+                                        } else {
+                                          // Use live recalculation to retroactively fix older periods evaluated during the < bug
+                                          hitoDisplay = calculateObjectiveProgress(item, [h]);
+                                        }
+                                      }
+                                    }
+
                                     return (
                                       <div
                                         key={h.periodo}
@@ -1500,7 +1538,9 @@ export default function EvaluacionFlujo() {
                                       >
                                         <span className="text-[9px] font-black uppercase leading-none mb-1 text-slate-600">{h.periodo}</span>
                                         <span className={`text-sm font-black leading-none ${isSelected ? 'text-blue-700' : 'text-slate-800'}`}>
-                                          {h.actual !== null ? (isObj ? `${Math.round(h.actual)}%` : Math.round(h.actual)) : "-"}
+                                          {hitoDisplay !== null && hitoDisplay !== undefined
+                                            ? (isObj ? `${typeof hitoDisplay === 'number' ? Number(hitoDisplay).toFixed(1) : hitoDisplay}%` : hitoDisplay)
+                                            : "-"}
                                         </span>
                                       </div>
                                     );
@@ -1557,97 +1597,163 @@ export default function EvaluacionFlujo() {
                                                 if (!effectiveUmbral && item.config?.umbral) effectiveUmbral = item.config.umbral;
 
                                                 return (
-                                                  <tr key={idx} className="group hover:bg-slate-50/80 transition-colors">
-                                                    <td className="px-6 py-4 align-top">
-                                                      <div className="font-bold text-slate-700 text-sm leading-tight">{meta.nombre}</div>
-                                                      <div className="text-[11px] text-slate-400 font-medium mt-1">{meta.unidad}</div>
-                                                    </td>
-                                                    <td className="px-6 py-4 align-top">
-                                                      <div className="flex flex-wrap gap-1.5">
-                                                        {meta.reglaCierre === "promedio" && (
-                                                          <div title="Promedio: El resultado anual será el promedio de todos los periodos evaluados." className="cursor-help flex items-center gap-1 bg-slate-100 text-slate-600 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border border-slate-200">
-                                                            Avg
-                                                          </div>
-                                                        )}
-                                                        {meta.reglaCierre === "cierre_unico" && (
-                                                          <div title="Cierre Único: El resultado anual será el valor del último periodo." className="cursor-help flex items-center gap-1 bg-slate-100 text-slate-600 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border border-slate-200">
-                                                            Final
-                                                          </div>
-                                                        )}
-                                                        {meta.reglaCierre === "umbral_periodos" && (
-                                                          <div title={`Umbral: Requiere cumplir la meta en al menos ${effectiveUmbral} periodos para aprobar el año.`} className="cursor-help flex items-center gap-1 bg-indigo-50 text-indigo-600 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border border-indigo-100">
-                                                            Umbral: {effectiveUmbral ?? '?'}
-                                                          </div>
-                                                        )}
-                                                        {isAcumulativo && (
-                                                          <div title="Acumulativo: El valor real se suma al del periodo anterior." className="cursor-help flex items-center gap-1 bg-purple-50 text-purple-700 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border border-purple-100">
-                                                            Acum
-                                                          </div>
-                                                        )}
-                                                        {meta.reconoceEsfuerzo && (
-                                                          <div title="Esfuerzo: Si no se alcanza la meta, se otorga un puntaje parcial proporcional al logro." className="cursor-help flex items-center gap-1 bg-amber-50 text-amber-700 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border border-amber-100">
-                                                            Esfuerzo
-                                                          </div>
-                                                        )}
-                                                      </div>
-                                                    </td>
-                                                    <td className="px-6 py-4 align-top text-right">
-                                                      <div className="inline-block px-2 py-1 bg-slate-100 rounded text-xs font-mono font-bold text-slate-600">
-                                                        {meta.operador} {Number(meta.esperado).toLocaleString()}
-                                                      </div>
-                                                    </td>
-                                                    <td className="px-6 py-4 align-middle text-right bg-slate-50/30">
-                                                      <div className="flex items-center justify-end gap-3">
-                                                        {meta.unidad === "Cumple/No Cumple" ? (
-                                                          <label className={`flex items-center justify-end gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all border ${meta.resultado ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
-                                                            <span className={`text-[10px] font-bold uppercase ${meta.resultado ? 'text-emerald-700' : 'text-slate-400'}`}>
-                                                              {meta.resultado ? "SÍ" : "NO"}
-                                                            </span>
-                                                            <input
-                                                              type="checkbox"
-                                                              className="h-4 w-4 rounded text-emerald-600 focus:ring-emerald-500 border-gray-300"
-                                                              checked={!!meta.resultado}
-                                                              onChange={(e) => {
-                                                                const val = e.target.checked;
-                                                                handleUpdateLocalHito(item._id, (prev) => {
-                                                                  const metas = [...prev.metas];
-                                                                  metas[idx] = { ...metas[idx], resultado: val, cumple: val };
-                                                                  return { ...prev, metas };
-                                                                });
-                                                              }}
-                                                            />
-                                                          </label>
-                                                        ) : (
-                                                          <div className="relative">
-                                                            <div className="flex items-center gap-2">
-                                                              <Input
-                                                                type="number"
-                                                                className={`h-11 w-full min-w-[120px] text-lg font-bold bg-white text-right pr-3 shadow-sm transition-all
+                                                  <React.Fragment key={idx}>
+                                                    <tr className="group hover:bg-slate-50/80 transition-colors">
+                                                      <td className="px-6 py-4 align-top">
+                                                        <div className="font-bold text-slate-700 text-sm leading-tight">{meta.nombre}</div>
+                                                        <div className="text-[11px] text-slate-400 font-medium mt-1">{meta.unidad}</div>
+                                                      </td>
+                                                      <td className="px-6 py-4 align-top">
+                                                        <div className="flex flex-wrap gap-1.5">
+                                                          {meta.reglaCierre === "promedio" && (
+                                                            <div title="Promedio: El resultado anual será el promedio de todos los periodos evaluados." className="cursor-help flex items-center gap-1 bg-slate-100 text-slate-600 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border border-slate-200">
+                                                              Avg
+                                                            </div>
+                                                          )}
+                                                          {meta.reglaCierre === "cierre_unico" && (
+                                                            <div title="Cierre Único: El resultado anual será el valor del último periodo." className="cursor-help flex items-center gap-1 bg-slate-100 text-slate-600 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border border-slate-200">
+                                                              Final
+                                                            </div>
+                                                          )}
+                                                          {meta.reglaCierre === "umbral_periodos" && (
+                                                            <div title={`Umbral: Requiere cumplir la meta en al menos ${effectiveUmbral} periodos para aprobar el año.`} className="cursor-help flex items-center gap-1 bg-indigo-50 text-indigo-600 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border border-indigo-100">
+                                                              Umbral: {effectiveUmbral ?? '?'}
+                                                            </div>
+                                                          )}
+                                                          {isAcumulativo && (
+                                                            <div title="Acumulativo: El valor real se suma al del periodo anterior." className="cursor-help flex items-center gap-1 bg-purple-50 text-purple-700 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border border-purple-100">
+                                                              Acum
+                                                            </div>
+                                                          )}
+                                                          {meta.reconoceEsfuerzo && (
+                                                            <div title="Esfuerzo: Si no se alcanza la meta, se otorga un puntaje parcial proporcional al logro." className="cursor-help flex items-center gap-1 bg-amber-50 text-amber-700 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border border-amber-100">
+                                                              Esfuerzo
+                                                            </div>
+                                                          )}
+                                                        </div>
+                                                      </td>
+                                                      <td className="px-6 py-4 align-top text-right">
+                                                        <div className="inline-block px-2 py-1 bg-slate-100 rounded text-xs font-mono font-bold text-slate-600">
+                                                          {meta.operador} {Number(meta.esperado).toLocaleString()}
+                                                        </div>
+                                                      </td>
+                                                      <td className="px-6 py-4 align-middle text-right bg-slate-50/30">
+                                                        <div className="flex items-center justify-end gap-3">
+                                                          {meta.unidad === "Cumple/No Cumple" ? (
+                                                            <label className={`flex items-center justify-end gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all border ${meta.resultado ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
+                                                              <span className={`text-[10px] font-bold uppercase ${meta.resultado ? 'text-emerald-700' : 'text-slate-400'}`}>
+                                                                {meta.resultado ? "SÍ" : "NO"}
+                                                              </span>
+                                                              <input
+                                                                type="checkbox"
+                                                                className="h-4 w-4 rounded text-emerald-600 focus:ring-emerald-500 border-gray-300"
+                                                                checked={!!meta.resultado}
+                                                                onChange={(e) => {
+                                                                  const val = e.target.checked;
+                                                                  handleUpdateLocalHito(item._id, (prev) => {
+                                                                    const metas = [...prev.metas];
+                                                                    metas[idx] = { ...metas[idx], resultado: val, cumple: val };
+                                                                    return { ...prev, metas };
+                                                                  });
+                                                                }}
+                                                              />
+                                                            </label>
+                                                          ) : (
+                                                            <div className="relative">
+                                                              <div className="flex items-center gap-2">
+                                                                <Input
+                                                                  type="number"
+                                                                  className={`h-11 w-full min-w-[120px] text-lg font-bold bg-white text-right pr-3 shadow-sm transition-all
                                                                                 ${cumple ? 'border-emerald-300 text-emerald-700 ring-2 ring-emerald-50' : 'border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100'}
                                                                                 ${valorEvaluado !== null && !cumple ? 'border-amber-300 text-amber-700' : ''}
                                                                               `}
-                                                                placeholder="-"
-                                                                disabled={!puedeEditarObjetivo(item, localHito)}
-                                                                value={meta.resultado ?? ""}
-                                                                onChange={(e) => {
-                                                                  const val = e.target.value === "" ? null : Number(e.target.value);
-                                                                  handleUpdateLocalHito(item._id, (prev) => ({
-                                                                    ...prev,
-                                                                    metas: prev.metas.map((m, i) => i === idx ? { ...m, resultado: val } : m)
-                                                                  }));
-                                                                }}
-                                                              />
-                                                              {valorEvaluado !== null && (
-                                                                cumple
-                                                                  ? <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-                                                                  : <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+                                                                  placeholder="-"
+                                                                  disabled={!puedeEditarObjetivo(item, localHito)}
+                                                                  value={meta.resultado ?? ""}
+                                                                  onChange={(e) => {
+                                                                    const val = e.target.value === "" ? null : Number(e.target.value);
+                                                                    handleUpdateLocalHito(item._id, (prev) => ({
+                                                                      ...prev,
+                                                                      metas: prev.metas.map((m, i) => i === idx ? { ...m, resultado: val } : m)
+                                                                    }));
+                                                                  }}
+                                                                />
+                                                                {valorEvaluado !== null && (
+                                                                  cumple
+                                                                    ? <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                                                                    : <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+                                                                )}
+                                                              </div>
+                                                            </div>
+                                                          )}
+                                                        </div>
+                                                      </td>
+                                                    </tr>
+
+                                                    {/* META DETAILS ACCORDION (Native Details/Summary for simplicity inside loop) */}
+                                                    <tr className="border-b border-t-0 border-slate-100 bg-white group-hover:bg-slate-50/80 transition-colors">
+                                                      <td colSpan={4} className="p-0">
+                                                        <details className="w-full group/details">
+                                                          <summary className="w-full text-left bg-transparent text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-6 py-2 cursor-pointer hover:text-indigo-500 transition-colors flex items-center gap-2 list-none marker:hidden">
+                                                            <span className="group-open/details:hidden">▼ Ver configuración de la meta</span>
+                                                            <span className="hidden group-open/details:inline">▲ Ocultar configuración</span>
+                                                          </summary>
+                                                          <div className="px-6 pb-4 pt-2 -mt-1 bg-white border-t border-slate-50">
+                                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 rounded-xl border border-slate-100 bg-slate-50/50 text-xs">
+                                                              {/* Dirección */}
+                                                              <div>
+                                                                <span className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Dirección</span>
+                                                                <span className="font-medium text-slate-700">
+                                                                  {meta.operador === "<=" || meta.operador === "<" ? "Minimizar (menor es mejor)" : "Maximizar (mayor es mejor)"}
+                                                                </span>
+                                                              </div>
+                                                              {/* Acumulación */}
+                                                              <div>
+                                                                <span className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Acumulación</span>
+                                                                <span className="font-medium text-slate-700">
+                                                                  {isAcumulativo ? "Acumulativo (suma período a período)" : "Por período (evaluación independiente)"}
+                                                                </span>
+                                                              </div>
+                                                              {/* Regla de cierre */}
+                                                              <div>
+                                                                <span className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Regla de cierre anual</span>
+                                                                <span className="font-medium text-slate-700">
+                                                                  {meta.reglaCierre === "umbral_periodos"
+                                                                    ? `Umbral: ${effectiveUmbral} hitos cumplidos`
+                                                                    : meta.reglaCierre === "cierre_unico"
+                                                                      ? "Cierre Único (valor del último periodo)"
+                                                                      : "Promedio de los valores"}
+                                                                </span>
+                                                              </div>
+                                                              {/* Esfuerzo */}
+                                                              <div>
+                                                                <span className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Progreso Parcial</span>
+                                                                <span className={`font-medium ${meta.reconoceEsfuerzo ? 'text-amber-600' : 'text-slate-500'}`}>
+                                                                  {meta.reconoceEsfuerzo ? "Sí (reconoce esfuerzo)" : "No (Todo o Nada)"}
+                                                                </span>
+                                                              </div>
+                                                              {/* Tolerancia */}
+                                                              {(metaDef?.tolerancia > 0 || meta.tolerancia > 0) && (
+                                                                <div>
+                                                                  <span className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Tolerancia</span>
+                                                                  <span className="font-medium text-slate-700">
+                                                                    ±{metaDef?.tolerancia || meta.tolerancia} {meta.unidad}
+                                                                  </span>
+                                                                </div>
                                                               )}
+                                                              {/* Sobre-cumplimiento */}
+                                                              <div>
+                                                                <span className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Sobre-cumplimiento</span>
+                                                                <span className={`font-medium ${meta.permiteOver ? 'text-emerald-600' : 'text-slate-500'}`}>
+                                                                  {meta.permiteOver ? "Permitido (Puede superar 100%)" : "Tope en 100%"}
+                                                                </span>
+                                                              </div>
                                                             </div>
                                                           </div>
-                                                        )}
-                                                      </div>
-                                                    </td>
-                                                  </tr>
+                                                        </details>
+                                                      </td>
+                                                    </tr>
+                                                  </React.Fragment>
                                                 );
                                               })}
                                             </tbody>
@@ -1670,7 +1776,7 @@ export default function EvaluacionFlujo() {
                                                 key={val}
                                                 onClick={() => handleUpdateLocalHito(item._id, (prev) => ({ ...prev, escala: val }))}
                                                 className={`h-14 rounded-xl border-2 font-black text-2xl transition-all duration-200 relative overflow-hidden group/btn 
-                                                        ${localHito.escala === val
+                                    ${localHito.escala === val
                                                     ? "border-indigo-500 bg-indigo-50 text-indigo-600 shadow-md ring-2 ring-indigo-200 ring-offset-2 scale-105"
                                                     : "border-slate-100 bg-white text-slate-300 hover:border-indigo-200 hover:text-indigo-400 hover:shadow-sm"}`}
                                               >
@@ -1719,9 +1825,65 @@ export default function EvaluacionFlujo() {
                                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2 mb-3">
                                               Score Estimado
                                             </label>
-                                            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm flex flex-col items-end justify-center relative overflow-hidden h-32">
+                                            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm flex flex-col items-end justify-center relative overflow-hidden min-h-[8rem]">
                                               {(() => {
                                                 const scoreInfo = getRunningScore(item, localHito);
+
+                                                // --- Info contextual según configuración de la meta ---
+
+                                                // ACUM: mostrar total acumulado vs target
+                                                const acumMeta = item.metas?.find(m => m.modoAcumulacion === "acumulativo" || m.acumulativa);
+                                                let acumInfo = null;
+                                                if (acumMeta && localHito) {
+                                                  const metaId = acumMeta.metaId || acumMeta._id;
+                                                  const currentResult = localHito.metas?.find(m => String(m.metaId || m._id) === String(metaId))?.resultado;
+                                                  const acumVal = getAccumulatedValue(item, metaId, localHito.periodo, currentResult);
+                                                  const target = Number(acumMeta.esperado || 0);
+                                                  acumInfo = { acumVal: Number(acumVal).toFixed(1), target, unidad: acumMeta.unidad || "" };
+                                                }
+
+                                                // UMBRAL: contar cuántos períodos cumplidos de los requeridos
+                                                const umbralMeta = item.metas?.find(m => m.reglaCierre === "umbral_periodos");
+                                                let umbralInfo = null;
+                                                if (umbralMeta && localHito) {
+                                                  const metaId = umbralMeta.metaId || umbralMeta._id;
+                                                  const required = Number(umbralMeta.umbralPeriodos || item.umbralPeriodos || item.metas?.length || 1);
+                                                  const target = Number(umbralMeta.esperado || 0);
+                                                  // Contar hitos ya evaluados donde cumple la meta (incluyendo el actual)
+                                                  const allHitos = item.hitos || [];
+                                                  const currentPeriod = localHito.periodo;
+                                                  const periodOrder = allHitos.map(h => h.periodo).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+                                                  const currentIdx = periodOrder.indexOf(currentPeriod);
+                                                  let cumplidos = 0;
+                                                  let evaluados = 0;
+                                                  for (const h of allHitos) {
+                                                    const hIdx = periodOrder.indexOf(h.periodo);
+                                                    if (hIdx > currentIdx) continue;
+                                                    // Valor real del período (para el actual, tomar del localHito)
+                                                    let val = null;
+                                                    if (h.periodo === currentPeriod) {
+                                                      val = localHito.metas?.find(m => String(m.metaId || m._id) === String(metaId))?.resultado;
+                                                    } else {
+                                                      val = h.metas?.find(m => String(m.metaId || m._id) === String(metaId))?.resultado;
+                                                    }
+                                                    if (val !== null && val !== undefined) {
+                                                      evaluados++;
+                                                      const op = umbralMeta.operador || ">=";
+                                                      const tol = Number(umbralMeta.tolerancia || 0);
+                                                      const v = Number(val);
+                                                      let passed = false;
+                                                      if (op === ">=") passed = v >= (target - tol);
+                                                      else if (op === ">") passed = v > (target - tol);
+                                                      else if (op === "<=") passed = v <= (target + tol);
+                                                      else if (op === "<") passed = v < (target + tol);
+                                                      else if (op === "=" || op === "==" || op === "===") passed = Math.abs(v - target) <= tol;
+                                                      if (passed) cumplidos++;
+                                                    }
+                                                  }
+                                                  const metReq = cumplidos >= required;
+                                                  umbralInfo = { cumplidos, required, evaluados, metReq };
+                                                }
+
                                                 return (
                                                   <>
                                                     <div className={`text-4xl font-black tracking-tight ${scoreInfo.isPendingThreshold ? "text-amber-500" : "text-slate-800"}`}>
@@ -1729,6 +1891,22 @@ export default function EvaluacionFlujo() {
                                                       <span className="text-xl text-slate-300 ml-1">%</span>
                                                     </div>
                                                     <div className="text-[10px] text-slate-400 font-medium mt-1">{scoreInfo.label}</div>
+                                                    {acumInfo && (
+                                                      <div className="text-[10px] text-purple-500 font-bold mt-1 flex items-center gap-1">
+                                                        <span>Acumulado:</span>
+                                                        <span className="font-black">{acumInfo.acumVal}</span>
+                                                        <span className="text-purple-300">/</span>
+                                                        <span>{acumInfo.target} {acumInfo.unidad}</span>
+                                                      </div>
+                                                    )}
+                                                    {umbralInfo && (
+                                                      <div className={`text-[10px] font-bold mt-1 flex items-center gap-1 ${umbralInfo.metReq ? "text-emerald-500" : "text-amber-500"}`}>
+                                                        <span className="font-black">{umbralInfo.cumplidos}</span>
+                                                        <span className="font-normal">de</span>
+                                                        <span className="font-black">{umbralInfo.required}</span>
+                                                        <span className="font-normal">períodos cumplidos</span>
+                                                      </div>
+                                                    )}
                                                   </>
                                                 );
                                               })()}
@@ -1769,7 +1947,7 @@ export default function EvaluacionFlujo() {
                                       </div>
                                     </div>
                                   </div>
-                                </div>
+                                </div >
                               ) : (
                                 /* --- EMPTY STATE (No Period Selected) --- */
                                 <div className="flex flex-col items-center justify-center h-[400px] text-slate-400 bg-slate-50">
@@ -1795,7 +1973,7 @@ export default function EvaluacionFlujo() {
                   </div>
                 )}
               </div>
-            </div>
+            </div >
 
           )
           }
@@ -2417,68 +2595,72 @@ export default function EvaluacionFlujo() {
                               </td>
                             </tr>
                             {/* Metas Detail Sub-rows - SECTIONAL LAYOUT */}
-                            {o.metasDetails?.map((m, idx) => (
-                              <tr key={`${i}-m-${idx}`} className="bg-slate-50/40 hover:bg-slate-50 border-b border-slate-200/60">
-                                {/* SECTION 1: META INFO */}
-                                <td className="pl-6 py-3 pr-4 border-l-[6px] border-slate-300 w-[30%] align-top">
-                                  <div className="flex flex-col gap-1.5">
-                                    <div className="flex items-start gap-2">
-                                      <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0"></div>
-                                      <span className="text-sm font-semibold text-slate-800 leading-tight">{m.nombre}</span>
-                                    </div>
-                                    <div className="pl-3.5">
-                                      <Badge variant="outline" className="h-5 bg-white border-slate-300 text-slate-600 font-normal">
-                                        Meta: {m.config.operador || '>='} {m.config.target} {m.config.unidad}
-                                      </Badge>
-                                    </div>
-                                  </div>
-                                </td>
-
-                                {/* SECTION 2: CONFIGURATION */}
-                                <td colSpan={2} className="px-4 py-3 border-l border-slate-200/60 w-[20%] align-top bg-slate-100/30">
-                                  <div className="flex flex-col gap-2">
-                                    <div className="flex justify-between items-center text-xs text-slate-500">
-                                      <span>Peso:</span>
-                                      <span className="font-bold text-slate-700">{m.peso ? `${m.peso}%` : 'Equitativo'}</span>
-                                    </div>
-                                    <div className="flex flex-col gap-1">
-                                      <div className="flex items-center gap-2">
-                                        <Badge variant="secondary" className="bg-slate-200 text-slate-700 hover:bg-slate-200 text-[10px] justify-center">
-                                          {m.config.regla}
-                                        </Badge>
-                                        {m.config.regla === 'umbral_periodos' && m.config.umbral > 0 && (
-                                          <span className="text-[10px] font-mono text-slate-600 bg-slate-100 px-1 rounded border border-slate-200">
-                                            Min: {m.config.umbral}
-                                          </span>
-                                        )}
-                                      </div>
-                                      {m.config.acum && <span className="text-[9px] text-center text-slate-400 font-bold tracking-wider uppercase">Acumulativo</span>}
-                                    </div>
-                                    <div className="flex flex-wrap gap-1 mt-1">
-                                      {m.config.esfuerzo && <span className="text-[8px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-100 font-medium">Esfuerzo</span>}
-                                      {m.config.over && <span className="text-[8px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100 font-medium">Permite Over</span>}
-                                    </div>
-                                  </div>
-                                </td>
-
-                                {/* SECTION 3: RESULTS (BREAKDOWN) */}
-                                <td colSpan={4} className="px-4 py-3 border-l border-slate-200/60 w-[50%] align-center bg-white">
-                                  <div className="grid grid-cols-4 gap-3 w-full">
-                                    {/* Using Grid to enforce alignment and wrapping into rows if needed */}
-                                    {m.breakdown?.map((b, bix) => (
-                                      <div key={bix} className="flex flex-col border border-slate-200 rounded-md overflow-hidden shadow-sm">
-                                        <div className="bg-slate-50 border-b border-slate-100 px-2 py-1 text-center">
-                                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{b.period}</span>
+                            {o.metasDetails?.map((m, idx) => {
+                              return (
+                                <React.Fragment key={`${i}-m-${idx}`}>
+                                  <tr className="bg-slate-50/40 hover:bg-slate-50 border-b border-slate-200/60">
+                                    {/* SECTION 1: META INFO */}
+                                    <td className="pl-6 py-3 pr-4 border-l-[6px] border-slate-300 w-[30%] align-top">
+                                      <div className="flex flex-col gap-1.5">
+                                        <div className="flex items-start gap-2">
+                                          <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0"></div>
+                                          <span className="text-sm font-semibold text-slate-800 leading-tight">{m.nombre}</span>
                                         </div>
-                                        <div className="bg-white px-2 py-1.5 text-center">
-                                          <span className="text-sm font-bold text-slate-800">{Number(b.val).toLocaleString()}</span>
+                                        <div className="pl-3.5">
+                                          <Badge variant="outline" className="h-5 bg-white border-slate-300 text-slate-600 font-normal">
+                                            Meta: {m.config.operador || '>='} {m.config.target} {m.config.unidad}
+                                          </Badge>
                                         </div>
                                       </div>
-                                    ))}
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
+                                    </td>
+
+                                    {/* SECTION 2: CONFIGURATION */}
+                                    <td colSpan={2} className="px-4 py-3 border-l border-slate-200/60 w-[20%] align-top bg-slate-100/30">
+                                      <div className="flex flex-col gap-2">
+                                        <div className="flex justify-between items-center text-xs text-slate-500">
+                                          <span>Peso:</span>
+                                          <span className="font-bold text-slate-700">{m.peso ? `${m.peso}%` : 'Equitativo'}</span>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <div className="flex items-center gap-2">
+                                            <Badge variant="secondary" className="bg-slate-200 text-slate-700 hover:bg-slate-200 text-[10px] justify-center">
+                                              {m.config.regla}
+                                            </Badge>
+                                            {m.config.regla === 'umbral_periodos' && m.config.umbral > 0 && (
+                                              <span className="text-[10px] font-mono text-slate-600 bg-slate-100 px-1 rounded border border-slate-200">
+                                                Min: {m.config.umbral}
+                                              </span>
+                                            )}
+                                          </div>
+                                          {m.config.acum && <span className="text-[9px] text-center text-slate-400 font-bold tracking-wider uppercase">Acumulativo</span>}
+                                        </div>
+                                        <div className="flex flex-wrap gap-1 mt-1">
+                                          {m.config.esfuerzo && <span className="text-[8px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-100 font-medium">Esfuerzo</span>}
+                                          {m.config.over && <span className="text-[8px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100 font-medium">Permite Over</span>}
+                                        </div>
+                                      </div>
+                                    </td>
+
+                                    {/* SECTION 3: RESULTS (BREAKDOWN) */}
+                                    <td colSpan={4} className="px-4 py-3 border-l border-slate-200/60 w-[50%] align-center bg-white">
+                                      <div className="grid grid-cols-4 gap-3 w-full">
+                                        {/* Using Grid to enforce alignment and wrapping into rows if needed */}
+                                        {m.breakdown?.map((b, bix) => (
+                                          <div key={bix} className="flex flex-col border border-slate-200 rounded-md overflow-hidden shadow-sm">
+                                            <div className="bg-slate-50 border-b border-slate-100 px-2 py-1 text-center">
+                                              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{b.period}</span>
+                                            </div>
+                                            <div className="bg-white px-2 py-1.5 text-center">
+                                              <span className="text-sm font-bold text-slate-800">{Number(b.val).toLocaleString()}</span>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                </React.Fragment>
+                              );
+                            })}
                           </React.Fragment>
                         ))}
                       </tbody>

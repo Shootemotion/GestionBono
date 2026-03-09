@@ -1,6 +1,8 @@
 // backend/src/controllers/empleados.controller.js
 import Empleado from '../models/Empleado.model.js';
 import Carrera from '../models/Carrera.model.js';
+import OverrideObjetivo from '../models/OverrideObjetivo.model.js';
+import Plantilla from '../models/Plantilla.model.js';
 import mongoose from "mongoose";
 
 export const getEmpleados = async (req, res, next) => {
@@ -159,11 +161,46 @@ export const updateEmpleado = async (req, res, next) => {
     // AUTO-CIERRE DE CARRERA SI SE DESVINCULA
     // ---------------------------------------------------------
     if (updates.estadoLaboral === "DESVINCULADO") {
-      // Buscar el puesto actual (hasta: null) y cerrarlo a hoy
       const puestoActual = await Carrera.findOne({ empleado: id, hasta: null });
       if (puestoActual) {
         puestoActual.hasta = new Date();
         await puestoActual.save();
+      }
+    }
+
+    // ---------------------------------------------------------
+    // LIMPIEZA DE OVERRIDES AL CAMBIAR DE SECTOR
+    // Solo borra overrides de INCLUSIÓN (excluido=false) de plantillas
+    // del sector anterior. Los overrides de exclusión se preservan siempre.
+    // ---------------------------------------------------------
+    if (updates.sector) {
+      const empActual = await Empleado.findById(id).select('sector').lean();
+      const oldSectorId = empActual?.sector ? String(empActual.sector) : null;
+      const newSectorId = String(updates.sector);
+
+      if (oldSectorId && oldSectorId !== newSectorId) {
+        // Encontrar todas las plantillas del sector anterior
+        const plantillasViejo = await Plantilla.find(
+          { scopeType: 'sector', scopeId: empActual.sector },
+          { _id: 1 }
+        ).lean();
+
+        if (plantillasViejo.length > 0) {
+          const tplIds = plantillasViejo.map(p => p._id);
+          // Borrar SOLO los overrides de inclusión (excluido=false) de esas plantillas
+          // Los overrides con excluido=true (exclusiones deliberadas) se mantienen
+          const resultado = await OverrideObjetivo.deleteMany({
+            empleado: id,
+            template: { $in: tplIds },
+            excluido: false,  // ← solo inclusiones, nunca exclusiones
+          });
+          if (resultado.deletedCount > 0) {
+            console.log(
+              `[SectorChange] Empleado ${id}: sector ${oldSectorId} → ${newSectorId}. ` +
+              `Overrides de inclusión eliminados: ${resultado.deletedCount}`
+            );
+          }
+        }
       }
     }
 

@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import Usuario from '../models/Usuario.model.js';
 import Empleado from '../models/Empleado.model.js';
+import { sendCredentialsEmail } from '../utils/mailer.js';
 
 // Util: asegura que devolvemos un usuario sin hash
 const safeUser = (u) => {
@@ -14,7 +15,7 @@ const safeUser = (u) => {
 // body: { email, rol, empleadoId? }
 export const crearUsuario = async (req, res) => {
   try {
-    let { email, rol = 'visor', empleadoId, permisos } = req.body || {};
+    let { email, rol = 'visor', empleadoId, permisos, enviarEmail = true } = req.body || {};
 
     if (!email) return res.status(400).json({ message: 'Email requerido' });
 
@@ -49,6 +50,11 @@ export const crearUsuario = async (req, res) => {
         activo: true,
         permisos: finalPerms,
       });
+
+      if (enviarEmail !== false) {
+        await sendCredentialsEmail(email, tempPwd, false);
+      }
+
       return res.status(201).json({ action: 'created', user: safeUser(user), tempPassword: tempPwd });
     }
 
@@ -61,6 +67,11 @@ export const crearUsuario = async (req, res) => {
       existing.activo = true;
       if (finalPerms.length) existing.permisos = finalPerms;
       await existing.save();
+
+      if (enviarEmail !== false) {
+        await sendCredentialsEmail(email, tempPwd, false);
+      }
+
       return res.json({ action: 'linked', user: safeUser(existing), tempPassword: tempPwd });
     }
 
@@ -70,6 +81,11 @@ export const crearUsuario = async (req, res) => {
       existing.status = 'invited';
       existing.rol = rol || existing.rol;   // 🔥 CORRECCIÓN
       await existing.save();
+
+      if (enviarEmail !== false) {
+        await sendCredentialsEmail(email, tempPwd, true);
+      }
+
       return res.json({ action: 'reset', user: safeUser(existing), tempPassword: tempPwd });
     }
 
@@ -90,6 +106,7 @@ export const crearUsuario = async (req, res) => {
 export const resetPassword = async (req, res) => {
   try {
     const { id } = req.params;
+    const { enviarEmail = true } = req.body || {};
 
     const tempPwd = crypto.randomBytes(4).toString('hex');
     const passwordHash = await bcrypt.hash(tempPwd, 10);
@@ -100,6 +117,10 @@ export const resetPassword = async (req, res) => {
       { new: true }
     );
     if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+    if (enviarEmail !== false) {
+      await sendCredentialsEmail(user.email, tempPwd, true);
+    }
 
     return res.json({ user: safeUser(user), tempPassword: tempPwd });
   } catch (err) {

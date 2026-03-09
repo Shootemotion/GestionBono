@@ -5,6 +5,19 @@ export const clamp = (v, max = 100) =>
     Math.max(0, Math.min(max, Number(v) || 0));
 
 /**
+ * Parses numeric value, treating null/undefined as 0, 
+ * and converting Spanish comma decimals to dots (e.g. "0,5" -> 0.5)
+ */
+export const valNumSeguro = (v) => {
+    if (v === null || v === undefined || v === '') return 0;
+    if (typeof v === 'string') {
+        const parsed = Number(v.replace(',', '.'));
+        return isNaN(parsed) ? 0 : parsed;
+    }
+    return isNaN(Number(v)) ? 0 : Number(v);
+};
+
+/**
  * Normaliza la config de una meta desde Plantilla o metasResultados.
  *
  * metaConfig:
@@ -26,27 +39,22 @@ export function normalizarConfigMeta(metaConfig = {}) {
     if (u.includes("cumple")) tipoUnidad = "binario";
     else if (u.startsWith("porc")) tipoUnidad = "porcentual";
 
-    const esperado =
-        metaConfig.esperado !== undefined
-            ? Number(metaConfig.esperado)
-            : metaConfig.target !== undefined
-                ? Number(metaConfig.target)
-                : 0;
+    const esperadoStr = metaConfig.esperado !== undefined ? metaConfig.esperado : metaConfig.target;
+    const esperado = valNumSeguro(esperadoStr);
 
     const operador = metaConfig.operador || ">=";
 
     const reconoceEsfuerzo = !!metaConfig.reconoceEsfuerzo;
     const permiteOver = !!metaConfig.permiteOver;
-    const tolerancia = Number(metaConfig.tolerancia ?? 0) || 0;
+    const tolerancia = valNumSeguro(metaConfig.tolerancia);
 
     const modoAcumulacion = metaConfig.modoAcumulacion || "periodo";
     const reglaCierre = metaConfig.reglaCierre || "promedio";
 
-    const umbralPeriodos =
-        Number(metaConfig.umbralPeriodos ?? metaConfig.umbralDePeriodos ?? 0) || 0;
+    const umbralPeriodos = valNumSeguro(metaConfig.umbralPeriodos ?? metaConfig.umbralDePeriodos);
 
     const maxOver = permiteOver
-        ? Number(metaConfig.maxOver ?? 120) || 120
+        ? valNumSeguro(metaConfig.maxOver ?? 120) || 120
         : 100;
 
     return {
@@ -98,7 +106,7 @@ export function calcularScorePeriodoMeta(cfg, valorEvaluado) {
         cumple = valNum - tol <= esperado;
     } else if (op === "<") {
         cumple = valNum - tol < esperado;
-    } else if (op === "=") {
+    } else if (op === "=" || op === "==" || op === "===") {
         cumple = Math.abs(valNum - esperado) <= tol;
     }
 
@@ -227,8 +235,10 @@ export function calcularResultadoMeta(metaConfig = {}, registros = []) {
         } else {
             // Si no cumple el umbral, vemos si reconoce esfuerzo
             if (cfg.reconoceEsfuerzo) {
-                scoreMeta = total > 0 ? (cumplidos / total) * 100 : 0;
+                // Return proportional credit based on required threshold
+                scoreMeta = umbralNecesario > 0 ? (cumplidos / umbralNecesario) * 100 : 0;
             } else {
+                // Return 0 if it doesn't recognize effort and haven't met threshold
                 scoreMeta = 0;
             }
         }

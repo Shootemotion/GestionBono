@@ -122,19 +122,7 @@ function getHybridStatus(hito, fechaRef, itemType) {
   const diffDays = Math.ceil(diffMs / MS_PER_DAY);
 
   // 4. Vencido
-  if (diffDays < 0) {
-    // DEBUG: Log why it is vencido
-    if (itemType === "feedback" || hito?.estado) {
-      console.log(`[GanttView Debug] Vencido detected:`, {
-        itemType,
-        estado: hito?.estado,
-        fechaRef,
-        diffDays,
-        hito
-      });
-    }
-    return "vencido";
-  }
+  if (diffDays < 0) return "vencido";
 
   // 5. Por vencer (próximos 7 días)
   if (diffDays <= 7) return "por_vencer";
@@ -594,22 +582,39 @@ export default function GanttView({
           {/* Body */}
           <div className="p-4 space-y-3">
             <div className="max-h-[300px] overflow-y-auto pr-1 relative custom-scrollbar">
-              <div className="space-y-2.5">
-                {hoverData.items.map((it, i) => (
-                  <div key={i} className="flex items-start gap-2.5 group">
-                    <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0 group-hover:scale-125 transition-transform" />
-                    <div className="flex flex-col">
-                      <span className="text-slate-600 font-medium leading-snug text-xs">
-                        {it.item.nombre}
-                      </span>
-                      {/* DEBUG INFO VISIBLE */}
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        (Sc: {it.hito.actual ?? "null"} | St: {it.hito.estado || "—"} | ID: {it.item._id.slice(-4)})
-                      </span>
+              {(() => {
+                const objetivos = hoverData.items.filter(it => it.item._tipo === 'objetivo' || it.item._tipo === 'meta' || (!it.item._tipo && it.item.peso !== undefined));
+                const aptitudes = hoverData.items.filter(it => it.item._tipo === 'aptitud');
+                const feedbacks = hoverData.items.filter(it => it.item._tipo === 'feedback');
+                const otros = hoverData.items.filter(it => !objetivos.includes(it) && !aptitudes.includes(it) && !feedbacks.includes(it));
+
+                const renderSection = (title, items, dotColor) => items.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1.5 flex items-center gap-1">
+                      <span className={`inline-block w-1.5 h-1.5 rounded-full ${dotColor}`}></span>
+                      {title} ({items.length})
+                    </p>
+                    <div className="space-y-1.5 pl-3">
+                      {items.map((it, i) => (
+                        <div key={i} className="flex items-start gap-2 group">
+                          <div className={`mt-1.5 w-1.5 h-1.5 rounded-full ${dotColor} shrink-0 group-hover:scale-125 transition-transform`} />
+                          <span className="text-slate-600 font-medium leading-snug text-xs">
+                            {it.item.nombre}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                ))}
-              </div>
+                );
+
+                return (
+                  <div>
+                    {renderSection('Objetivos', objetivos.length > 0 ? objetivos : otros, 'bg-blue-500')}
+                    {renderSection('Competencias', aptitudes, 'bg-amber-500')}
+                    {renderSection('Feedback', feedbacks, 'bg-purple-500')}
+                  </div>
+                );
+              })()}
             </div>
           </div>
 

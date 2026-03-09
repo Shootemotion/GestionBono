@@ -4,6 +4,33 @@ import { useAuth } from "@/context/AuthContext";
 import { useTour } from "@/hooks/useTour";
 import { dashEmpleado } from "@/lib/dashboard";
 import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
+import { API_ORIGIN } from "@/lib/api";
+
+function initialsFromUser(user) {
+  const base =
+    user?.fullName ||
+    (user?.apellido ? `${user.apellido} ${user.nombre ?? ""}` : user?.email) ||
+    "";
+  return (
+    base
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((p) => p[0]?.toUpperCase())
+      .join("") || "US"
+  );
+}
+
+function fotoSrc(empleado) {
+  const url = empleado?.fotoUrl;
+  if (!url) return null;
+  if (/^https?:\/\//i.test(url)) return url;
+  const base =
+    typeof API_ORIGIN === "string" && API_ORIGIN
+      ? API_ORIGIN
+      : window.location.origin;
+  return `${base.replace(/\/+$/, "")}/${String(url).replace(/^\/+/, "")}`;
+}
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,7 +64,9 @@ import {
   Trophy,
   Megaphone,
   Settings2,
-  Zap
+  Zap,
+  CircleCheck,
+  CircleAlert
 } from "lucide-react";
 import { ReporteFinal } from "@/components/ReporteFinal";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine, Legend, AreaChart, Area } from "recharts";
@@ -161,6 +190,13 @@ const ObjectiveCard = ({ obj, currentPeriod, expanded, onToggle }) => {
               {obj.hitos?.map((h) => {
                 const colorClass = getHitoColorClass(h);
                 const isSelected = h.periodo === selectedPeriod;
+                // Compute the real % score for this hito using the same logic as EvaluacionFlujo
+                const hitoScore = h.actual !== null && h.actual !== undefined
+                  ? (() => {
+                    const prog = calculateObjectiveProgress(obj, [h]);
+                    return prog !== null && prog !== undefined ? Math.round(prog) : Math.round(h.actual);
+                  })()
+                  : null;
                 return (
                   <div
                     key={h.periodo}
@@ -168,7 +204,7 @@ const ObjectiveCard = ({ obj, currentPeriod, expanded, onToggle }) => {
                     className={`flex flex-col items-center justify-center p-2 rounded border min-w-[70px] transition-all cursor-pointer ${colorClass} ${isSelected ? 'ring-2 ring-blue-500 ring-offset-1' : 'opacity-70 hover:opacity-100'}`}
                   >
                     <span className="text-[10px] font-bold uppercase">{h.periodo}</span>
-                    <span className="text-xs font-semibold">{h.actual !== null ? `${Math.round(h.actual)}%` : "-"}</span>
+                    <span className="text-xs font-semibold">{hitoScore !== null ? `${hitoScore}%` : "-"}</span>
                   </div>
                 );
               })}
@@ -185,7 +221,10 @@ const ObjectiveCard = ({ obj, currentPeriod, expanded, onToggle }) => {
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-slate-600">Score Hito:</span>
                 <span className={`text-lg font-bold ${hasResult ? 'text-emerald-600' : 'text-slate-300'}`}>
-                  {hasResult ? `${Number(currentHito.actual).toFixed(1)}%` : "0.0%"}
+                  {hasResult ? (() => {
+                    const prog = calculateObjectiveProgress(obj, [currentHito]);
+                    return `${Number(prog ?? currentHito.actual).toFixed(1)}%`;
+                  })() : "0%"}
                 </span>
               </div>
             </div>
@@ -260,7 +299,9 @@ const ObjectiveCard = ({ obj, currentPeriod, expanded, onToggle }) => {
                       // Assuming single-meta per objective is the dominant pattern for this view
                       const primaryMeta = currentHito?.metas?.[0];
                       if (primaryMeta && primaryMeta.resultado !== null) {
-                        return `${primaryMeta.resultado} ${primaryMeta.unidad || ""}`;
+                        const rawVal = Number(primaryMeta.resultado);
+                        const displayVal = Number.isInteger(rawVal) ? rawVal : rawVal.toFixed(1);
+                        return `${displayVal} ${primaryMeta.unidad || ""}`;
                       }
                       // Fallback to actual score if no meta result found (legacy)
                       // But label clearly if it is a score
@@ -289,6 +330,8 @@ export default function MiDesempeno() {
   const { user } = useAuth();
   const empleadoNombre = user?.empleado?.nombre || user?.empleadoId?.nombre || user?.nombre || "Colaborador";
   const empleadoId = user?.empleado?._id || user?.empleadoId?._id || user?.empleadoId || user?._id;
+
+  const avatarSrc = useMemo(() => fotoSrc(user?.empleado), [user?.empleado?.fotoUrl]);
 
   const [data, setData] = useState(null);
   const [feedbacks, setFeedbacks] = useState([]);
@@ -557,9 +600,6 @@ export default function MiDesempeno() {
 
     data.objetivos?.forEach(obj => {
       const isCumulative = obj.metas?.some(m => m.acumulativa || m.modoAcumulacion === 'acumulativo');
-      // For cumulative, expected is a fraction of the weight based on time.
-      // For non-cumulative (maintenance), expected is 100% of the weight always.
-      // If timeFraction > 1 (e.g. Q4 or something), clamp to 1? Assuming timeFraction is max 1.
       const factor = isCumulative ? timeFraction : 1;
 
       expectedObjScore += (obj.peso || 0) * factor;
@@ -864,6 +904,13 @@ export default function MiDesempeno() {
     const showScores = ["SENT", "PENDING_HR", "CLOSED", "ACKNOWLEDGED"].includes(selectedFeedback?.estado);
     const metaLabel = activeTab === 'obj' ? `Meta: ${maxScore}%` : `Meta: ${maxScore}%`;
 
+    // Recalculate progress using the UPDATED logic (important for umbral: binary per period, no partial credit within period)
+    // Pass only hitos up to and including displayPeriod for an accurate "as of this period" snapshot.
+    const hitosUpToDisplay = item.hitos?.filter(h => h.periodo && getPeriodMonth(h.periodo) <= getPeriodMonth(displayPeriod)) || [];
+    const recalcProgress = showScores && activeTab === 'obj' && hitosUpToDisplay.length > 0
+      ? calculateObjectiveProgress(item, hitosUpToDisplay)
+      : null;
+
     return (
       <div className="space-y-6 animate-in fade-in duration-300">
         {/* Header - Clean & Simple */}
@@ -901,9 +948,12 @@ export default function MiDesempeno() {
             {showScores ? (
               <div className="flex flex-col items-end">
                 <span className="text-3xl font-extrabold text-zinc-800 tracking-tight">
-                  {displayHito?.actual ?? 0}%
+                  {recalcProgress !== null
+                    ? Number(recalcProgress).toFixed(1)
+                    : (typeof displayHito?.actual === 'number' ? Number(displayHito.actual).toFixed(1) : (displayHito?.actual ?? 0))
+                  }%
                 </span>
-                <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider mt-1">Cumplimiento</span>
+                <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider mt-1">Cumplimiento Acumulado</span>
               </div>
             ) : (
               <span className="text-2xl text-zinc-600 font-bold">--</span>
@@ -939,7 +989,7 @@ export default function MiDesempeno() {
                   }
                 }
                 const target = metaResult?.esperado ?? metaDef?.target ?? 0;
-                const isLessBetter = metaDef?.operador === "<=";
+                const isLessBetter = metaDef?.operador === '<=' || metaDef?.operador === '<';
 
                 // Compliance Calculation respects Operator
                 let rawCompliance = 0;
@@ -967,123 +1017,195 @@ export default function MiDesempeno() {
                 const isSuccess = isLessBetter ? (valorEvaluado <= target) : (valorEvaluado >= target);
 
                 return (
-                  <div key={idx} className="bg-white border border-zinc-200 rounded-xl p-6 shadow-sm hover:shadow-md transition-all group">
-                    {/* Meta Header */}
-                    <div className="flex justify-between items-start mb-6">
-                      <h3 className="text-base font-bold text-zinc-800">{metaDef?.nombre}</h3>
-                      <span className="text-[10px] bg-zinc-100 border border-zinc-200 text-zinc-600 px-2 py-1 rounded-md font-bold uppercase tracking-wide shrink-0 ml-4">
+                  <div key={idx} className="bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm transition-all">
+
+                    {/* ── HEADER ─────────────────────────────────────────────── */}
+                    <div className="flex justify-between items-center px-5 py-3.5 border-b border-zinc-100 bg-zinc-50/50">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
+                          <Target className="w-3.5 h-3.5 text-blue-500" />
+                        </div>
+                        <h3 className="text-sm font-bold text-zinc-800">{metaDef?.nombre}</h3>
+                      </div>
+                      <span className="text-[10px] bg-blue-50 border border-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide shrink-0 ml-4 whitespace-nowrap">
                         {getCierreLabel(metaDef)}
                       </span>
                     </div>
 
-                    {/* Main Grid Layout: Config (2/3) | Result (1/3) */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* ── BODY: Config | Result ───────────────────────────────── */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-zinc-100">
 
-                      {/* Left: Configuration Details */}
-                      <div className="lg:col-span-2 bg-zinc-50 border border-zinc-100 rounded-lg p-5">
-                        <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-3 flex items-center gap-1">
-                          <Settings2 className="w-3 h-3" /> Configuración de Meta
-                        </div>
-                        <div className="flex items-baseline gap-2 mb-3">
-                          <span className="text-sm font-semibold text-zinc-500">Objetivo:</span>
-                          <span className={`${isLessBetter ? 'text-amber-600' : 'text-zinc-800'} text-xl font-bold`}>{metaDef?.operador || "="} {target}</span>
-                        </div>
+                      {/* LEFT: Config table */}
+                      <div className="lg:col-span-2 p-5">
+                        <p className="text-[9px] font-black text-zinc-400 uppercase tracking-[0.12em] mb-3">Configuración de evaluación</p>
 
-                        <div className="text-[11px] text-zinc-400 mb-4 space-y-1.5 font-medium leading-relaxed">
-                          <p>Se evalúa en unidad <span className="text-zinc-700 font-semibold">{metaDef?.unidad || "Numérica"}</span>.</p>
-                          <p>{metaDef?.modoAcumulacion === "acumulativo" ? "El resultado se acumula periodo a periodo." : "El resultado es independiente por periodo."}</p>
-                          <p>Tolerancia permitida de <span className="text-zinc-700 font-semibold">{metaDef?.tolerancia ?? 0}</span>.</p>
-                        </div>
+                        {/* Uniform rows */}
+                        <table className="w-full text-xs border-collapse">
+                          <tbody>
+                            {/* Meta / Objetivo */}
+                            <tr className="border-b border-zinc-200 odd:bg-zinc-50/60">
+                              <td className="py-1.5 pr-4 text-zinc-400 font-semibold w-28 align-top text-[11px]">Objetivo</td>
+                              <td className={`py-1.5 font-bold text-[11px] ${isLessBetter ? 'text-amber-600' : 'text-emerald-700'}`}>
+                                {metaDef?.operador || ">="} {target} <span className="text-zinc-400 font-medium">{metaDef?.unidad || "puntos"}</span>
+                              </td>
+                            </tr>
 
-                        <div className="space-y-2 pt-3 border-t border-zinc-200/60">
-                          {metaDef?.reconoceEsfuerzo ? (
-                            <div className="flex items-start gap-2 text-[11px] text-amber-500 font-medium">
-                              <Handshake className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
-                              <span>Reconoce esfuerzo parcial si no se alcanza la meta.</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-start gap-2 text-[11px] text-zinc-600">
-                              <span className="w-3.5 h-3.5 shrink-0" /> <span>No aplica esfuerzo parcial.</span>
-                            </div>
-                          )}
+                            {/* Dirección */}
+                            <tr className="border-b border-zinc-200 odd:bg-zinc-50/60">
+                              <td className="py-1.5 pr-4 text-zinc-400 font-semibold align-top text-[11px]">Dirección</td>
+                              <td className="py-1.5 text-zinc-700 font-medium text-[11px]">
+                                {isLessBetter ? "Minimizar (menor es mejor)" : "Maximizar (mayor es mejor)"}
+                              </td>
+                            </tr>
 
-                          {metaDef?.permiteOver ? (
-                            <div className="flex items-start gap-2 text-[11px] text-emerald-400 font-medium">
-                              <TrendingUp className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-500" />
-                              <span>Puede superar el 100% (Over Compliance).</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-start gap-2 text-[11px] text-zinc-600">
-                              <span className="w-3.5 h-3.5 shrink-0" /> <span>Tope máximo 100%.</span>
-                            </div>
-                          )}
-                        </div>
+                            {/* Acumulación */}
+                            <tr className="border-b border-zinc-200 odd:bg-zinc-50/60">
+                              <td className="py-1.5 pr-4 text-zinc-400 font-semibold align-top text-[11px]">Acumulación</td>
+                              <td className="py-1.5 text-zinc-700 font-medium text-[11px]">
+                                {metaDef?.modoAcumulacion === "acumulativo" ? "Acumulativo (suma período a período)" : "Por período (evaluación independiente)"}
+                              </td>
+                            </tr>
+
+                            {/* Regla de cierre */}
+                            <tr className="border-b border-zinc-200 odd:bg-zinc-50/60">
+                              <td className="py-1.5 pr-4 text-zinc-400 font-semibold w-28 align-top text-[11px]">Regla cierre</td>
+                              <td className="py-1.5 text-zinc-700 font-medium text-[11px]">
+                                {metaDef?.reglaCierre === "umbral_periodos"
+                                  ? `Umbral: cumplir ${metaDef.umbralPeriodos || "?"} de ${item.hitos?.length || "?"} períodos`
+                                  : metaDef?.reglaCierre === "cierre_unico"
+                                    ? "Cierre único (se evalúa al final)"
+                                    : "Promedio de todos los períodos"}
+                              </td>
+                            </tr>
+
+                            {/* Tolerancia (solo si > 0) */}
+                            {(metaDef?.tolerancia ?? 0) > 0 && (
+                              <tr className="border-b border-zinc-200 odd:bg-zinc-50/60">
+                                <td className="py-1.5 pr-4 text-zinc-400 font-semibold align-top text-[11px]">Tolerancia</td>
+                                <td className="py-1.5 text-zinc-700 font-medium text-[11px]">±{metaDef.tolerancia} {metaDef?.unidad || ""}</td>
+                              </tr>
+                            )}
+
+                            {/* Esfuerzo parcial */}
+                            <tr className="border-b border-zinc-200 odd:bg-zinc-50/60">
+                              <td className="py-1.5 pr-4 text-zinc-400 font-semibold align-top text-[11px]">Esfuerzo parcial</td>
+                              <td className={`py-1.5 font-medium text-[11px] ${metaDef?.reconoceEsfuerzo ? 'text-amber-600' : 'text-zinc-500'}`}>
+                                {metaDef?.reconoceEsfuerzo
+                                  ? metaDef?.reglaCierre === "umbral_periodos"
+                                    ? "Sí (por cantidad de períodos cumplidos, no por avance interno)"
+                                    : "Sí (se valora el progreso parcial)"
+                                  : "No (todo o nada)"}
+                              </td>
+                            </tr>
+
+                            {/* Cap */}
+                            <tr>
+                              <td className="py-1.5 pr-4 text-zinc-400 font-semibold align-top text-[11px]">Tope máximo</td>
+                              <td className={`py-1.5 font-medium text-[11px] ${metaDef?.permiteOver ? 'text-emerald-600' : 'text-zinc-500'}`}>
+                                {metaDef?.permiteOver ? "Puede superar 100% (over compliance)" : "Tope en 100%"}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
                       </div>
 
-                      {/* Right: Execution Result */}
-                      <div className="lg:col-span-1 flex flex-col justify-between bg-zinc-50 border border-zinc-200 rounded-lg p-5 relative overflow-hidden">
-                        <div>
-                          <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-1">
-                            <Zap className="w-3 h-3" /> Resultado Obtenido
-                          </div>
+                      {/* RIGHT: Result — stacked */}
+                      <div className="lg:col-span-1 flex flex-col divide-y divide-zinc-200 border-l border-zinc-200">
+
+                        {/* Result value */}
+                        <div className="p-5 flex-1 flex flex-col justify-center">
+                          <p className="text-[9px] font-black text-zinc-400 uppercase tracking-[0.12em] mb-3">
+                            Resultado obtenido
+                            <span className="normal-case font-normal text-zinc-300 ml-1">({displayPeriod})</span>
+                          </p>
+
                           {showScores ? (
-                            <div className="flex flex-col items-start gap-1 mb-4 relative z-10">
-                              <span className={`text-5xl font-black tracking-tighter ${isSuccess ? 'text-emerald-500' : 'text-zinc-700'}`}>
+                            <div className="flex flex-col gap-1.5">
+                              <div className={`text-4xl font-black tracking-tighter leading-none ${isSuccess ? 'text-emerald-500' : 'text-zinc-800'}`}>
                                 {valorEvaluado ?? "--"}
-                              </span>
-                              <span className="text-xs font-bold text-zinc-500 uppercase tracking-wide">{Math.round(clampedCompliance)}% Logrado</span>
+                                {metaDef?.unidad && <span className="text-base font-semibold text-zinc-400 ml-1">{metaDef.unidad}</span>}
+                              </div>
+                              <div className={`inline-flex items-center gap-1 text-[11px] font-bold ${isSuccess ? 'text-emerald-600' : 'text-orange-500'}`}>
+                                {isSuccess
+                                  ? <><CircleCheck className="w-3 h-3" /> Meta alcanzada</>
+                                  : <><CircleAlert className="w-3 h-3" /> Debajo de la meta</>
+                                }
+                              </div>
                             </div>
                           ) : (
-                            <div className="flex h-32 items-center justify-center text-zinc-600 text-sm font-medium italic">
-                              Pendiente
+                            <div className="flex flex-col items-center justify-center gap-2 text-zinc-300 py-4">
+                              <Hourglass className="w-6 h-6 opacity-50" />
+                              <span className="text-xs font-medium italic">Aún no disponible</span>
                             </div>
                           )}
                         </div>
 
+                        {/* Progress */}
                         {showScores && (
-                          <div className="w-full h-2 bg-zinc-200 rounded-full overflow-hidden relative z-10 mt-auto">
-                            <div
-                              className={`h-full rounded-full transition-all duration-700 ease-out ${isSuccess ? 'bg-emerald-500' : 'bg-zinc-600'}`}
-                              style={{ width: `${clampedCompliance}%` }}
-                            />
+                          <div className="px-5 py-4">
+                            <div className="flex justify-between text-[9px] font-black uppercase text-zinc-400 tracking-wider mb-2">
+                              <span>Cumplimiento del período</span>
+                              <span className={isSuccess ? 'text-emerald-600' : 'text-orange-500'}>{Math.round(clampedCompliance)}%</span>
+                            </div>
+                            <div className="w-full h-2 bg-zinc-100 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-700 ease-out ${isSuccess ? 'bg-emerald-500' : 'bg-orange-400'}`}
+                                style={{ width: `${clampedCompliance}%` }}
+                              />
+                            </div>
+                            <p className="text-[10px] text-zinc-400 mt-1.5">
+                              {isSuccess
+                                ? `✓ Alcanzó la meta de ${target} ${metaDef?.unidad || ''}`
+                                : `Faltan ${Math.round(Math.abs(target - (valorEvaluado ?? 0)))} ${metaDef?.unidad || ''} para la meta`
+                              }
+                            </p>
                           </div>
                         )}
                       </div>
                     </div>
 
-
-                    {/* History Strip */}
+                    {/* ── PERÍODO EVALUADO ────────────────────────────────────── */}
                     {showScores && (
-                      <div className="mt-6 pt-4 border-t border-zinc-100">
-                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
+                      <div className="border-t border-zinc-100 px-5 py-4 bg-zinc-50/40">
+                        <p className="text-[9px] font-black text-zinc-400 uppercase tracking-[0.12em] mb-3 flex items-center gap-1.5">
+                          <Calendar className="w-3 h-3" /> Período Evaluado — seleccioná un mes para ver detalle
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
                           {(() => {
                             const feedbackLimitMonth = getPeriodMonth(selectedFeedback.periodo);
                             const historyHitos = item.hitos
                               ?.filter(h => getPeriodMonth(h.periodo) <= feedbackLimitMonth)
                               .sort((a, b) => getPeriodMonth(a.periodo) - getPeriodMonth(b.periodo)) || [];
 
-                            if (historyHitos.length === 0) return <span className="col-span-full text-[10px] text-zinc-600 italic">Sin historial previo.</span>;
+                            if (historyHitos.length === 0) return <span className="text-[10px] text-zinc-400 italic">Sin historial previo.</span>;
 
                             return historyHitos.map((h, hIdx) => {
                               const hMeta = h.metas?.find(m => m.metaId === metaDef?._id || m._id === metaDef?._id || m.nombre === metaDef?.nombre);
                               const hVal = hMeta?.resultado;
                               const isCurrentH = h.periodo === displayPeriod;
-                              const displayVal = hVal !== undefined && hVal !== null ? hVal : "-";
+                              const displayVal = hVal !== undefined && hVal !== null ? hVal : "–";
+                              const metOk = typeof displayVal === 'number' && (isLessBetter ? displayVal <= target : displayVal >= target);
 
                               return (
                                 <button
                                   key={hIdx}
                                   onClick={() => setViewPeriod(h.periodo)}
-                                  className={`flex flex-col items-center justify-center p-2 rounded-lg border transition-all hover:scale-[1.02] ${isCurrentH ? 'bg-zinc-800 text-white border-zinc-800 shadow-md ring-2 ring-zinc-200' : 'bg-white text-zinc-500 border-zinc-200 hover:border-zinc-300 hover:text-zinc-800'}`}
+                                  title={`Período ${h.periodo}: ${displayVal} ${metaDef?.unidad || ''}`}
+                                  className={`flex flex-col items-center justify-center min-w-[52px] px-2.5 py-2 rounded-lg border-2 transition-all text-center
+                                    ${isCurrentH
+                                      ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                                      : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300 hover:shadow-sm'
+                                    }`}
                                 >
-                                  <span className={`text-[9px] font-bold uppercase tracking-wider mb-0.5 ${isCurrentH ? 'text-zinc-300' : 'text-zinc-400'}`}>
-                                    {h.periodo}
+                                  <span className={`text-[8px] font-bold uppercase tracking-wider mb-0.5 ${isCurrentH ? 'text-blue-200' : 'text-zinc-400'}`}>
+                                    {h.periodo.replace(/^\d{4}/, '')}
                                   </span>
-                                  <span className={`text-sm font-bold leading-none ${isCurrentH ? 'text-white' : ''} ${typeof displayVal === 'number' && !isCurrentH ? (displayVal >= target ? 'text-emerald-600' : 'text-zinc-700') : ''}`}>
+                                  <span className={`text-xs font-black leading-none
+                                    ${isCurrentH ? 'text-white' : metOk ? 'text-emerald-600' : (typeof displayVal === 'number' ? 'text-orange-500' : 'text-zinc-400')}`}>
                                     {displayVal}
                                   </span>
                                 </button>
-                              )
+                              );
                             });
                           })()}
                         </div>
@@ -1092,9 +1214,55 @@ export default function MiDesempeno() {
                   </div>
                 );
               })
+            ) : activeTab === 'comp' || activeTab !== 'obj' ? (
+              <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm transition-all mb-6">
+                <div className="border-t border-zinc-100 px-5 py-4 bg-zinc-50/40">
+                  <p className="text-[9px] font-black text-zinc-400 uppercase tracking-[0.12em] mb-3 flex items-center gap-1.5">
+                    <Calendar className="w-3 h-3" /> Historial de Evaluaciones
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(() => {
+                      const feedbackLimitMonth = getPeriodMonth(selectedFeedback.periodo);
+                      const historyHitos = item.hitos
+                        ?.filter(h => getPeriodMonth(h.periodo) <= feedbackLimitMonth)
+                        .sort((a, b) => getPeriodMonth(a.periodo) - getPeriodMonth(b.periodo)) || [];
+
+                      if (historyHitos.length === 0) return <span className="text-[10px] text-zinc-400 italic">Sin historial previo.</span>;
+
+                      return historyHitos.map((h, hIdx) => {
+                        const hVal = h.actual;
+                        const isCurrentH = h.periodo === displayPeriod;
+                        const displayVal = hVal !== undefined && hVal !== null ? Number(hVal).toFixed(1) : "–";
+                        const metOk = typeof hVal === 'number' && hVal >= 60; // Assuming 60% is a basic pass status for styling
+
+                        return (
+                          <button
+                            key={hIdx}
+                            onClick={() => setViewPeriod(h.periodo)}
+                            title={`Período ${h.periodo}: ${displayVal}%`}
+                            className={`flex flex-col items-center justify-center min-w-[52px] px-2.5 py-2 rounded-lg border-2 transition-all text-center
+                              ${isCurrentH
+                                ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                                : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300 hover:shadow-sm'
+                              }`}
+                          >
+                            <span className={`text-[8px] font-bold uppercase tracking-wider mb-0.5 ${isCurrentH ? 'text-indigo-200' : 'text-zinc-400'}`}>
+                              {h.periodo.replace(/^\d{4}/, '')}
+                            </span>
+                            <span className={`text-xs font-black leading-none
+                              ${isCurrentH ? 'text-white' : metOk ? 'text-emerald-600' : (typeof hVal === 'number' ? 'text-orange-500' : 'text-zinc-400')}`}>
+                              {displayVal}
+                            </span>
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              </div>
             ) : (
               <div className="text-center py-8 text-zinc-400 italic text-sm">
-                {activeTab === 'obj' ? "No hay metas detalladas para este hito." : "Las competencias no tienen desglose de metas."}
+                No hay metas detalladas para este hito.
               </div>
             )}
           </div>
@@ -1230,18 +1398,52 @@ export default function MiDesempeno() {
 
         <div className="max-w-[80%] mx-auto relative z-10">
           <div className="flex flex-col lg:flex-row justify-between items-end gap-6 mb-6">
-            <div>
-              <div className="flex items-center gap-4 mb-2">
-                <h1 className="text-3xl font-bold tracking-tight">Hola, {empleadoNombre}</h1>
-                <Button variant="outline" size="sm" onClick={startTour} className="gap-2 bg-slate-800 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700 rounded-full h-8 px-4 text-xs">
-                  <HelpCircle className="w-3.5 h-3.5" /> Tutorial
-                </Button>
+            <div className="flex flex-col md:flex-row items-start md:items-center gap-5">
+              {/* Avatar with Gradient Ring */}
+              <div className="relative group shrink-0">
+                <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full opacity-75 blur group-hover:opacity-100 transition duration-1000 group-hover:duration-200"></div>
+                <div className="relative h-20 w-20 rounded-full overflow-hidden border-4 border-slate-900 bg-slate-800">
+                  {avatarSrc ? (
+                    <img
+                      src={avatarSrc}
+                      alt={empleadoNombre}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center text-3xl font-bold text-slate-400 bg-slate-800">
+                      {initialsFromUser(user)}
+                    </div>
+                  )}
+                </div>
               </div>
-              <p className="text-slate-400 text-lg">Seguimiento de evaluaciones y feedback continuo</p>
+
+              <div>
+                <div className="flex items-center gap-4 mb-2">
+                  <h1 className="text-3xl font-bold tracking-tight">Hola, {empleadoNombre}</h1>
+                  <Button variant="outline" size="sm" onClick={startTour} className="gap-2 bg-slate-800 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700 rounded-full h-8 px-4 text-xs">
+                    <HelpCircle className="w-3.5 h-3.5" /> Tutorial
+                  </Button>
+                </div>
+                <p className="text-slate-400 text-lg">Seguimiento de evaluaciones y feedback continuo</p>
+              </div>
             </div>
 
             {/* HEADER METRICS & YEAR SELECTOR */}
             <div className="flex flex-col gap-4 items-end">
+
+              {/* REPORT BUTTON */}
+              {(feedbacks.some(f => f.periodo === "FINAL" && !f.isPlaceholder) || data?.evaluaciones?.some(e => e.periodo === "FINAL")) && (
+                <div className="mb-0">
+                  <Button
+                    size="sm"
+                    className="bg-white/10 hover:bg-white/20 text-white border border-white/20 shadow-lg backdrop-blur-sm"
+                    onClick={() => setShowFinalReport(true)}
+                  >
+                    <Trophy className="w-4 h-4 mr-2 text-yellow-300" />
+                    Ver Resultado Anual
+                  </Button>
+                </div>
+              )}
 
               {/* Year Selector */}
               <div className="flex items-center justify-end gap-3 text-white mb-2">
@@ -1591,9 +1793,27 @@ export default function MiDesempeno() {
                                 </div>
 
                                 <div className="space-y-2">
-                                  <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 mb-1">
-                                    <span>Esperado {selectedFeedback.periodo}: <span className="text-slate-600">{Number(periodResults.expectedScores?.obj ?? 0).toFixed(1)}%</span></span>
-                                  </div>
+                                  {(() => {
+                                    const totalObjs = periodResults.objetivos?.length || 0;
+                                    const cumulativeCount = periodResults.objetivos?.filter(o => o.metas?.some(m => m.acumulativa || m.modoAcumulacion === 'acumulativo')).length || 0;
+                                    const maintenanceCount = totalObjs - cumulativeCount;
+                                    return (
+                                      <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 mb-1">
+                                        <span className="flex items-center gap-1 relative group/tip">
+                                          Esperado {selectedFeedback.periodo}: <span className="text-slate-600">{Number(periodResults.expectedScores?.obj ?? 0).toFixed(1)}%</span>
+                                          <HelpCircle className="w-3 h-3 text-slate-300 hover:text-slate-400 cursor-help" />
+                                          {/* Custom tooltip */}
+                                          <div className="absolute bottom-full left-0 mb-2 w-56 bg-slate-800 text-white text-[10px] rounded-lg p-2.5 shadow-xl opacity-0 pointer-events-none group-hover/tip:opacity-100 transition-opacity z-50 leading-relaxed">
+                                            <p className="font-bold text-slate-200 mb-1">Composición de Objetivos</p>
+                                            <p>📌 {maintenanceCount} de Mantenimiento → exigen 100% todo el año</p>
+                                            {cumulativeCount > 0 && <p>📈 {cumulativeCount} Acumulativo → crece con el avance anual</p>}
+                                            <p className="text-slate-400 mt-1">Total: {totalObjs} objetivos activos</p>
+                                            <div className="absolute top-full left-4 w-2 h-2 bg-slate-800 rotate-45 -translate-y-1"></div>
+                                          </div>
+                                        </span>
+                                      </div>
+                                    );
+                                  })()}
                                   {/* Progress Bar: Score relative to Max */}
                                   <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                                     <div
@@ -1631,7 +1851,15 @@ export default function MiDesempeno() {
 
                                 <div className="space-y-2">
                                   <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 mb-1">
-                                    <span>Esperado {selectedFeedback.periodo}: <span className="text-slate-600">{Number(periodResults.expectedScores?.comp ?? 0).toFixed(1)}%</span></span>
+                                    <span className="flex items-center gap-1 relative group/tip">
+                                      Esperado {selectedFeedback.periodo}: <span className="text-slate-600">{Number(periodResults.expectedScores?.comp ?? 0).toFixed(1)}%</span>
+                                      <HelpCircle className="w-3 h-3 text-slate-300 hover:text-slate-400 cursor-help" />
+                                      <div className="absolute bottom-full left-0 mb-2 w-56 bg-slate-800 text-white text-[10px] rounded-lg p-2.5 shadow-xl opacity-0 pointer-events-none group-hover/tip:opacity-100 transition-opacity z-50 leading-relaxed">
+                                        <p className="font-bold text-slate-200 mb-1">Competencias ({periodResults.aptitudes?.length || 0} activas)</p>
+                                        <p>Las habilidades blandas se esperan al máximo de cumplimiento (30%) en todas las evaluaciones del año, sin escala temporal.</p>
+                                        <div className="absolute top-full left-4 w-2 h-2 bg-slate-800 rotate-45 -translate-y-1"></div>
+                                      </div>
+                                    </span>
                                   </div>
                                   <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-2">
                                     <div
@@ -1677,7 +1905,16 @@ export default function MiDesempeno() {
 
                                 <div className="space-y-2 relative z-10">
                                   <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 mb-1.5 px-0.5">
-                                    <span>Esperado {selectedFeedback.periodo}: <span className="text-blue-400">{Number(periodResults.expectedScores?.global ?? 0).toFixed(1)}%</span></span>
+                                    <span className="flex items-center gap-1 relative group/tip">
+                                      Esperado {selectedFeedback.periodo}: <span className="text-blue-400">{Number(periodResults.expectedScores?.global ?? 0).toFixed(1)}%</span>
+                                      <HelpCircle className="w-3 h-3 text-slate-500 hover:text-slate-400 cursor-help" />
+                                      <div className="absolute bottom-full left-0 mb-2 w-60 bg-white text-slate-800 border border-slate-200 text-[10px] rounded-lg p-2.5 shadow-xl opacity-0 pointer-events-none group-hover/tip:opacity-100 transition-opacity z-50 leading-relaxed">
+                                        <p className="font-bold text-slate-700 mb-1">¿Cómo se calcula el Esperado?</p>
+                                        <p>🎯 Objetivos: {Number(periodResults.expectedScores?.obj ?? 0).toFixed(1)}% (según composición tipos)</p>
+                                        <p>💡 Competencias: {Number(periodResults.expectedScores?.comp ?? 0).toFixed(1)}% (fijo 30% anual)</p>
+                                        <div className="absolute top-full left-4 w-2 h-2 bg-white border-b border-r border-slate-200 rotate-45 -translate-y-1"></div>
+                                      </div>
+                                    </span>
                                   </div>
 
                                   {/* Progress Bar with 50% Marker */}

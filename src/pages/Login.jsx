@@ -14,10 +14,43 @@ export default function Login() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
 
+  // Forgot Password States
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotMsg, setForgotMsg] = useState("");
+  const [forgotSuccess, setForgotSuccess] = useState(false);
+
   const { login } = useAuth();
 
   const navigate = useNavigate();
   const from = "/"; // siempre redirigimos al home
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setForgotMsg("");
+    setForgotLoading(true);
+
+    try {
+      // Usamos fetch directo a la API ya que no estamos logueados ni usamos useAuth para esto
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5007/api'}/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setForgotMsg(data.message || "Error al solicitar recuperar contraseña");
+      } else {
+        setForgotSuccess(true);
+      }
+    } catch (err) {
+      setForgotMsg("Error de conexión con el servidor");
+    } finally {
+      setForgotLoading(false);
+    }
+  };
 
   const onSubmit = async (e) => {
     e.preventDefault();
@@ -121,8 +154,14 @@ export default function Login() {
               </div>
             </div>
 
-            <div className="text-left">
-              {/* Si querés volver a poner "¿Olvidaste tu contraseña?" lo agregamos aquí */}
+            <div className="text-right">
+              <button
+                type="button"
+                onClick={() => setForgotOpen(true)}
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                ¿Olvidaste tu contraseña?
+              </button>
             </div>
 
             <button
@@ -143,6 +182,86 @@ export default function Login() {
         afterLoginRedirect="/"
       />
 
+      {/* MODAL RECUPERAR CONTRASEÑA */}
+      {forgotOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-lg w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-6 py-5">
+              <h2 className="text-xl font-bold text-slate-800 mb-2">Recuperar Acceso</h2>
+
+              {!forgotSuccess ? (
+                <>
+                  <p className="text-sm text-slate-500 mb-5">
+                    Ingresá tu correo corporativo y te enviaremos una contraseña temporal de un solo uso.
+                  </p>
+
+                  {forgotMsg && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg">
+                      {forgotMsg}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleForgotPassword}>
+                    <div className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-slate-700">Email</label>
+                        <input
+                          type="email"
+                          required
+                          value={forgotEmail}
+                          onChange={(e) => setForgotEmail(e.target.value)}
+                          placeholder="nombre@diagnos.com.ar"
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-colors"
+                        />
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setForgotOpen(false)}
+                          disabled={forgotLoading}
+                          className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={forgotLoading}
+                          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-70 min-w-[100px]"
+                        >
+                          {forgotLoading ? 'Enviando...' : 'Enviar correo'}
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                </>
+              ) : (
+                <div className="text-center py-4">
+                  <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-800 mb-2">¡Revisá tu bandeja!</h3>
+                  <p className="text-sm text-slate-600 mb-6">
+                    Si el correo existe en nuestra base de datos, te hemos enviado las instrucciones para entrar.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setForgotOpen(false);
+                      setForgotSuccess(false);
+                      setForgotEmail("");
+                    }}
+                    className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                  >
+                    Entendido
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

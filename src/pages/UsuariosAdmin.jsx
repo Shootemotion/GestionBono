@@ -45,6 +45,7 @@ export default function UsuariosAdmin() {
   const [createEmpleado, setCreateEmpleado] = useState(null);
   const [createEmail, setCreateEmail] = useState("");
   const [createRole, setCreateRole] = useState("visor");
+  const [createSendEmail, setCreateSendEmail] = useState(true);
   const [creating, setCreating] = useState(false);
 
   // Modal EDITAR usuario
@@ -150,6 +151,7 @@ export default function UsuariosAdmin() {
     const u = usersByEmpleado[empleado?._id];
     setCreateEmail((u?.email || empleado?.email || "").trim());
     setCreateRole(u?.rol || "visor");
+    setCreateSendEmail(true);
     setCreateModalOpen(true);
   };
 
@@ -162,12 +164,14 @@ export default function UsuariosAdmin() {
 
   const handleCreateAccount = async () => {
     if (!createEmail) return toast.warn("Email requerido");
+
     setCreating(true);
     try {
       const body = {
         email: createEmail.trim().toLowerCase(),
         rol: createRole,
         empleadoId: createEmpleado ? createEmpleado._id : undefined,
+        enviarEmail: createSendEmail,
       };
       const res = await api("/usuarios", { method: "POST", body });
       const { action, user, tempPassword } = res || {};
@@ -194,12 +198,18 @@ export default function UsuariosAdmin() {
   };
 
   const resetearUsuario = async (user) => {
+    const defaultEmail = user.email || "";
+    // Preguntamos amigablemente si ademas de generarla queremos enviarsela por correo.
+    const enviarMail = confirm(`Vas a generar una nueva contraseña temporal para ${defaultEmail}. \n\n¿Deseas enviársela automáticamente a su correo?`);
     try {
-      const res = await api(`/usuarios/${user._id}/reset-password`, { method: "PATCH" });
+      const res = await api(`/usuarios/${user._id}/reset-password`, {
+        method: "PATCH",
+        body: { enviarEmail: enviarMail }
+      });
       setUsers(prev => prev.map(u => (u._id === res.user._id ? res.user : u)));
       setTempInfo({ email: res.user.email, tempPassword: res.tempPassword });
       setTempModalOpen(true);
-      toast.success("Nueva contraseña generada");
+      toast.success(enviarMail ? "Contraseña reseteada y enviada por mail" : "Nueva contraseña generada");
     } catch (err) {
       toast.error("Error al resetear");
     }
@@ -463,6 +473,20 @@ export default function UsuariosAdmin() {
                   <option value="superadmin">Super Admin</option>
                 </select>
               </div>
+            </div>
+
+            {/* Checkbox de Enviar por Mail (Restaurado) */}
+            <div className="flex items-center gap-2 mt-4">
+              <input
+                type="checkbox"
+                id="sendEmail"
+                checked={createSendEmail}
+                onChange={(e) => setCreateSendEmail(e.target.checked)}
+                className="w-4 h-4 text-blue-600 bg-slate-100 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
+              />
+              <label htmlFor="sendEmail" className="text-sm text-slate-700 cursor-pointer select-none">
+                Enviar contraseña por correo electrónico
+              </label>
             </div>
           </div>
 

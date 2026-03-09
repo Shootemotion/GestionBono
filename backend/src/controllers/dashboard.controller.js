@@ -805,3 +805,82 @@ export const getExecutiveData = async (req, res, next) => {
     next(e);
   }
 };
+
+/** ─────────────────────────────────────────────────────────────
+ * DEBUG ENDPOINT (temporal) – GET /api/dashboard/debug/empleado/:empleadoId?anio=2025
+ * Devuelve TODAS las plantillas del año y por qué aplican o no al empleado.
+ * ─────────────────────────────────────────────────────────────*/
+export const debugEmpleadoPlantillas = async (req, res, next) => {
+  try {
+    const { empleadoId } = req.params;
+    const year = Number(req.query.anio || req.query.year || new Date().getFullYear());
+
+    const empleado = await Empleado.findById(empleadoId)
+      .populate('area').populate('sector').lean();
+    if (!empleado) return res.status(404).json({ message: 'Empleado no encontrado' });
+
+    const empIdStr = String(empleado._id);
+    const areaIdStr = empleado.area ? String(empleado.area._id ?? empleado.area) : null;
+    const sectorIdStr = empleado.sector ? String(empleado.sector._id ?? empleado.sector) : null;
+
+    const plantillas = await Plantilla.find({ year }).lean();
+    const evals = await Evaluacion.find({ empleado: empleado._id, year }).lean();
+    const overrides = await OverrideObjetivo.find({ empleado: empleado._id, year }).lean();
+    const ovByTpl = new Map(overrides.map(o => [String(o.template), o]));
+
+    const result = plantillas.map(p => {
+      const tplIdStr = String(p._id);
+      const scopeIdStr = p.scopeId ? String(p.scopeId) : null;
+      const ov = ovByTpl.get(tplIdStr);
+
+      const hasHistory = evals.some(ev =>
+        (String(ev.empleado) === empIdStr || String(ev.empleado?._id) === empIdStr) &&
+        String(ev.plantillaId) === tplIdStr
+      );
+
+      let reason = 'NO_MATCH';
+
+      if (ov && !ov.excluido) reason = 'OVERRIDE_INCLUDED';
+      else if (ov && ov.excluido) reason = 'OVERRIDE_EXCLUDED';
+      else if (hasHistory) reason = 'STICKY_HISTORY';
+      else if (!p.activo) reason = 'INACTIVE';
+      else if (p.scopeType === 'empleado' && scopeIdStr === empIdStr) reason = 'SCOPE_EMPLEADO';
+      else if (p.scopeType === 'area' && scopeIdStr === areaIdStr) reason = 'SCOPE_AREA';
+      else if (p.scopeType === 'sector' && scopeIdStr === sectorIdStr) reason = 'SCOPE_SECTOR';
+
+      const aplica = ['OVERRIDE_INCLUDED', 'STICKY_HISTORY', 'SCOPE_EMPLEADO', 'SCOPE_AREA', 'SCOPE_SECTOR'].includes(reason);
+
+      return {
+        _id: p._id,
+        nombre: p.nombre,
+        tipo: p.tipo,
+        activo: p.activo,
+        scopeType: p.scopeType,
+        scopeId: p.scopeId,
+        aplica,
+        reason,
+        // helpers para debug visual
+        _empSector: sectorIdStr,
+        _empArea: areaIdStr,
+        _scopeMatchesSector: scopeIdStr === sectorIdStr,
+        _scopeMatchesArea: scopeIdStr === areaIdStr,
+        _scopeMatchesEmp: scopeIdStr === empIdStr,
+      };
+    });
+
+    res.json({
+      empleado: {
+        _id: empleado._id,
+        nombre: `${empleado.nombre} ${empleado.apellido}`,
+        area: empleado.area ? { _id: empleado.area._id, nombre: empleado.area.nombre } : null,
+        sector: empleado.sector ? { _id: empleado.sector._id, nombre: empleado.sector.nombre } : null,
+      },
+      year,
+      totalPlantillas: plantillas.length,
+      aplican: result.filter(r => r.aplica),
+      noAplican: result.filter(r => !r.aplica),
+    });
+  } catch (e) {
+    next(e);
+  }
+};
