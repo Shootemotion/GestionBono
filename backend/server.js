@@ -44,6 +44,7 @@ import globalAvisoRoutes from './src/routes/globalAviso.routes.js';
 import objetivosISORoutes from './src/routes/objetivosISO.routes.js';
 import procesosISORoutes from './src/routes/procesosISO.routes.js';
 import analyticsRoutes from './src/analytics/analytics.routes.js';
+import Empleado from './src/models/Empleado.model.js';
 
 // --- CRON JOBS ---
 // Run Daily Backup at 03:00 AM
@@ -86,14 +87,96 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 // 1) Rutas públicas (sin JWT)
 app.use('/api/auth', authRouter);
 
-// --- SWAGGER API DOCS ---
+// --- SWAGGER API DOCS (Dynamic Spec con picklist de empleados) ---
+
 const swaggerPath = path.join(__dirname, 'src', 'docs', 'swagger.json');
-if (fs.existsSync(swaggerPath)) {
-  const swaggerDocument = JSON.parse(fs.readFileSync(swaggerPath, 'utf8'));
-  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
-    customSiteTitle: "DiagnosLab API Docs"
-  }));
-}
+const swaggerBase = fs.existsSync(swaggerPath)
+  ? JSON.parse(fs.readFileSync(swaggerPath, 'utf8'))
+  : { openapi: '3.0.0', info: { title: 'API', version: '1.0.0' }, paths: {} };
+
+// Endpoint dinámico: genera el spec con el enum de empleados actualizado desde la DB
+app.get('/api/docs/spec', async (req, res) => {
+  try {
+    const empleados = await Empleado.find({}, '_id nombre apellido').sort({ apellido: 1 }).lean();
+    const empEnum = empleados.map(e => String(e._id));
+    const empEnumDesc = empleados.map(e => `${e.apellido}, ${e.nombre} → ${e._id}`).join('\n');
+
+    const spec = {
+      ...swaggerBase,
+      paths: {
+        ...swaggerBase.paths,
+        '/api/dashboard/debug/empleado/{empleadoId}': {
+          get: {
+            tags: ['🔍 Debug Sistema'],
+            summary: 'Comparar fuentes de plantillas por empleado',
+            description:
+              'Devuelve un análisis comparativo de las 3 fuentes de datos que usa el sistema:\n\n' +
+              '**Fuente 1 — Gantt** (`computeForEmployees`): override de inclusión tiene prioridad sobre `isTemplateApplicable`.\n\n' +
+              '**Fuente 2 — Mi Desempeño** (`dashByEmpleado`): solo aplica `isTemplateApplicable` (STICKY_HISTORY, scope activo).\n\n' +
+              '**Fuente 3 — Gestión Plantillas** (query directa): solo plantillas activas que coincidan con el scope actual del empleado.\n\n' +
+              '---\n**Empleados disponibles:**\n```\n' + empEnumDesc + '\n```',
+            security: [{ BearerAuth: [] }],
+            parameters: [
+              {
+                name: 'empleadoId',
+                in: 'path',
+                required: true,
+                description: 'ID del empleado a analizar',
+                schema: {
+                  type: 'string',
+                  enum: empEnum,
+                },
+              },
+              {
+                name: 'anio',
+                in: 'query',
+                required: false,
+                description: 'Año fiscal (por defecto el año actual)',
+                schema: {
+                  type: 'integer',
+                  example: new Date().getFullYear(),
+                },
+              },
+            ],
+            responses: {
+              200: {
+                description: 'Análisis completo con discrepancias entre fuentes',
+              },
+              401: { description: 'No autorizado' },
+              404: { description: 'Empleado no encontrado' },
+            },
+          },
+        },
+      },
+      // Agregar esquema de seguridad Bearer para el debug endpoint
+      components: {
+        ...(swaggerBase.components || {}),
+        securitySchemes: {
+          ...(swaggerBase.components?.securitySchemes || {}),
+          BearerAuth: {
+            type: 'http',
+            scheme: 'bearer',
+            bearerFormat: 'JWT',
+            description: 'Token JWT obtenido en /api/auth/login',
+          },
+        },
+      },
+    };
+
+    res.json(spec);
+  } catch (err) {
+    console.error('Error generando swagger spec dinámico:', err);
+    res.json(swaggerBase);
+  }
+});
+
+// Swagger UI apunta al spec dinámico
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(null, {
+  customSiteTitle: 'DiagnosLab API Docs',
+  swaggerOptions: {
+    url: '/api/docs/spec',
+  },
+}));
 
 // Analytics API — autenticación propia por token (no requiere JWT)
 // Power BI conecta aquí usando el header X-Analytics-Token

@@ -11,6 +11,7 @@ import { analyticsISO } from "./controllers/iso.analytics.js";
 import { analyticsAreas } from "./controllers/areas.analytics.js";
 import { analyticsSectores } from "./controllers/sectores.analytics.js";
 import { analyticsUsuarios } from "./controllers/usuarios.analytics.js";
+import { debugEmpleadoPlantillas } from "../controllers/dashboard.controller.js";
 
 const router = Router();
 
@@ -27,6 +28,8 @@ router.get("/iso", analyticsISO);
 router.get("/areas", analyticsAreas);
 router.get("/sectores", analyticsSectores);
 router.get("/usuarios", analyticsUsuarios);
+// Debug: comparación de fuentes por empleado
+router.get("/debug/empleado/:empleadoId", debugEmpleadoPlantillas);
 
 // Health check (también requiere token)
 router.get("/", (req, res) => {

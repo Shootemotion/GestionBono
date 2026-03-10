@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
-import { Save, User, Layers, Search, X, Trash2, Power, Megaphone, Calendar, Globe, Building2 } from 'lucide-react';
+import { Save, User, Layers, Search, X, Trash2, Power, Megaphone, Calendar, Globe, Building2, Cpu, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from "@/components/ui/input";
 import { format } from 'date-fns';
@@ -15,6 +15,7 @@ export default function GestionAvisos() {
         titulo: "",
         mensaje: "",
         alcance: "GLOBAL", // GLOBAL, AREA, SECTOR
+        tipo: "RRHH",     // RRHH, SISTEMAS
         targetId: "",
         targetName: "",
         fechaInicio: format(new Date(), "yyyy-MM-dd"),
@@ -159,6 +160,27 @@ export default function GestionAvisos() {
                                 />
                             </div>
 
+                            {/* Tipo de Aviso */}
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Tipo de Aviso</label>
+                                <div className="flex bg-slate-100 p-1 rounded-xl">
+                                    <button
+                                        onClick={() => setFormData({ ...formData, tipo: "RRHH" })}
+                                        className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5
+                                            ${formData.tipo === "RRHH" ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                    >
+                                        <Megaphone size={13} /> Notificación RRHH
+                                    </button>
+                                    <button
+                                        onClick={() => setFormData({ ...formData, tipo: "SISTEMAS" })}
+                                        className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5
+                                            ${formData.tipo === "SISTEMAS" ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                    >
+                                        <Cpu size={13} /> Notificación de Sistemas
+                                    </button>
+                                </div>
+                            </div>
+
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Desde</label>
@@ -248,14 +270,24 @@ export default function GestionAvisos() {
                     {avisos.length === 0 && <div className="text-center py-12 text-slate-400 italic">No hay avisos registrados.</div>}
 
                     {avisos.map(aviso => (
-                        <div key={aviso._id} className={`bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-start gap-4 ${!aviso.activo ? 'opacity-60 grayscale' : ''}`}>
-                            <div className={`p-3 rounded-xl shrink-0 ${aviso.alcance === 'GLOBAL' ? 'bg-blue-100 text-blue-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                                {aviso.alcance === 'GLOBAL' ? <Globe size={24} /> : <Building2 size={24} />}
+                        <div key={aviso._id} className={`bg-white p-6 rounded-2xl shadow-sm border flex items-start gap-4 ${!aviso.activo ? 'opacity-60 grayscale' : ''}
+                            ${aviso.tipo === 'SISTEMAS' ? 'border-amber-200' : 'border-slate-200'}`}>
+                            <div className={`p-3 rounded-xl shrink-0
+                                ${aviso.tipo === 'SISTEMAS'
+                                    ? 'bg-amber-100 text-amber-600'
+                                    : aviso.alcance === 'GLOBAL' ? 'bg-blue-100 text-blue-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                                {aviso.tipo === 'SISTEMAS' ? <Cpu size={24} /> : aviso.alcance === 'GLOBAL' ? <Globe size={24} /> : <Building2 size={24} />}
                             </div>
                             <div className="flex-1">
                                 <div className="flex justify-between items-start">
                                     <div>
-                                        <h4 className="font-bold text-slate-800 text-lg">{aviso.titulo}</h4>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <h4 className="font-bold text-slate-800 text-lg">{aviso.titulo}</h4>
+                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider
+                                                ${aviso.tipo === 'SISTEMAS' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                                                {aviso.tipo === 'SISTEMAS' ? '⚙ Sistemas' : '📢 RRHH'}
+                                            </span>
+                                        </div>
                                         <div className="flex items-center gap-2 text-xs font-bold text-slate-400 mt-1 uppercase tracking-wide">
                                             <span>{aviso.alcance}</span>
                                             {aviso.targetName && <span>• {aviso.targetName}</span>}

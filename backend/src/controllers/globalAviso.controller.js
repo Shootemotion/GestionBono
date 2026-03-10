@@ -5,12 +5,13 @@ import Empleado from "../models/Empleado.model.js";
 
 export const createAviso = async (req, res, next) => {
     try {
-        const { titulo, mensaje, alcance, targetId, targetName, fechaInicio, fechaFin } = req.body;
+        const { titulo, mensaje, alcance, targetId, targetName, fechaInicio, fechaFin, tipo } = req.body;
 
         const aviso = new GlobalAviso({
             titulo,
             mensaje,
             alcance,
+            tipo: tipo || "RRHH",
             targetId: targetId || null,
             targetModel: alcance === "AREA" ? "Area" : alcance === "SECTOR" ? "Sector" : undefined,
             targetName,

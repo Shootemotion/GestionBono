@@ -807,80 +807,176 @@ export const getExecutiveData = async (req, res, next) => {
 };
 
 /** ─────────────────────────────────────────────────────────────
- * DEBUG ENDPOINT (temporal) – GET /api/dashboard/debug/empleado/:empleadoId?anio=2025
- * Devuelve TODAS las plantillas del año y por qué aplican o no al empleado.
+ * DEBUG ENDPOINT – GET /api/dashboard/debug/empleado/:empleadoId?anio=2025
+ * Comparación compacta: nombre + tipo + peso por fuente.
+ * Fuentes: Mi Desempeño (=Sala Eval), Gantt Área, Gantt Sector, Gestión Plantillas
  * ─────────────────────────────────────────────────────────────*/
+/** Helper: resume plantilla a lo esencial para comparación */
+function slim(p, pesoOverride, reason) {
+  return {
+    _id: String(p._id),
+    nombre: p.nombre,
+    tipo: p.tipo,
+    peso: pesoOverride ?? p.pesoBase ?? 0,
+    reason,
+  };
+}
+
 export const debugEmpleadoPlantillas = async (req, res, next) => {
   try {
     const { empleadoId } = req.params;
     const year = Number(req.query.anio || req.query.year || new Date().getFullYear());
 
+    // ── Datos base del empleado ──
     const empleado = await Empleado.findById(empleadoId)
-      .populate('area').populate('sector').lean();
+      .populate({ path: 'area', select: '_id nombre referentes' })
+      .populate({ path: 'sector', select: '_id nombre referentes' })
+      .lean();
     if (!empleado) return res.status(404).json({ message: 'Empleado no encontrado' });
 
     const empIdStr = String(empleado._id);
     const areaIdStr = empleado.area ? String(empleado.area._id ?? empleado.area) : null;
     const sectorIdStr = empleado.sector ? String(empleado.sector._id ?? empleado.sector) : null;
 
+    const isAreaReferent = empleado.area?.referentes?.map(String).includes(empIdStr);
+    const isSectorReferent = empleado.sector?.referentes?.map(String).includes(empIdStr);
+
+    // ── Datos base ──
     const plantillas = await Plantilla.find({ year }).lean();
     const evals = await Evaluacion.find({ empleado: empleado._id, year }).lean();
     const overrides = await OverrideObjetivo.find({ empleado: empleado._id, year }).lean();
     const ovByTpl = new Map(overrides.map(o => [String(o.template), o]));
 
-    const result = plantillas.map(p => {
-      const tplIdStr = String(p._id);
-      const scopeIdStr = p.scopeId ? String(p.scopeId) : null;
-      const ov = ovByTpl.get(tplIdStr);
-
-      const hasHistory = evals.some(ev =>
+    // ── Helper: motivo por el que aplica (o no) ──
+    const getReasonAndApplies = (p) => {
+      const tplId = String(p._id);
+      const scopeId = p.scopeId ? String(p.scopeId) : null;
+      const ov = ovByTpl.get(tplId);
+      const hasHist = evals.some(ev =>
         (String(ev.empleado) === empIdStr || String(ev.empleado?._id) === empIdStr) &&
-        String(ev.plantillaId) === tplIdStr
+        String(ev.plantillaId) === tplId
       );
 
-      let reason = 'NO_MATCH';
+      if (ov && !ov.excluido) return { reason: 'OVERRIDE_INCLUDED', applies: true };
+      if (ov && ov.excluido) return { reason: 'OVERRIDE_EXCLUDED', applies: false };
+      if (hasHist) return { reason: 'STICKY_HISTORY', applies: true };
+      if (!p.activo) return { reason: 'INACTIVE', applies: false };
+      if (p.scopeType === 'empleado' && scopeId === empIdStr) return { reason: 'SCOPE_EMPLEADO', applies: true };
+      if (p.scopeType === 'area' && scopeId === areaIdStr) return { reason: 'SCOPE_AREA', applies: true };
+      if (p.scopeType === 'sector' && scopeId === sectorIdStr) return { reason: 'SCOPE_SECTOR', applies: true };
+      return { reason: 'NO_MATCH', applies: false };
+    };
 
-      if (ov && !ov.excluido) reason = 'OVERRIDE_INCLUDED';
-      else if (ov && ov.excluido) reason = 'OVERRIDE_EXCLUDED';
-      else if (hasHistory) reason = 'STICKY_HISTORY';
-      else if (!p.activo) reason = 'INACTIVE';
-      else if (p.scopeType === 'empleado' && scopeIdStr === empIdStr) reason = 'SCOPE_EMPLEADO';
-      else if (p.scopeType === 'area' && scopeIdStr === areaIdStr) reason = 'SCOPE_AREA';
-      else if (p.scopeType === 'sector' && scopeIdStr === sectorIdStr) reason = 'SCOPE_SECTOR';
+    // ──────────────────────────────────────────────────────────────────
+    // FUENTE A: Mi Desempeño + Sala de Evaluación (mismo endpoint: dashByEmpleado)
+    // Lógica: isTemplateApplicable primero, luego excluye si override.excluido
+    // ──────────────────────────────────────────────────────────────────
+    const fuenteA = plantillas
+      .filter(p => {
+        const { applies, reason } = getReasonAndApplies(p);
+        if (reason === 'OVERRIDE_EXCLUDED') return false;  // explicitamente excluido
+        return applies;
+      })
+      .map(p => {
+        const ov = ovByTpl.get(String(p._id));
+        const peso = (ov && ov.peso != null) ? Number(ov.peso) : (p.pesoBase ?? 0);
+        const { reason } = getReasonAndApplies(p);
+        return slim(p, peso, reason);
+      });
 
-      const aplica = ['OVERRIDE_INCLUDED', 'STICKY_HISTORY', 'SCOPE_EMPLEADO', 'SCOPE_AREA', 'SCOPE_SECTOR'].includes(reason);
+    // ──────────────────────────────────────────────────────────────────
+    // FUENTE B: Gantt (computeForEmployees)
+    // Diferencia clave: chequea override de INCLUSIÓN antes que isTemplateApplicable
+    // Pero TAMBIÉN: el empleado puede ser excluido del query de área/sector si es referente
+    // ──────────────────────────────────────────────────────────────────
+    // ¿Aparecería en el Gantt del Área?
+    let incluidoEnGanttArea = false;
+    if (areaIdStr) {
+      const empEnArea = await Empleado.findOne(
+        { _id: empleado._id, area: areaIdStr, ...(isAreaReferent ? {} : {}) },
+        '_id'
+      ).lean();
+      // El Gantt de área excluye referentes del área
+      incluidoEnGanttArea = !!empEnArea && !isAreaReferent;
+    }
+    // ¿Aparecería en el Gantt del Sector?
+    let incluidoEnGanttSector = false;
+    if (sectorIdStr) {
+      incluidoEnGanttSector = !isSectorReferent; // solo excluye si es referente del sector
+    }
 
-      return {
-        _id: p._id,
-        nombre: p.nombre,
-        tipo: p.tipo,
-        activo: p.activo,
-        scopeType: p.scopeType,
-        scopeId: p.scopeId,
-        aplica,
-        reason,
-        // helpers para debug visual
-        _empSector: sectorIdStr,
-        _empArea: areaIdStr,
-        _scopeMatchesSector: scopeIdStr === sectorIdStr,
-        _scopeMatchesArea: scopeIdStr === areaIdStr,
-        _scopeMatchesEmp: scopeIdStr === empIdStr,
-      };
-    });
+    // Items que computeForEmployees devolvería para este empleado (lógica override-first)
+    const fuenteB = plantillas
+      .filter(p => {
+        const ov = ovByTpl.get(String(p._id));
+        if (ov && !ov.excluido) return true;  // inclusión forzada
+        const { applies } = getReasonAndApplies(p);
+        return applies && !(ov?.excluido);    // scope/sticky + no excluido
+      })
+      .map(p => {
+        const ov = ovByTpl.get(String(p._id));
+        const peso = (ov && ov.peso != null) ? Number(ov.peso) : (p.pesoBase ?? 0);
+        const { reason } = getReasonAndApplies(p);
+        return slim(p, peso, reason);
+      });
+
+    // ──────────────────────────────────────────────────────────────────
+    // FUENTE C: Gestión Plantillas (query directa, sin overrides)
+    // ──────────────────────────────────────────────────────────────────
+    const rawGestion = await Plantilla.find({
+      year, activo: true,
+      $or: [
+        { scopeType: 'empleado', scopeId: empleado._id },
+        ...(areaIdStr ? [{ scopeType: 'area', scopeId: areaIdStr }] : []),
+        ...(sectorIdStr ? [{ scopeType: 'sector', scopeId: sectorIdStr }] : []),
+      ]
+    }).lean();
+    const fuenteC = rawGestion.map(p => slim(p, p.pesoBase ?? 0, 'SCOPE_DIRECTO'));
+
+    // ── Comparación ──
+    const idsA = new Set(fuenteA.map(x => x._id));
+    const idsB = new Set(fuenteB.map(x => x._id));
+    const idsC = new Set(fuenteC.map(x => x._id));
+
+    const soloEnA = fuenteA.filter(x => !idsB.has(x._id));
+    const soloEnB = fuenteB.filter(x => !idsA.has(x._id));
+    const enAyBperoNoC = fuenteA.filter(x => idsB.has(x._id) && !idsC.has(x._id));
+    const enCperoNoAyB = fuenteC.filter(x => !idsA.has(x._id) && !idsB.has(x._id));
 
     res.json({
       empleado: {
-        _id: empleado._id,
-        nombre: `${empleado.nombre} ${empleado.apellido}`,
-        area: empleado.area ? { _id: empleado.area._id, nombre: empleado.area.nombre } : null,
-        sector: empleado.sector ? { _id: empleado.sector._id, nombre: empleado.sector.nombre } : null,
+        nombre: `${empleado.apellido}, ${empleado.nombre}`,
+        puesto: empleado.puesto,
+        area: empleado.area?.nombre ?? null,
+        sector: empleado.sector?.nombre ?? null,
+        esReferenteArea: !!isAreaReferent,
+        esReferenteSector: !!isSectorReferent,
       },
       year,
-      totalPlantillas: plantillas.length,
-      aplican: result.filter(r => r.aplica),
-      noAplican: result.filter(r => !r.aplica),
+      gantt_nota: incluidoEnGanttArea
+        ? '✅ Incluido en Gantt de Área (no es referente de área)'
+        : incluidoEnGanttSector
+          ? '⚠️ Solo visible en Gantt de Área; excluido del Gantt de Sector (es referente de sector)'
+          : '❌ Excluido de todos los Gantt (es referente de área y sector)',
+      totales: {
+        'Mi Desempeño + Sala Eval': fuenteA.length,
+        'Gantt (computeForEmployees)': fuenteB.length,
+        'Gestión Plantillas (directa)': fuenteC.length,
+      },
+      // ── Listas comparativas por fuente ──
+      fuenteA_MiDesempeno: fuenteA,
+      fuenteB_Gantt: fuenteB,
+      fuenteC_GestionPlantillas: fuenteC,
+      // ── Discrepancias ──
+      discrepancias: {
+        soloEnMiDesempeno_noEnGantt: soloEnA,
+        soloEnGantt_noEnMiDesempeno: soloEnB,
+        enDashboard_noEnGestionPlantillas: enAyBperoNoC,
+        enGestionPlantillas_noEnDashboard: enCperoNoAyB,
+      },
     });
   } catch (e) {
+    console.error('debugEmpleadoPlantillas error:', e);
     next(e);
   }
 };

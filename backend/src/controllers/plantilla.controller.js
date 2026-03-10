@@ -25,6 +25,14 @@ export async function updatePlantilla(req, res) {
     const { id } = req.params;
     const body = req.body;
 
+    // ⚠️ PROTECCIÓN: El alcance (scope) de una plantilla no puede cambiar después de su creación.
+    // Cambiar scopeType/scopeId afectaría a todos los empleados que ya la tienen por herencia.
+    // Para cambiar el alcance hay que crear una nueva plantilla.
+    delete body.scopeType;
+    delete body.scopeId;
+    delete body.scopeRef;
+    delete body.year; // el año fiscal tampoco debe cambiar
+
     const updated = await Plantilla.findByIdAndUpdate(
       id,
       {

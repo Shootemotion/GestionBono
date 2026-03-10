@@ -41,6 +41,11 @@ const GlobalAvisoSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: "Usuario"
         },
+        tipo: {
+            type: String,
+            enum: ["RRHH", "SISTEMAS"],
+            default: "RRHH"
+        },
         activo: {
             type: Boolean,
             default: true

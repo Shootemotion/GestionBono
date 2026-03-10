@@ -66,7 +66,8 @@ import {
   Settings2,
   Zap,
   CircleCheck,
-  CircleAlert
+  CircleAlert,
+  Cpu
 } from "lucide-react";
 import { ReporteFinal } from "@/components/ReporteFinal";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine, Legend, AreaChart, Area } from "recharts";
@@ -2209,29 +2210,40 @@ export default function MiDesempeno() {
                       <DialogTrigger asChild>
                         <div
                           className={`p-3 border rounded-xl text-xs shadow-sm cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 group
-                              ${aviso.alcance === 'GLOBAL' ? 'bg-indigo-50 border-indigo-100 hover:border-indigo-300' : 'bg-emerald-50 border-emerald-100 hover:border-emerald-300'}`}
+                              ${aviso.tipo === 'SISTEMAS'
+                              ? 'bg-amber-50 border-amber-100 hover:border-amber-300'
+                              : aviso.alcance === 'GLOBAL' ? 'bg-indigo-50 border-indigo-100 hover:border-indigo-300' : 'bg-emerald-50 border-emerald-100 hover:border-emerald-300'}`}
                         >
-                          <div className={`flex items-center gap-2 mb-1 font-bold ${aviso.alcance === 'GLOBAL' ? 'text-indigo-700' : 'text-emerald-700'}`}>
-                            {aviso.alcance === 'GLOBAL' ? <Info className="w-4 h-4" /> : <Megaphone className="w-4 h-4" />}
+                          <div className={`flex items-center gap-2 mb-1 font-bold
+                              ${aviso.tipo === 'SISTEMAS' ? 'text-amber-700' : aviso.alcance === 'GLOBAL' ? 'text-indigo-700' : 'text-emerald-700'}`}>
+                            {aviso.tipo === 'SISTEMAS' ? <Cpu className="w-4 h-4" /> : aviso.alcance === 'GLOBAL' ? <Info className="w-4 h-4" /> : <Megaphone className="w-4 h-4" />}
                             <span className="line-clamp-1">{aviso.titulo}</span>
                           </div>
-                          <p className={`${aviso.alcance === 'GLOBAL' ? 'text-indigo-600' : 'text-emerald-600'} leading-snug line-clamp-2`}>
+                          <p className={`leading-snug line-clamp-2
+                              ${aviso.tipo === 'SISTEMAS' ? 'text-amber-600' : aviso.alcance === 'GLOBAL' ? 'text-indigo-600' : 'text-emerald-600'}`}>
                             {aviso.mensaje}
                           </p>
-                          <div className="mt-2 text-[10px] opacity-60 font-medium flex justify-end">
-                            Leer más...
+                          <div className="mt-2 text-[10px] opacity-60 font-medium flex justify-between">
+                            <span className={`font-bold uppercase text-[9px] tracking-wider
+                                ${aviso.tipo === 'SISTEMAS' ? 'text-amber-500' : 'text-slate-400'}`}>
+                              {aviso.tipo === 'SISTEMAS' ? '⚙ Sistemas' : '📢 RRHH'}
+                            </span>
+                            <span>Leer más...</span>
                           </div>
                         </div>
                       </DialogTrigger>
                       <DialogContent className="sm:max-w-md border-0 shadow-2xl rounded-2xl overflow-hidden p-0">
                         {/* Header Colorido */}
-                        <div className={`px-6 py-6 flex flex-col items-center text-center ${aviso.alcance === 'GLOBAL' ? 'bg-gradient-to-br from-indigo-500 to-blue-600 text-white' : 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white'}`}>
+                        <div className={`px-6 py-6 flex flex-col items-center text-center
+                            ${aviso.tipo === 'SISTEMAS'
+                            ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white'
+                            : aviso.alcance === 'GLOBAL' ? 'bg-gradient-to-br from-indigo-500 to-blue-600 text-white' : 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white'}`}>
                           <div className="p-3 bg-white/20 rounded-full mb-3 backdrop-blur-sm">
-                            {aviso.alcance === 'GLOBAL' ? <Info className="w-8 h-8" /> : <Megaphone className="w-8 h-8" />}
+                            {aviso.tipo === 'SISTEMAS' ? <Cpu className="w-8 h-8" /> : aviso.alcance === 'GLOBAL' ? <Info className="w-8 h-8" /> : <Megaphone className="w-8 h-8" />}
                           </div>
                           <DialogTitle className="text-xl font-bold tracking-tight mb-1">{aviso.titulo}</DialogTitle>
                           <DialogDescription className="text-blue-50/90 text-xs uppercase tracking-wider font-semibold">
-                            Comunicado {aviso.alcance}
+                            {aviso.tipo === 'SISTEMAS' ? 'Alerta de Sistemas' : `Comunicado ${aviso.alcance}`}
                             {aviso.targetName && ` • ${aviso.targetName}`}
                           </DialogDescription>
                         </div>
@@ -2240,6 +2252,12 @@ export default function MiDesempeno() {
                         <div className="p-6 bg-white space-y-4">
                           <div className="text-sm text-slate-600 leading-relaxed whitespace-pre-line max-h-[60vh] overflow-y-auto pr-2">
                             {aviso.mensaje}
+                          </div>
+                          <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
+                            <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider
+                                ${aviso.tipo === 'SISTEMAS' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                              Enviado por: {aviso.tipo === 'SISTEMAS' ? '⚙️ Sistemas' : '📢 RRHH'}
+                            </span>
                           </div>
                         </div>
                       </DialogContent>

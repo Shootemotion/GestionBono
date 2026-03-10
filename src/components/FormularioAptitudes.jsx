@@ -525,10 +525,13 @@ export default function FormularioAptitudes({
             <h3 className="text-base font-semibold">⚙️ Configuración</h3>
 
             <div>
-              <label className="text-xs">Ámbito</label>
+              <label className="text-xs">Ámbito
+                {isEdit && <span className="ml-2 text-[10px] text-amber-600 font-semibold">(🔒 No modificable en edición)</span>}
+              </label>
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
+                  disabled={isEdit}
                   onClick={() => {
                     setScopeType("area");
                     setScopeId("");
@@ -536,12 +539,13 @@ export default function FormularioAptitudes({
                   className={`rounded-md border px-2 py-2 text-sm ${scopeType === "area"
                     ? "bg-primary/10 text-primary border-primary/30"
                     : "bg-background hover:bg-accent"
-                    }`}
+                    } ${isEdit ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   Área
                 </button>
                 <button
                   type="button"
+                  disabled={isEdit}
                   onClick={() => {
                     setScopeType("sector");
                     setScopeId("");
@@ -549,12 +553,13 @@ export default function FormularioAptitudes({
                   className={`rounded-md border px-2 py-2 text-sm ${scopeType === "sector"
                     ? "bg-primary/10 text-primary border-primary/30"
                     : "bg-background hover:bg-accent"
-                    }`}
+                    } ${isEdit ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   Sector
                 </button>
                 <button
                   type="button"
+                  disabled={isEdit}
                   onClick={() => {
                     setScopeType("empleado");
                     setScopeId("");
@@ -562,12 +567,17 @@ export default function FormularioAptitudes({
                   }}
                   className={`rounded-md border px-2 py-2 text-sm ${scopeType === "empleado"
                     ? "bg-primary/10 text-primary border-primary/30"
-                    : "bg-background hover:bg-accent"
-                    }`}
+                    : "bg-background hover:bg-accept"
+                    } ${isEdit ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   Empleado
                 </button>
               </div>
+              {isEdit && (
+                <p className="mt-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                  Para cambiar el ámbito, cloná la plantilla o creá una nueva.
+                </p>
+              )}
             </div>
 
             {scopeType === "area" && (
@@ -705,12 +715,15 @@ export default function FormularioAptitudes({
             )}
 
             <div>
-              <label className="text-xs">Año</label>
+              <label className="text-xs">Año
+                {isEdit && <span className="ml-2 text-[10px] text-amber-600 font-semibold">(🔒 No modificable en edición)</span>}
+              </label>
               <input
                 type="number"
-                className={inputCls}
+                className={inputCls + (isEdit ? " opacity-50 cursor-not-allowed" : "")}
                 value={year}
-                onChange={(e) => setYear(Number(e.target.value))}
+                onChange={(e) => !isEdit && setYear(Number(e.target.value))}
+                readOnly={isEdit}
                 min={currentYear - 5}
                 max={currentYear + 5}
                 aria-invalid={!!fieldErrors.year}
