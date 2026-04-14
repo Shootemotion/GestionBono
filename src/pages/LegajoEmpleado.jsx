@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { Home, Copy, Check, Trophy, FileText, Calendar, HelpCircle } from "lucide-react";
+import { Home, Copy, Check, Trophy, FileText, Calendar, HelpCircle, Eye, EyeOff } from "lucide-react";
 import { api, API_ORIGIN } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
@@ -163,6 +163,7 @@ export default function LegajoEmpleado() {
     vigenteDesde: new Date().toISOString().slice(0, 10),
     comentario: "",
   });
+  const [showSueldos, setShowSueldos] = useState(false);
 
   // Edición de info básica (CENTRO)
   const [editBasic, setEditBasic] = useState(false);
@@ -265,6 +266,18 @@ export default function LegajoEmpleado() {
   //   })();
   // }, []);
 
+  const loadCapacitacionesResumen = async () => {
+    try {
+      const c = await api(`/empleados/${id}/capacitaciones/resumen`).catch(() => null);
+      if (c) setResumeCaps({
+        total: Number(c?.total || 0),
+        totalPendientes: Number(c?.totalPendientes || 0),
+        totalPorRealizar: Number(c?.totalPorRealizar || 0),
+        vencen30: Number(c?.vencen30 || 0)
+      });
+    } catch { }
+  };
+
   // Resúmenes opcionales
   useEffect(() => {
     (async () => {
@@ -272,10 +285,7 @@ export default function LegajoEmpleado() {
         const r = await api(`/empleados/${id}/carrera/resumen`).catch(() => null);
         if (r) setResumeCarrera({ ultimoPuesto: r?.ultimoPuesto || null, desde: r?.desde || null });
       } catch { }
-      try {
-        const c = await api(`/empleados/${id}/capacitaciones/resumen`).catch(() => null);
-        if (c) setResumeCaps({ total: Number(c?.total || 0), vencen30: Number(c?.vencen30 || 0) });
-      } catch { }
+      await loadCapacitacionesResumen();
     })();
   }, [id]);
 
@@ -394,8 +404,12 @@ export default function LegajoEmpleado() {
       const payload = { ...basicForm };
 
       // Validate email domain
-      if (payload.email && !payload.email.endsWith("@diagnos.com.ar")) {
-        return toast.error("El email debe ser del dominio @diagnos.com.ar");
+      if (payload.email) {
+        const allowedDomains = ["@diagnos.com.ar", "@diagnoslab.com.ar", "@gmail.com", "@hotmail.com"];
+        const isValidDomain = allowedDomains.some(domain => payload.email.endsWith(domain));
+        if (!isValidDomain) {
+          return toast.error("El email debe ser del dominio @diagnos.com.ar o @diagnoslab.com.ar");
+        }
       }
       if (payload.area && payload.area._id) payload.area = payload.area._id;
       if (payload.sector && payload.sector._id) payload.sector = payload.sector._id;
@@ -681,9 +695,19 @@ export default function LegajoEmpleado() {
 
               <div className="rounded-2xl bg-white p-4 shadow-sm border border-slate-100 flex flex-col justify-between hover:shadow-md transition-shadow">
                 <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Capacitaciones</div>
-                <div className="mt-2 flex items-baseline gap-1">
-                  <span className="text-2xl font-bold text-slate-800">{capsTotales}</span>
-                  <span className="text-xs text-slate-500 font-medium">realizadas</span>
+                <div className="mt-2 text-sm">
+                  <div className="flex justify-between items-center bg-emerald-50/50 rounded p-1 mb-1">
+                    <span className="text-xs text-emerald-700 font-medium tracking-tight">Validadas</span>
+                    <span className="text-sm font-bold text-emerald-600">{resumeCaps?.total || 0}</span>
+                  </div>
+                  <div className="flex justify-between items-center bg-amber-50/50 rounded p-1 mb-1">
+                    <span className="text-xs text-amber-700 font-medium tracking-tight">Pendientes</span>
+                    <span className="text-sm font-bold text-amber-600">{resumeCaps?.totalPendientes || 0}</span>
+                  </div>
+                  <div className="flex justify-between items-center bg-blue-50/50 rounded p-1">
+                    <span className="text-xs text-blue-700 font-medium tracking-tight">A Realizar</span>
+                    <span className="text-sm font-bold text-blue-600">{resumeCaps?.totalPorRealizar || 0}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1040,15 +1064,24 @@ export default function LegajoEmpleado() {
                 {isRRHH && (
                   <div className="rounded-xl bg-card ring-1 ring-border/60 p-4 mb-4">
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-semibold">Sueldo base</h3>
+                      <h3 className="text-sm font-semibold flex items-center gap-2">
+                        Sueldo base
+                        <button 
+                          onClick={() => setShowSueldos(!showSueldos)}
+                          className="ml-2 text-slate-400 hover:text-slate-600 transition-colors"
+                          title={showSueldos ? "Ocultar montos" : "Mostrar montos"}
+                        >
+                          {showSueldos ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </h3>
                     </div>
 
                     {/* ACTUAL */}
                     <div className="rounded-lg border border-border/60 bg-muted/20 p-3 mb-4 flex items-center justify-between">
                       <div>
                         <div className="text-xs text-muted-foreground">Sueldo actual</div>
-                        <div className="text-xl font-semibold">
-                          {fmtMoney(emp?.sueldoBase?.monto, emp?.sueldoBase?.moneda)}
+                        <div className="text-xl font-semibold font-mono tracking-tight">
+                          {showSueldos ? fmtMoney(emp?.sueldoBase?.monto, emp?.sueldoBase?.moneda) : "••••••••"}
                         </div>
                         <div className="text-xs text-muted-foreground">
                           Vigente desde {emp?.sueldoBase?.vigenteDesde ? String(emp.sueldoBase.vigenteDesde).slice(0, 10) : "—"}
@@ -1162,10 +1195,10 @@ export default function LegajoEmpleado() {
                                       </div>
                                     </td>
                                     <td className="px-4 py-3 text-right text-slate-500">
-                                      {hasPrev ? fmtMoney(anterior, prev?.moneda) : "—"}
+                                      {hasPrev ? (showSueldos ? fmtMoney(anterior, prev?.moneda) : "••••••••") : "—"}
                                     </td>
-                                    <td className="px-4 py-3 text-right font-bold text-slate-700">
-                                      {fmtMoney(item.monto, item.moneda)}
+                                    <td className="px-4 py-3 text-right font-bold text-slate-700 font-mono">
+                                      {showSueldos ? fmtMoney(item.monto, item.moneda) : "••••••••"}
                                     </td>
                                     <td className="px-4 py-3 text-center">
                                       {hasPrev && (
@@ -1250,7 +1283,7 @@ export default function LegajoEmpleado() {
               <div className="rounded-xl bg-card ring-1 ring-border/60 p-4">
                 <div className="overflow-x-auto">
                   <div className="min-w-0">
-                    <CapacitacionesTable empleadoId={id} canEdit={isRRHH} />
+                    <CapacitacionesTable empleadoId={id} canEdit={isRRHH} onChange={loadCapacitacionesResumen} />
                   </div>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import { calculateObjectiveProgress } from "@/utils/calculos";
+import { calculateObjectiveProgress, calculateCompetencyProgress } from "@/utils/calculos";
 
 // Helper para convertir el string del periodo a un índice de mes comparable (1-12) basado en el Año Fiscal (Sep-Ago)
 export const getCurrentFiscalYear = (date = new Date()) => {
@@ -50,6 +50,11 @@ export const calculatePeriodScores = (data, period) => {
 
     const feedbackLimit = getPeriodMonth(period);
 
+    // --- IDENTIFICADOR DE CIERRE ANUAL ---
+    // Determina si este periodo representa el cierre definitivo del año (Mes 12)
+    // Si es así, se aplican estrictamente reglas como 'Todo o Nada' sin proporcionalidad.
+    const isFinalPeriod = feedbackLimit === 12 || period === "FINAL";
+
     // --- Objetivos ---
     let totalObjScore = 0;
     let totalObjWeight = 0;
@@ -63,37 +68,21 @@ export const calculatePeriodScores = (data, period) => {
         let effectiveScore = 0;
 
         if (relevantHitos.length > 0) {
-            // Use Shared Utility for consistent calculation (supports Umbral, Esfuerzo, Mixed Rules, etc.)
-            // calculateObjectiveProgress handles capping internally unless permiteOver is true
-            effectiveScore = calculateObjectiveProgress(obj, relevantHitos);
+            // Use Shared Utility for consistent calculation
+            // isFinalPeriod controls whether we do tracking (proportional) or strict closure
+            effectiveScore = calculateObjectiveProgress(obj, relevantHitos, isFinalPeriod);
         }
-
-        totalObjScore += effectiveScore * (obj.peso || 0);
-        totalObjWeight += (obj.peso || 0);
+        totalObjScore += (effectiveScore * (obj.peso || 0));
     });
 
-    const scoreObjRaw = totalObjScore / 100; // Normalizar a base 100
+    // Normalización: Dividimos por 100 siempre, NO por la suma de pesos evaluados.
+    // Esto asegura que si solo se evaluó un objetivo de peso 10, el score máximo sea 10% (7 puntos).
+    // Coincide con la lógica de Sala de Evaluación y Dashboard.
+    const scoreObjRaw = totalObjScore / 100; 
     const scoreObj = scoreObjRaw * 0.7; // Contribución ponderada (Máx 70)
 
-    // --- Competencias ---
-    let totalCompScore = 0;
-    let compCount = 0;
-    const aptitudes = data.aptitudes?.items || data.aptitudes || [];
-
-    aptitudes.forEach(apt => {
-        const relevantHitos = apt.hitos?.filter(h => getPeriodMonth(h.periodo) <= feedbackLimit) || [];
-        let score = 0;
-        const puntuaciones = relevantHitos.map(h => h.actual).filter(val => val !== null && val !== undefined);
-
-        if (puntuaciones.length > 0) {
-            score = Math.round(puntuaciones.reduce((a, b) => a + b, 0) / puntuaciones.length);
-        }
-
-        totalCompScore += score;
-        compCount++;
-    });
-
-    const scoreCompRaw = compCount > 0 ? (totalCompScore / compCount) : 0;
+    // --- Competencias (Centralizado y Ponderado) ---
+    const scoreCompRaw = calculateCompetencyProgress(data.aptitudes, getPeriodMonth, feedbackLimit);
     const scoreComp = scoreCompRaw * 0.3; // Contribución ponderada (Máx 30)
 
     const global = scoreObj + scoreComp;
@@ -104,3 +93,4 @@ export const calculatePeriodScores = (data, period) => {
         global: global.toFixed(1)
     };
 };
+

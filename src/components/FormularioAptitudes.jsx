@@ -217,10 +217,6 @@ export default function FormularioAptitudes({
       const info = normalizeError(err);
       setLoadError(info);
       toast.error(`${statusPrefix(info.status)}: ${info.message}`);
-      console.groupCollapsed(
-        `[FormularioAptitudes] Falló cargar plantilla ${id} (${info.status ?? "sin status"})`
-      );
-      console.log("Respuesta .data:", info?.data);
       console.error("Error completo:", info?.raw || err);
       console.groupEnd();
     } finally {
@@ -361,12 +357,6 @@ export default function FormularioAptitudes({
       const suffix = info.traceId ? ` (ID: ${info.traceId})` : "";
       toast.error(`${pref}: ${info.message}${suffix}`);
 
-      console.groupCollapsed(
-        `[FormularioAptitudes] Falló el submit (${info.status ?? "sin status"})`
-      );
-      console.log("Payload enviado:", body);
-      console.log("Respuesta .data:", info?.data);
-      if (info?.traceId) console.log("TraceId:", info.traceId);
       console.error("Error completo:", info?.raw || err);
       console.groupEnd();
     } finally {

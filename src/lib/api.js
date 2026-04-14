@@ -3,6 +3,7 @@ const RAW = import.meta.env.VITE_API_URL;
 // Si no hay VITE_API_URL, cae al backend clásico en 5007 (tu caso actual)
 const BASE = RAW || "http://localhost:5007/api";
 
+
 // Origin robusto a partir de BASE (evita "http://uploads/...")
 export const API_ORIGIN = new URL(BASE, window.location.origin).origin;
 

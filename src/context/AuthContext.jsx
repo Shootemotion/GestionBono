@@ -80,9 +80,30 @@ export function AuthProvider({ children }) {
   function logout() {
     clearToken();
     setUser(null);
+    sessionStorage.removeItem('adminUser');
   }
 
-  const value = { user, loading, login, logout, isAuth: !!user, setUser };
+  function impersonateUser(targetUser) {
+    if (!user?.isSuper && user?.rol !== 'superadmin') return;
+    // Guardar el admin real si no estamos ya enmascarando
+    if (!sessionStorage.getItem('adminUser')) {
+      sessionStorage.setItem('adminUser', JSON.stringify(user));
+    }
+    setUser(targetUser);
+  }
+
+  function stopImpersonating() {
+    const adminStr = sessionStorage.getItem('adminUser');
+    if (adminStr) {
+      const admin = JSON.parse(adminStr);
+      setUser(admin);
+      sessionStorage.removeItem('adminUser');
+    }
+  }
+
+  const isImpersonating = !!sessionStorage.getItem('adminUser');
+
+  const value = { user, loading, login, logout, isAuth: !!user, setUser, impersonateUser, stopImpersonating, isImpersonating };
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }
 

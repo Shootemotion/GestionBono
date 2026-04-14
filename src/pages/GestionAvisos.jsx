@@ -90,7 +90,7 @@ export default function GestionAvisos() {
             await api("/avisos", { method: "POST", body: formData });
             toast.success("Aviso creado correctamente");
             // Reset
-            setFormData({ ...formData, titulo: "", mensaje: "", targetId: "", targetName: "", searchTerm: "" });
+            setFormData(prev => ({ ...prev, titulo: "", mensaje: "", targetId: "", targetName: "", searchTerm: "" }));
             fetchHistory();
         } catch (e) {
             console.error(e);
@@ -146,7 +146,7 @@ export default function GestionAvisos() {
                                     className="font-bold text-slate-700 bg-slate-50 border-slate-200"
                                     placeholder="Ej: Mantenimiento Programado"
                                     value={formData.titulo}
-                                    onChange={e => setFormData({ ...formData, titulo: e.target.value })}
+                                    onChange={e => setFormData(prev => ({ ...prev, titulo: e.target.value }))}
                                 />
                             </div>
 
@@ -156,7 +156,7 @@ export default function GestionAvisos() {
                                     className="w-full rounded-xl border-slate-200 bg-slate-50 text-sm p-3 h-32 resize-none outline-none focus:ring-2 focus:ring-indigo-500/20 border"
                                     placeholder="Escribí el contenido del aviso..."
                                     value={formData.mensaje}
-                                    onChange={e => setFormData({ ...formData, mensaje: e.target.value })}
+                                    onChange={e => setFormData(prev => ({ ...prev, mensaje: e.target.value }))}
                                 />
                             </div>
 
@@ -165,14 +165,16 @@ export default function GestionAvisos() {
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Tipo de Aviso</label>
                                 <div className="flex bg-slate-100 p-1 rounded-xl">
                                     <button
-                                        onClick={() => setFormData({ ...formData, tipo: "RRHH" })}
+                                        type="button"
+                                        onClick={() => setFormData(prev => ({ ...prev, tipo: "RRHH" }))}
                                         className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5
                                             ${formData.tipo === "RRHH" ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                                     >
                                         <Megaphone size={13} /> Notificación RRHH
                                     </button>
                                     <button
-                                        onClick={() => setFormData({ ...formData, tipo: "SISTEMAS" })}
+                                        type="button"
+                                        onClick={() => setFormData(prev => ({ ...prev, tipo: "SISTEMAS" }))}
                                         className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5
                                             ${formData.tipo === "SISTEMAS" ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                                     >
@@ -184,11 +186,11 @@ export default function GestionAvisos() {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Desde</label>
-                                    <Input type="date" value={formData.fechaInicio} onChange={e => setFormData({ ...formData, fechaInicio: e.target.value })} />
+                                    <Input type="date" value={formData.fechaInicio} onChange={e => setFormData(prev => ({ ...prev, fechaInicio: e.target.value }))} />
                                 </div>
                                 <div>
                                     <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Hasta</label>
-                                    <Input type="date" value={formData.fechaFin} onChange={e => setFormData({ ...formData, fechaFin: e.target.value })} />
+                                    <Input type="date" value={formData.fechaFin} onChange={e => setFormData(prev => ({ ...prev, fechaFin: e.target.value }))} />
                                 </div>
                             </div>
                         </div>
@@ -200,7 +202,8 @@ export default function GestionAvisos() {
                                     {["GLOBAL", "AREA", "SECTOR"].map(opt => (
                                         <button
                                             key={opt}
-                                            onClick={() => setFormData({ ...formData, alcance: opt, targetId: "", targetName: "" })}
+                                            type="button"
+                                            onClick={() => setFormData(prev => ({ ...prev, alcance: opt, targetId: "", targetName: "" }))}
                                             className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${formData.alcance === opt ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                                         >
                                             {opt}
@@ -219,7 +222,7 @@ export default function GestionAvisos() {
                                                 onChange={e => {
                                                     setSearchTerm(e.target.value);
                                                     setIsSearchOpen(true);
-                                                    setFormData({ ...formData, targetId: "" });
+                                                    setFormData(prev => ({ ...prev, targetId: "" }));
                                                 }}
                                                 onFocus={() => setIsSearchOpen(true)}
                                             />
@@ -231,8 +234,9 @@ export default function GestionAvisos() {
                                                     .map(item => (
                                                         <button
                                                             key={item._id}
+                                                            type="button"
                                                             onClick={() => {
-                                                                setFormData({ ...formData, targetId: item._id, targetName: item.nombre });
+                                                                setFormData(prev => ({ ...prev, targetId: item._id, targetName: item.nombre }));
                                                                 setSearchTerm(item.nombre);
                                                                 setIsSearchOpen(false);
                                                             }}

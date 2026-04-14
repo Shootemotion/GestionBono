@@ -13,6 +13,23 @@ const isValidObjectId = (v) => mongoose.Types.ObjectId.isValid(String(v));
 
 import Feedback from '../models/Feedback.model.js';
 
+// --- In-Memory Cache for Heavy Dashboard Queries ---
+const dashboardCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCache(key) {
+  const cached = dashboardCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data;
+  }
+  return null;
+}
+
+function setCache(key, data) {
+  dashboardCache.set(key, { data, timestamp: Date.now() });
+}
+// ---------------------------------------------------
+
 /**
  * Determines if a template is applicable to an employee based on:
  * 1. Sticky Logic (History): If employee has evaluations for this template, it remains applicable even if inactive/scope changes.
@@ -56,7 +73,7 @@ function isTemplateApplicable(p, empIdStr, areaIdStr, sectorIdStr, isAreaReferen
 }
 
 
-export async function computeForEmployees(empleadoIds, anio) {
+export async function computeForEmployees(empleadoIds, anio, auditLog = null) {
   if (!Array.isArray(empleadoIds) || empleadoIds.length === 0) return [];
   const ids = empleadoIds.map(asObjectId);
 
@@ -65,8 +82,17 @@ export async function computeForEmployees(empleadoIds, anio) {
     .populate("sector")
     .lean();
 
-  // Fetch ALL templates for the year (Active & Inactive) to support "Sticky" logic
-  const plantillas = await Plantilla.find({ year: Number(anio) }).lean();
+  // Fetch ALL templates for the year (Area/Sector scope)
+  const plantillasBase = await Plantilla.find({ year: Number(anio) }).lean();
+  
+  // PLUS: Fetch direct employee templates (ScopeType: empleado OR employee)
+  const plantillasDirectas = await Plantilla.find({ 
+    year: Number(anio), 
+    scopeType: { $in: ["empleado", "employee"] }, 
+    scopeId: { $in: ids } 
+  }).lean();
+
+  const plantillas = [...plantillasBase, ...plantillasDirectas];
 
   // overrides
   const overridesArr = await OverrideObjetivo.find({
@@ -84,8 +110,8 @@ export async function computeForEmployees(empleadoIds, anio) {
 
   // evaluaciones
   const evals = await Evaluacion.find({
-    empleado: { $in: ids },
-    year: Number(anio),
+    empleado: { $in: ids }
+    // year: Number(anio) <-- Removed to support fiscal years where evaluations and templates have different years
   }).lean();
 
   // feedbacks
@@ -117,9 +143,18 @@ export async function computeForEmployees(empleadoIds, anio) {
         // 0. Check Manual Override Inclusion first
         // If there's an override that is NOT excluded, we force inclusion (Classic "Asignación Manual")
         const ov = empOverrides ? empOverrides.get(String(p._id)) : null;
-        if (ov && !ov.excluido) return true;
+        if (ov && !ov.excluido) {
+          if (e.apellido.includes("Fitz Patrick")) {
+            console.log(`[TRACE] Cecilia + Tpl: ${p.nombre}, Year: ${p.year}, Activo: ${p.activo}, Override: true, Aplicable: true`);
+          }
+          return true;
+        }
 
-        return isTemplateApplicable(p, empIdStr, areaIdStr, sectorIdStr, isAreaReferent, isSectorReferent, evals);
+        const isApp = isTemplateApplicable(p, empIdStr, areaIdStr, sectorIdStr, isAreaReferent, isSectorReferent, evals);
+        if (e.apellido.includes("Fitz Patrick")) {
+          console.log(`[TRACE] Cecilia + Tpl: ${p.nombre}, Year: ${p.year}, Activo: ${p.activo}, Aplicable: ${isApp}`);
+        }
+        return isApp;
       });
 
       const objetivosArr = [];
@@ -297,12 +332,19 @@ export async function dashByArea(req, res) {
     const { areaId } = req.params;
     const { anio } = req.query;
     const user = req.user;
+    const selfEmpId = req.user?.empleadoId;
 
     // 🔹 Si es director/RRHH/Super y no se pasa areaId → traer todos
     if ((!areaId || areaId === "null") && (user.rol === "directivo" || user.isRRHH || user.rol === "superadmin" || user.isSuper)) {
+      const cacheKey = `dashArea_ALL_${anio || new Date().getFullYear()}`;
+      const cached = getCache(cacheKey);
+      if (cached) return res.json(cached);
+
       const empleadosDocs = await Empleado.find({}, { _id: 1 }).lean();
       const ids = empleadosDocs.map((e) => e._id);
       const data = await computeForEmployees(ids, anio || new Date().getFullYear());
+
+      setCache(cacheKey, data);
       return res.json(data);
     }
 
@@ -310,10 +352,9 @@ export async function dashByArea(req, res) {
       return res.status(400).json({ message: "areaId inválido" });
 
     // 🔹 Verificación solo para referentes
-    // Si es SuperAdmin, Bypass check
-    if (user.rol === "superadmin" || user.isSuper) {
-      // Allow execution to proceed. But wait, we need to filter proper employees if a specific area IS passed.
-      // The logic below (lines 345) fetches employees by areaId. So we just need to bypass the "esReferente" check.
+    // Si es SuperAdmin, RRHH o Directivo, Bypass check
+    if (user.rol === "superadmin" || user.isSuper || user.isRRHH || user.rol === "directivo" || user.isDirectivo) {
+      // Allow execution to proceed.
     } else {
       const esReferente = user.referenteAreas?.map(String).includes(String(areaId));
       if (!esReferente) {
@@ -321,9 +362,33 @@ export async function dashByArea(req, res) {
       }
     }
 
-    // 🔹 Exclude Referentes from the list (Prevent self-evaluation in team view)
-    const areaDoc = await Area.findById(areaId, "referentes").lean();
-    const referentesIds = areaDoc?.referentes || [];
+    // 🔹 Exclusión de referentes — lógica basada en membresía del área:
+    //
+    //   EVALUADOR EXTERNO: el área personal del usuario es DISTINTA al área consultada.
+    //     Ej: Alejandra (Comité de Gestión) consulta Atención al Cliente.
+    //     → Solo se excluye a sí misma. Ve a los co-referentes (Mauro) ✅
+    //
+    //   MIEMBRO DEL ÁREA: el área personal del usuario es la MISMA que consulta.
+    //     Ej: Mauro (Atención al Cliente) consulta Atención al Cliente.
+    //     → Se excluyen todos los referentes del área (incluyendo Alejandra). ✅
+    //     Mauro sigue viendo a Lautaro, Axel y todos los empleados no-referentes.
+    const userAreaId = req.user?.areaId;                  // área personal del usuario
+    const userBelongsToArea = userAreaId && String(userAreaId) === String(areaId);
+
+    let exclusionIds;
+    if (userBelongsToArea) {
+      // Miembro del área → comportamiento original (excluir todos los referentes)
+      const areaDoc = await Area.findById(areaId, "referentes").lean();
+      exclusionIds = (areaDoc?.referentes || []).map(String);
+    } else {
+      // Evaluador externo → solo excluir al que consulta
+      exclusionIds = selfEmpId ? [String(selfEmpId)] : [];
+    }
+
+    // 🔹 Cache check for specific Area
+    const cacheKey = `dashArea_${areaId}_${anio || new Date().getFullYear()}_exc_${exclusionIds.join('-')}`;
+    const cached = getCache(cacheKey);
+    if (cached) return res.json(cached);
 
     const sectores = await Sector.find({ areaId: asObjectId(areaId) }, "_id").lean();
     const sectorIds = sectores.map((s) => s._id);
@@ -331,13 +396,15 @@ export async function dashByArea(req, res) {
     const empleadosDocs = await Empleado.find(
       {
         $or: [{ area: asObjectId(areaId) }, { sector: { $in: sectorIds } }],
-        _id: { $nin: referentesIds } // Exclude referentes
+        _id: { $nin: exclusionIds }
       },
       { _id: 1 }
     ).lean();
 
     const ids = empleadosDocs.map((e) => e._id);
     const data = await computeForEmployees(ids, anio || new Date().getFullYear());
+
+    setCache(cacheKey, data);
     res.json(data);
   } catch (e) {
     console.error("dashByArea error:", e);
@@ -352,9 +419,15 @@ export const dashBySector = async (req, res) => {
     const user = req.user;
 
     if ((!sectorId || sectorId === "null") && (user.rol === "directivo" || user.isRRHH || user.rol === "superadmin" || user.isSuper)) {
+      const cacheKey = `dashSector_ALL_${anio || new Date().getFullYear()}`;
+      const cached = getCache(cacheKey);
+      if (cached) return res.json(cached);
+
       const empleadosDocs = await Empleado.find({}, { _id: 1 }).lean();
       const ids = empleadosDocs.map((e) => e._id);
       const data = await computeForEmployees(ids, anio || new Date().getFullYear());
+
+      setCache(cacheKey, data);
       return res.json(data);
     }
 
@@ -362,20 +435,39 @@ export const dashBySector = async (req, res) => {
       return res.status(400).json({ message: "sectorId inválido" });
     }
 
-    const sectorDoc = await Sector.findById(sectorId, "referentes").lean();
-    const referentesIds = sectorDoc?.referentes || [];
+    // 🔹 Exclusión de referentes — lógica basada en membresía del sector:
+    // IGUAL que en dashByArea.
+    // EXTERNO (Alejandra viendo este sector) → solo se excluye a sí misma, ve a los líderes (Mauro)
+    // INTERNO (Mauro viendo su propio sector) → se excluyen todos los líderes del sector
+    const selfEmpIdSec = req.user?.empleadoId;
+    const userSectorId = req.user?.sectorId;
+    const userBelongsToSector = userSectorId && String(userSectorId) === String(sectorId);
+
+    let exclusionIdsSec;
+    if (userBelongsToSector) {
+      const sectorDoc = await Sector.findById(sectorId, "referentes").lean();
+      exclusionIdsSec = (sectorDoc?.referentes || []).map(String);
+    } else {
+      exclusionIdsSec = selfEmpIdSec ? [String(selfEmpIdSec)] : [];
+    }
 
     const empleadosDocs = await Empleado.find(
       {
         sector: asObjectId(sectorId),
-        _id: { $nin: referentesIds } // Exclude referentes
+        _id: { $nin: exclusionIdsSec }
       },
       { _id: 1 }
     ).lean();
 
+    // 🔹 Cache check for specific Sector
+    const cacheKey = `dashSector_${sectorId}_${anio || new Date().getFullYear()}_exc_${exclusionIdsSec.join('-')}`;
+    const cached = getCache(cacheKey);
+    if (cached) return res.json(cached);
+
     const ids = empleadosDocs.map((e) => e._id);
     const data = await computeForEmployees(ids, anio || new Date().getFullYear());
 
+    setCache(cacheKey, data);
     res.json(data);
   } catch (err) {
     console.error("dashBySector error:", err);

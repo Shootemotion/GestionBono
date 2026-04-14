@@ -10,12 +10,11 @@ const procesoISOSchema = new mongoose.Schema(
         // Año fiscal de inicio: 2025 → período 2025-2026  (Sep/2025 → Ago/2026)
         year: { type: Number, required: true },
 
-        // Referencia al objetivo ISO padre (opcional)
-        objetivoISOId: {
+        // Referencia a múltiples objetivos ISO
+        objetivosISO: [{
             type: mongoose.Schema.Types.ObjectId,
             ref: "ObjetivoISO",
-            default: null,
-        },
+        }],
 
         activo: { type: Boolean, default: true },
     },

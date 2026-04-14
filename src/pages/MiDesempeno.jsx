@@ -80,7 +80,7 @@ import {
 
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { calculateObjectiveProgress, calculateWeightedScore } from "@/utils/calculos";
+import { calculateObjectiveProgress, calculateWeightedScore, calculateCompetencyProgress } from "@/utils/calculos";
 
 // === UI helpers ===
 const StatusBadge = ({ status }) => {
@@ -550,34 +550,20 @@ export default function MiDesempeno() {
     const scoreObjRaw = totalObjWeight > 0 ? (totalObjScore / totalObjWeight) : 0; // Normalize by actual weight sum
     const scoreObj = scoreObjRaw * 0.7; // Weighted contribution (Max 70)
 
-    // Competencias
-    let totalCompScore = 0;
-    let totalCompWeight = 0;
+    // Competencias (Centralizado y Ponderado)
     const aptitudes = [];
-
     data.aptitudes?.forEach(apt => {
-      const relevantHitos = apt.hitos?.filter(h => getPeriodMonth(h.periodo) <= feedbackLimit) || [];
-      let score = 0;
-      const puntuaciones = relevantHitos.map(h => h.actual).filter(val => val !== null && val !== undefined);
-
-      if (puntuaciones.length > 0) {
-        score = Math.round(puntuaciones.reduce((a, b) => a + b, 0) / puntuaciones.length);
-      }
-
-      const peso = apt.peso || 0;
-      totalCompScore += score * peso;
-      totalCompWeight += peso;
-
-      const hitoPeriodo = apt.hitos?.find(h => h.periodo === p);
-
-      aptitudes.push({
-        ...apt,
-        hitoActual: hitoPeriodo,
-        scorePeriodo: score
-      });
+        const relevantHitos = apt.hitos?.filter(h => getPeriodMonth(h.periodo) <= feedbackLimit) || [];
+        let score = 0;
+        const puntuaciones = relevantHitos.map(h => h.actual).filter(val => val !== null && val !== undefined);
+        if (puntuaciones.length > 0) {
+            score = Math.round(puntuaciones.reduce((a, b) => a + b, 0) / puntuaciones.length);
+        }
+        const hitoPeriodo = apt.hitos?.find(h => h.periodo === p);
+        aptitudes.push({ ...apt, hitoActual: hitoPeriodo, scorePeriodo: score });
     });
 
-    const scoreCompRaw = totalCompWeight > 0 ? (totalCompScore / totalCompWeight) : 0; // Weighted Average
+    const scoreCompRaw = calculateCompetencyProgress(data.aptitudes, getPeriodMonth, feedbackLimit);
     const scoreComp = scoreCompRaw * 0.3; // Weighted contribution (Max 30)
 
     const global = scoreObj + scoreComp;
@@ -654,18 +640,8 @@ export default function MiDesempeno() {
           });
           const rawObj = tObjScore;
 
-          // Calc Comp
-          let tCompScore = 0;
-          let tCompCount = 0;
-          data.aptitudes?.forEach(a => {
-            const rh = a.hitos?.filter(h => getPeriodMonth(h.periodo) <= relevantLimit) || [];
-            const vals = rh.map(h => h.actual).filter(v => v !== null);
-            if (vals.length > 0) {
-              tCompScore += Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
-              tCompCount++;
-            }
-          });
-          const rawComp = tCompCount > 0 ? (tCompScore / tCompCount) : 0;
+          // Calc Comp (Weighted)
+          const rawComp = calculateCompetencyProgress(data.aptitudes, getPeriodMonth, relevantLimit);
 
           return {
             name: tPeriod === "FINAL" ? "Fin" : tPeriod,
@@ -2082,7 +2058,7 @@ export default function MiDesempeno() {
                           <select
                             value={localReason}
                             onChange={(e) => setLocalReason(e.target.value)}
-                            disabled={selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado}
+                            disabled={selectedFeedback.estado !== "SENT"}
                             className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
                           >
                             <option value="">Seleccioná un motivo...</option>
@@ -2103,7 +2079,7 @@ export default function MiDesempeno() {
                           placeholder="Escribí tus comentarios sobre este feedback..."
                           value={localComment}
                           onChange={(e) => setLocalComment(e.target.value)}
-                          disabled={selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado}
+                          disabled={selectedFeedback.estado !== "SENT"}
                         />
                       </div>
 
@@ -2111,7 +2087,7 @@ export default function MiDesempeno() {
                         <div className="flex gap-3 w-full sm:w-auto">
                           <button
                             onClick={() => setLocalAck("ACK")}
-                            disabled={selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado}
+                            disabled={selectedFeedback.estado !== "SENT"}
                             className={`flex-1 sm:flex-none px-4 py-2.5 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${localAck === "ACK"
                               ? "bg-emerald-100 text-emerald-700 ring-2 ring-emerald-500 ring-offset-2"
                               : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200"
@@ -2124,7 +2100,7 @@ export default function MiDesempeno() {
                           </button>
                           <button
                             onClick={() => setLocalAck("CONTEST")}
-                            disabled={selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado}
+                            disabled={selectedFeedback.estado !== "SENT"}
                             className={`flex-1 sm:flex-none px-4 py-2.5 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${localAck === "CONTEST"
                               ? "bg-rose-100 text-rose-700 ring-2 ring-rose-500 ring-offset-2"
                               : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200"
@@ -2139,10 +2115,10 @@ export default function MiDesempeno() {
 
                         <Button
                           onClick={handleSaveResponse}
-                          disabled={selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado || !localAck}
+                          disabled={selectedFeedback.estado !== "SENT" || !localAck}
                           className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 px-8 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {selectedFeedback.estado === "CLOSED" || selectedFeedback.estado === "PENDING_HR" || !!selectedFeedback.empleadoAck?.estado ? "Enviado" : "Enviar"}
+                          {selectedFeedback.estado !== "SENT" ? "Enviado" : "Enviar"}
                         </Button>
                       </div>
 
@@ -2219,16 +2195,14 @@ export default function MiDesempeno() {
                             {aviso.tipo === 'SISTEMAS' ? <Cpu className="w-4 h-4" /> : aviso.alcance === 'GLOBAL' ? <Info className="w-4 h-4" /> : <Megaphone className="w-4 h-4" />}
                             <span className="line-clamp-1">{aviso.titulo}</span>
                           </div>
-                          <p className={`leading-snug line-clamp-2
-                              ${aviso.tipo === 'SISTEMAS' ? 'text-amber-600' : aviso.alcance === 'GLOBAL' ? 'text-indigo-600' : 'text-emerald-600'}`}>
-                            {aviso.mensaje}
-                          </p>
-                          <div className="mt-2 text-[10px] opacity-60 font-medium flex justify-between">
-                            <span className={`font-bold uppercase text-[9px] tracking-wider
-                                ${aviso.tipo === 'SISTEMAS' ? 'text-amber-500' : 'text-slate-400'}`}>
+                          <div className="mt-2 text-[10px] opacity-70 font-medium flex justify-between items-center bg-white/50 px-2 py-1.5 rounded-md">
+                            <span className={`font-bold uppercase tracking-wider
+                                ${aviso.tipo === 'SISTEMAS' ? 'text-amber-600' : 'text-slate-500'}`}>
                               {aviso.tipo === 'SISTEMAS' ? '⚙ Sistemas' : '📢 RRHH'}
                             </span>
-                            <span>Leer más...</span>
+                            <span className="text-slate-500 flex items-center gap-1">
+                              Válido hasta: {new Date(aviso.fechaFin).toLocaleDateString()}
+                            </span>
                           </div>
                         </div>
                       </DialogTrigger>

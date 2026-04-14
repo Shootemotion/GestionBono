@@ -12,6 +12,7 @@ export async function analyticsEvaluaciones(req, res) {
         if (req.query.estado) filter.estado = req.query.estado;
 
         const evaluaciones = await Evaluacion.find(filter)
+            .sort({ createdAt: -1 })
             .populate("empleado", "nombre apellido puesto area sector")
             .populate({
                 path: "empleado",

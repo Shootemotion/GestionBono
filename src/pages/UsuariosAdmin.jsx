@@ -45,6 +45,7 @@ export default function UsuariosAdmin() {
   const [createEmpleado, setCreateEmpleado] = useState(null);
   const [createEmail, setCreateEmail] = useState("");
   const [createRole, setCreateRole] = useState("visor");
+  const [createIsCalidad, setCreateIsCalidad] = useState(false);
   const [createSendEmail, setCreateSendEmail] = useState(true);
   const [creating, setCreating] = useState(false);
 
@@ -53,6 +54,7 @@ export default function UsuariosAdmin() {
   const [editUser, setEditUser] = useState(null);
   const [editEmail, setEditEmail] = useState("");
   const [editRole, setEditRole] = useState("visor");
+  const [editIsCalidad, setEditIsCalidad] = useState(false);
   const [updating, setUpdating] = useState(false);
 
   // --- HANDLERS (Igual que antes) ---
@@ -61,6 +63,7 @@ export default function UsuariosAdmin() {
     setEditUser(u);
     setEditEmail(u.email || "");
     setEditRole(u.rol || "visor");
+    setEditIsCalidad(u.isCalidad || false);
     setEditModalOpen(true);
   };
 
@@ -75,7 +78,7 @@ export default function UsuariosAdmin() {
     try {
       const res = await api(`/usuarios/${editUser._id}`, {
         method: "PATCH",
-        body: { email: editEmail, rol: editRole }
+        body: { email: editEmail, rol: editRole, isCalidad: editIsCalidad }
       });
       setUsers(prev => prev.map(u => (u._id === res.user._id ? res.user : u)));
       toast.success("Usuario actualizado correctamente.");
@@ -151,6 +154,7 @@ export default function UsuariosAdmin() {
     const u = usersByEmpleado[empleado?._id];
     setCreateEmail((u?.email || empleado?.email || "").trim());
     setCreateRole(u?.rol || "visor");
+    setCreateIsCalidad(u?.isCalidad || false);
     setCreateSendEmail(true);
     setCreateModalOpen(true);
   };
@@ -159,6 +163,7 @@ export default function UsuariosAdmin() {
     setCreateEmpleado(null);
     setCreateEmail("");
     setCreateRole("visor");
+    setCreateIsCalidad(false);
     setCreateModalOpen(false);
   };
 
@@ -170,6 +175,7 @@ export default function UsuariosAdmin() {
       const body = {
         email: createEmail.trim().toLowerCase(),
         rol: createRole,
+        isCalidad: createIsCalidad,
         empleadoId: createEmpleado ? createEmpleado._id : undefined,
         enviarEmail: createSendEmail,
       };
@@ -190,7 +196,6 @@ export default function UsuariosAdmin() {
       }
       closeCreateModal();
     } catch (err) {
-      console.error('create account err', err);
       toast.error(err?.data?.message || "Error al crear usuario");
     } finally {
       setCreating(false);
@@ -379,10 +384,17 @@ export default function UsuariosAdmin() {
                       </td>
                       <td className="px-6 py-4">
                         {hasAccount ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 uppercase tracking-wide">
-                            <Shield className="w-3 h-3 mr-1" />
-                            {u.rol}
-                          </span>
+                          <div className="flex flex-col gap-1 items-start">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 uppercase tracking-wide">
+                              <Shield className="w-3 h-3 mr-1" />
+                              {u.rol}
+                            </span>
+                            {u.isCalidad && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-700 uppercase tracking-wide border border-sky-200">
+                                  ✔ Calidad ISO
+                                </span>
+                            )}
+                          </div>
                         ) : (
                           <span className="text-slate-300">-</span>
                         )}
@@ -475,6 +487,19 @@ export default function UsuariosAdmin() {
               </div>
             </div>
 
+            <div className="flex items-center gap-2 mt-4">
+              <input
+                type="checkbox"
+                id="createCalidad"
+                checked={createIsCalidad}
+                onChange={(e) => setCreateIsCalidad(e.target.checked)}
+                className="w-4 h-4 text-blue-600 bg-slate-100 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
+              />
+              <label htmlFor="createCalidad" className="text-sm font-semibold text-sky-700 cursor-pointer select-none">
+                Habilitar Perfil "Rol Calidad" (Gestión ISO)
+              </label>
+            </div>
+
             {/* Checkbox de Enviar por Mail (Restaurado) */}
             <div className="flex items-center gap-2 mt-4">
               <input
@@ -518,6 +543,22 @@ export default function UsuariosAdmin() {
                 <option value="superadmin">Super Admin</option>
               </select>
             </div>
+            
+            <div className="flex items-center gap-2 mt-2">
+              <input
+                type="checkbox"
+                id="editCalidad"
+                checked={editIsCalidad}
+                onChange={(e) => setEditIsCalidad(e.target.checked)}
+                className="w-4 h-4 text-blue-600 bg-slate-100 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
+              />
+              <label htmlFor="editCalidad" className="text-sm font-semibold text-sky-700 cursor-pointer select-none">
+                Habilitar Perfil "Rol Calidad" (Gestión ISO)
+              </label>
+            </div>
+            <p className="text-xs text-slate-400 italic ml-6">
+              ⓘ Los cambios de permisos se aplican automáticamente en el próximo request del usuario.
+            </p>
           </div>
           <div className="flex justify-end gap-2 mt-4">
             <Button variant="outline" onClick={closeEditModal}>Cancelar</Button>

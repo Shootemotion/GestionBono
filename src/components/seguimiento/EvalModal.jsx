@@ -1,6 +1,16 @@
 // src/components/EvalModal.jsx
 import Modal from "@/components/Modal.jsx";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog";
 import { useState, useEffect } from "react";
 import TraceabilityCard from "@/components/seguimiento/TraceabilityCard.jsx";
 import { api } from "@/lib/api";
@@ -26,6 +36,7 @@ export default function EvalModal({
 }) {
   const [tab, setTab] = useState("detalle");
   const [saving, setSaving] = useState(false);
+  const [confirmSubmit, setConfirmSubmit] = useState(null);
   const [empleadosEstados, setEmpleadosEstados] = useState([]);
   const [estadoTab, setEstadoTab] = useState("NO_ENVIADOS");
   const isAptitud = (itemSeleccionado?._tipo === "aptitud") || (itemSeleccionado?.tipo === "aptitud");
@@ -110,8 +121,17 @@ export default function EvalModal({
 
 
 
-  const persistAndFlow = async (action) => {
+  const persistAndFlow = async (action, isConfirmed = false) => {
     if (!itemSeleccionado || !localHito) return;
+
+    if (action === "toEmployee" && !isConfirmed) {
+      setConfirmSubmit({
+        title: "¿Estás seguro de enviar la evaluación al colaborador?",
+        description: "El empleado recibirá la notificación y podrá ver los resultados en su panel de desempeño inmediatamente.",
+        onConfirm: () => persistAndFlow(action, true)
+      });
+      return;
+    }
 
     // ¿Estoy evaluando una APTITUD?
     const isAptitud =
@@ -273,8 +293,8 @@ export default function EvalModal({
               <button
                 key={t}
                 className={`px-3 py-1 rounded-md transition ${estadoTab === t
-                    ? "bg-primary text-primary-foreground shadow"
-                    : "hover:bg-muted"
+                  ? "bg-primary text-primary-foreground shadow"
+                  : "hover:bg-muted"
                   }`}
                 onClick={() => setEstadoTab(t)}
               >
@@ -434,8 +454,8 @@ export default function EvalModal({
                     {m.resultado !== null && (
                       <p
                         className={`text-xs mt-1 font-medium ${evaluarCumple(m.resultado, m.esperado, m.operador, m.unidad)
-                            ? "text-green-600"
-                            : "text-red-600"
+                          ? "text-green-600"
+                          : "text-red-600"
                           }`}
                       >
                         {evaluarCumple(m.resultado, m.esperado, m.operador, m.unidad)
@@ -540,6 +560,24 @@ export default function EvalModal({
           </div>
         )}
       </div>
+
+      {/* Modern Confirmation Dialog */}
+      <AlertDialog open={!!confirmSubmit} onOpenChange={(open) => { if (!open) setConfirmSubmit(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmSubmit?.title}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmSubmit?.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              confirmSubmit?.onConfirm();
+              setConfirmSubmit(null);
+            }}>Aceptar y Enviar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </Modal>
   );
 }

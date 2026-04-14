@@ -4,14 +4,14 @@ import { dashArea, dashSector } from "@/lib/dashboard";
 import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 
 import FilterBar from "@/components/seguimiento/FilterBar";
 import GanttView from "@/components/seguimiento/GanttView";
 
 
 import { Button } from "@/components/ui/button";
-import { BarChart3, Calendar, RefreshCw } from "lucide-react";
+import { BarChart3, Calendar, RefreshCw, Users } from "lucide-react";
 
 /* ========= utils de agrupación/normalización ========= */
 
@@ -193,6 +193,19 @@ export default function SeguimientoReferente() {
   const [tipoFiltro, setTipoFiltro] = useState("todos"); // Este podría ir a URL si se desea
   const [groupBy, setGroupBy] = useState("empleado");
 
+  // Areas maestras cargadas desde backend para el selector de directivos
+  const [remoteAreas, setRemoteAreas] = useState([]);
+  const location = useLocation();
+
+  // Cargar áreas estáticas si es director
+  useEffect(() => {
+    if (esDirector || esSuperAdmin || esVisor) {
+      api("/areas").then(res => {
+        if (Array.isArray(res)) setRemoteAreas(res);
+      }).catch(err => console.error("Error cargando areas maestro:", err));
+    }
+  }, [esDirector, esSuperAdmin, esVisor]);
+
   // --- SETTERS WRAPPERS (Actualizan URL) ---
   const setAnio = (val) => {
     setSearchParams(prev => {
@@ -249,10 +262,13 @@ export default function SeguimientoReferente() {
 
         // 1. Recolectar respuestas crudas según rol
         if (esDirector || esSuperAdmin) {
-          // Director/RRHH/SuperAdmin: Traer TODO de una sola vez
-          // dashArea(null) en el backend ya está optimizado para traer todos los empleados
-          const allData = await dashArea(null, anio);
-          rawResponses = Array.isArray(allData) ? allData : [];
+          if (areaFiltro === "todas") {
+             // Si no eligió área, devolvemos vacío para no atascar la pantalla con toda la compañía.
+             rawResponses = [];
+          } else {
+             const allData = await dashArea(areaFiltro, anio);
+             rawResponses = Array.isArray(allData) ? allData : [];
+          }
         } else if (esReferente) {
           const promises = [];
 
@@ -364,7 +380,7 @@ export default function SeguimientoReferente() {
         setLoading(false);
       }
     })();
-  }, [user, anio, puedeVer, esReferente, esDirector, esVisor, isJefeArea]);
+  }, [user, anio, puedeVer, esReferente, esDirector, esVisor, isJefeArea, areaFiltro]);
 
   if (!puedeVer) {
     return (
@@ -380,8 +396,12 @@ export default function SeguimientoReferente() {
     );
   }
 
-  // selects únicos
+  // selects únicos modificados para utilizar los datos descargados si somos directivos
   const areasUnicas = useMemo(() => {
+    // Si tenemos áreas remotas, las usamos para el dropdown así existen sin cargar datos aun
+    if (remoteAreas.length > 0) {
+       return [{ _id: "todas", nombre: "Todas (Elija una para visualizar datos)" }, ...remoteAreas];
+    }
     const s = new Map();
     rows.forEach((r) => {
       const a = r.empleado?.area;
@@ -390,8 +410,8 @@ export default function SeguimientoReferente() {
       const nombre = a?.nombre || a?.name || "Sin nombre";
       s.set(id, { _id: id, nombre });
     });
-    return [{ _id: "todas", nombre: "Todas" }, ...Array.from(s.values())];
-  }, [rows]);
+    return [{ _id: "todas", nombre: "Todas (Elija una para visualizar datos)" }, ...Array.from(s.values())];
+  }, [rows, remoteAreas]);
 
   const sectoresUnicos = useMemo(() => {
     const s = new Map();
@@ -513,6 +533,7 @@ export default function SeguimientoReferente() {
       {
         state: {
           from: "seguimiento",
+          search: location.search,
           anio,
           itemSeleccionado: item,
           empleadosDelItem: empleados,
@@ -622,13 +643,23 @@ export default function SeguimientoReferente() {
           <div className="fixed inset-0 bg-white/50 backdrop-blur-sm z-50 flex items-center justify-center">
             <div className="bg-white p-6 rounded-2xl shadow-xl border border-slate-100 flex flex-col items-center gap-4">
               <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-              <div className="text-slate-600 font-medium animate-pulse">Cargando datos...</div>
+              <div className="text-slate-600 font-medium animate-pulse">Cargando datos del área...</div>
             </div>
           </div>
         )}
 
+        {(!loading && (esDirector || esSuperAdmin) && areaFiltro === "todas") && (
+          <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-10 flex flex-col items-center justify-center text-center shadow-sm">
+             <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4">
+                 <Users className="w-8 h-8" />
+             </div>
+             <h3 className="text-lg font-bold text-slate-800 mb-2">Visualizador Estructural</h3>
+             <p className="text-slate-600 mb-6 max-w-md">Para organizar eficientemente la grilla, por favor seleccione un Área departamental específica en los filtros superiores.</p>
+          </div>
+        )}
+
         {/* Contenido: Gantt chart siempre */}
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col min-h-[600px] overflow-hidden relative">
+        <div className={`rounded-xl border border-slate-200 bg-white shadow-sm flex-col min-h-[600px] overflow-hidden relative ${((esDirector || esSuperAdmin) && areaFiltro === "todas") ? 'hidden' : 'flex'}`}>
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50/30">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">

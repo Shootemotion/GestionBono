@@ -3,6 +3,11 @@ import fs from 'fs';
 import path from 'path';
 import { runBackup } from '../../scripts/backup.js';
 import { runRestore, getBackupPreview } from '../../scripts/restore.js';
+import mongoose from 'mongoose';
+import Empleado from '../models/Empleado.model.js';
+import Evaluacion from '../models/Evaluacion.model.js';
+import Usuario from '../models/Usuario.model.js';
+import os from 'os';
 
 const router = express.Router();
 
@@ -108,5 +113,81 @@ router.get('/backups/:filename/preview', async (req, res) => {
         res.status(500).json({ message: 'Failed to preview backup', error: error.message });
     }
 });
+
+// GET /api/system/health - Get system health status
+router.get('/health', async (req, res) => {
+    try {
+        const dbStatus = mongoose.connection.readyState;
+        // 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
+        const dbStatusMap = {
+            0: 'disconnected',
+            1: 'connected',
+            2: 'connecting',
+            3: 'disconnecting'
+        };
+
+        const uptime = process.uptime();
+        const memoryUsage = process.memoryUsage();
+        
+        // Define "recent" as within the last 24 hours
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+        // Basic stats + Activity
+        const [employeeCount, evaluationCount, totalUsers, activeUsers24h] = await Promise.all([
+            Empleado.countDocuments(),
+            Evaluacion.countDocuments(),
+            Usuario.countDocuments({ activo: true }),
+            Usuario.countDocuments({ activo: true, lastLoginAt: { $gte: twentyFourHoursAgo } })
+        ]);
+
+        res.json({
+            status: dbStatus === 1 ? 'ok' : 'error',
+            database: {
+                status: dbStatusMap[dbStatus] || 'unknown',
+                readyState: dbStatus
+            },
+            server: {
+                uptime: Math.floor(uptime),
+                uptimeFormatted: formatUptime(uptime),
+                memory: {
+                    rssCount: Math.floor(memoryUsage.rss / 1024 / 1024),
+                    rss: Math.floor(memoryUsage.rss / 1024 / 1024) + ' MB',
+                    heapTotalCount: Math.floor(memoryUsage.heapTotal / 1024 / 1024),
+                    heapTotal: Math.floor(memoryUsage.heapTotal / 1024 / 1024) + ' MB',
+                    heapUsedCount: Math.floor(memoryUsage.heapUsed / 1024 / 1024),
+                    heapUsed: Math.floor(memoryUsage.heapUsed / 1024 / 1024) + ' MB',
+                },
+                platform: process.platform,
+                nodeVersion: process.version,
+                loadAvg: os.loadavg(),
+                cpuCount: os.cpus().length
+            },
+            stats: {
+                employees: employeeCount,
+                evaluations: evaluationCount,
+                usersTotal: totalUsers,
+                usersActive24h: activeUsers24h
+            },
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Health check failed:', error);
+        res.status(500).json({ message: 'Health check failed', error: error.message });
+    }
+});
+
+function formatUptime(seconds) {
+    const d = Math.floor(seconds / (3600 * 24));
+    const h = Math.floor((seconds % (3600 * 24)) / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+
+    const parts = [];
+    if (d > 0) parts.push(`${d}d`);
+    if (h > 0) parts.push(`${h}h`);
+    if (m > 0) parts.push(`${m}m`);
+    parts.push(`${s}s`);
+    return parts.join(' ');
+}
 
 export default router;

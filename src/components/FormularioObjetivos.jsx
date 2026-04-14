@@ -357,12 +357,6 @@ export default function FormularioObjetivos({
             : "No se pudo guardar";
       toast.error(`${prefix}: ${info.message}`);
 
-      console.groupCollapsed(
-        `[FormObjetivos] Falló el submit (${info.status ?? "sin status"})`
-      );
-      console.log("Payload enviado:", body);
-      console.log("Respuesta .data:", info?.data);
-      console.log("Respuesta .raw:", info?.raw);
       console.error("Error completo:", err);
       console.groupEnd();
     } finally {

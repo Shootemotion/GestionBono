@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { api } from "@/lib/api";
 
 /**
  * Hook to manage BonoBot chat logic
@@ -20,25 +21,35 @@ export function useBonoBot() {
         setMessages(prev => [...prev, userMsg]);
         setIsTyping(true);
 
-        // 2. Simulate AI Delay (Phase 1 Mock)
-        setTimeout(() => {
-            let botResponse = "Entendido. Como soy una versión de prueba, aún no estoy conectado a una IA real, pero pronto podré responder eso basándome en tus datos.";
+        // 2. Fetch from Real AI Backend
+        try {
+            // Recolectar la meta/contexto básico si el usuario está viendo mi-desempeño
+            // Se puede extender después recopilando datos del DOM si quisiéramos enviar contexto del UI
+            const clientContext = window.location.pathname.includes("mi-desempeno")
+                ? "El usuario está actualmente visualizando su página de 'Mi Desempeño'."
+                : "";
 
-            // Simple Keyword Matching for "Demo" feel
-            const lower = text.toLowerCase();
-            if (lower.includes("calcula") || lower.includes("cálculo")) {
-                botResponse = "El bono se calcula basándose en 70% Objetivos y 30% Competencias. ¿Querés ver tu detalle actual?";
-            } else if (lower.includes("fecha") || lower.includes("cierra")) {
-                botResponse = "El periodo actual (Q1) cierra el 30 de Noviembre. ¡No olvides cargar tus avances!";
-            } else if (lower.includes("hola")) {
-                botResponse = "¡Hola! ¿Cómo estás? Preguntame lo que quieras sobre tu evaluación.";
+            const data = await api('/bot/chat', {
+                method: 'POST',
+                body: {
+                    messages: [...messages, userMsg],
+                    clientContext
+                }
+            });
+
+            if (data && data.reply) {
+                setMessages(prev => [...prev, { id: Date.now() + 1, role: "bot", text: data.reply }]);
+            } else {
+                setMessages(prev => [...prev, { id: Date.now() + 1, role: "bot", text: "Hubo un error al generar mi respuesta. 🤒" }]);
             }
-
-            setMessages(prev => [...prev, { id: Date.now() + 1, role: "bot", text: botResponse }]);
+        } catch (error) {
+            console.error("Error AI Chat:", error);
+            setMessages(prev => [...prev, { id: Date.now() + 1, role: "bot", text: "¡Uy! Parece que mis servidores de inteligencia fallaron. Intentá de nuevo más tarde." }]);
+        } finally {
             setIsTyping(false);
-        }, 1500);
+        }
 
-    }, []);
+    }, [messages]);
 
     return {
         isOpen,

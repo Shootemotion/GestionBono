@@ -13,7 +13,10 @@ export default function FormularioProceso({ initialData = null, onGuardar, onCan
     const [nombre, setNombre] = useState(initialData?.nombre || "");
     const [descripcion, setDescripcion] = useState(initialData?.descripcion || "");
     const [year, setYear] = useState(initialData?.year || defaultYear || currentFiscal);
-    const [objetivoISOId, setObjetivoISOId] = useState(initialData?.objetivoISOId?._id || initialData?.objetivoISOId || "");
+    const [objetivosISO, setObjetivosISO] = useState(() => {
+        if (!initialData) return [];
+        return initialData.objetivosISO?.map(o => o._id || o) || [];
+    });
     const [activo, setActivo] = useState(initialData?.activo ?? true);
     const [objetivos, setObjetivos] = useState([]);
     const [errors, setErrors] = useState({});
@@ -49,7 +52,7 @@ export default function FormularioProceso({ initialData = null, onGuardar, onCan
                 nombre: nombre.trim(),
                 descripcion: descripcion.trim(),
                 year: Number(year),
-                objetivoISOId: objetivoISOId || null,
+                objetivosISO: objetivosISO,
                 activo,
             });
         } finally {
@@ -124,21 +127,40 @@ export default function FormularioProceso({ initialData = null, onGuardar, onCan
                 />
             </div>
 
-            {/* Objetivo ISO */}
+            {/* Objetivos ISO (Multiselect) */}
             <div>
-                <label className="text-xs font-medium mb-1 block">Objetivo ISO asociado</label>
-                <select
-                    className={inputCls}
-                    value={objetivoISOId}
-                    onChange={(e) => setObjetivoISOId(e.target.value)}
-                >
-                    <option value="">— Sin objetivo asignado —</option>
-                    {objetivos.map((o) => (
-                        <option key={o._id} value={o._id}>
-                            {o.codigo ? `[${o.codigo}] ` : ""}{o.nombre}
-                        </option>
-                    ))}
-                </select>
+                <label className="text-xs font-medium mb-2 block">Objetivos ISO asociados</label>
+                {objetivos.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto border border-border rounded-md p-2 bg-slate-50/50">
+                        {objetivos.map(obj => {
+                            const isChecked = objetivosISO.includes(obj._id);
+                            return (
+                                <label key={obj._id} className={`flex items-start gap-2 p-1.5 rounded-md cursor-pointer transition-colors ${isChecked ? 'bg-blue-50' : 'hover:bg-slate-100'}`}>
+                                    <input
+                                        type="checkbox"
+                                        className="mt-1 accent-blue-600"
+                                        checked={isChecked}
+                                        onChange={(e) => {
+                                            if (e.target.checked) {
+                                                setObjetivosISO(prev => [...prev, obj._id]);
+                                            } else {
+                                                setObjetivosISO(prev => prev.filter(id => id !== obj._id));
+                                            }
+                                        }}
+                                    />
+                                    <div className="text-xs flex-1 leading-tight">
+                                        <span className="font-semibold block">{obj.codigo}</span>
+                                        <span className="text-muted-foreground">{obj.nombre}</span>
+                                    </div>
+                                </label>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <div className="text-xs text-slate-500 italic px-1 py-2 border rounded-md bg-slate-50">
+                        No hay objetivos disponibles para este año fiscal.
+                    </div>
+                )}
             </div>
 
             {/* Estado */}

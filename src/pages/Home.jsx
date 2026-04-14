@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Target,
@@ -18,28 +18,28 @@ import {
   Building2,
   Megaphone,
   HelpCircle,
-  FileCheck2
+  FileCheck2,
+  MessageSquarePlus
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import useCan, { useHasRole } from "@/hooks/useCan";
 
 import { useTour } from "@/hooks/useTour";
 import { API_ORIGIN } from "@/lib/api";
+import AppFeedbackModal from "@/components/AppFeedbackModal";
 
 function quarterLabel(d = new Date()) {
   const month = d.getMonth();
   const year = d.getFullYear();
 
   // Fiscal Year starts in September (Month 8)
-  // Shift so Sep (8) -> 0, Oct (9) -> 1 ... Aug (7) -> 11
   const fyMonth = (month + 4) % 12;
   const fiscalQ = Math.floor(fyMonth / 3) + 1;
 
-  // Year: Sep-Dec use current year. Jan-Aug use previous year (relative to calendar).
-  // e.g. Sep 2025 -> Q1-2025. Jan 2026 -> Q2-2025.
   const fiscalYear = (month >= 8) ? year : year - 1;
+  const nextYearShort = String(fiscalYear + 1).slice(-2);
 
-  return `Q${fiscalQ}-${fiscalYear}`;
+  return `Q${fiscalQ}-${fiscalYear}/${nextYearShort}`;
 }
 
 function initialsFromUser(user) {
@@ -85,7 +85,7 @@ export default function Home() {
   // TOUR STEPS
   const tourSteps = useMemo(() => [
     { element: '#tour-hero', popover: { title: 'Bienvenido a GestionBono', description: 'Este es tu panel principal donde podrás ver tu información y navegar por las distintas secciones.' } },
-    { element: '#tour-period', popover: { title: 'Periodo Actual', description: 'Aquí indicamos el trimestre fiscal en curso. Todas las evaluaciones se rigen por este calendario.' } },
+    { element: '#tour-period', popover: { title: 'Periodo Actual', description: 'Aquí indicamos el trimestre fiscal en curso y su correspondiente año. Todas las evaluaciones se rigen por este calendario.' } },
     { element: '#tour-group-0', popover: { title: 'Mi Espacio', description: 'Accedé a tu autoevaluación, resultados personales y legajo.' } },
     { element: '#tour-group-1', popover: { title: 'Gestión & Seguimiento', description: 'Herramientas para líderes y RRHH: Seguimiento de equipos y gestión de procesos.' } },
     { element: '#tour-group-2', popover: { title: 'Estructura', description: 'Visualizá la organización de la empresa y los equipos.' } },
@@ -115,6 +115,8 @@ export default function Home() {
     () => fotoSrc(user?.empleado),
     [user?.empleado?.fotoUrl]
   );
+
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
 
   const prettyRol =
     rolePretty[user?.rol] ||
@@ -461,6 +463,21 @@ export default function Home() {
 
 
       </div>
+
+      {/* Floating Feedback Button */}
+      <button
+        onClick={() => setIsFeedbackModalOpen(true)}
+        className="fixed bottom-6 left-6 z-50 flex items-center gap-2 bg-indigo-600 text-white px-4 py-3 rounded-full shadow-lg shadow-indigo-600/30 hover:bg-indigo-700 hover:scale-105 hover:shadow-xl transition-all group"
+      >
+        <MessageSquarePlus className="w-5 h-5" />
+        <span className="text-sm font-semibold pr-1">Experiencia del Usuario</span>
+      </button>
+
+      {/* Feedback Modal */}
+      <AppFeedbackModal
+        isOpen={isFeedbackModalOpen}
+        onClose={() => setIsFeedbackModalOpen(false)}
+      />
     </div>
   );
 }

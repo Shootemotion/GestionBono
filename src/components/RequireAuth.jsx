@@ -15,9 +15,8 @@ import { useAuth } from '@/context/AuthContext';
  *  - si user.isSuper -> permite
  *  - si allow incluye el role del user -> permite
  *  - si allowReferente && user es referente -> permite
- *  - sino -> redirect /403
  */
-export default function RequireAuth({ children, allow = null, allowReferente = false }) {
+export default function RequireAuth({ children, allow = null, allowReferente = false, allowCalidad = false }) {
   const { user, loading } = useAuth();
   const loc = useLocation();
 
@@ -44,6 +43,7 @@ export default function RequireAuth({ children, allow = null, allowReferente = f
   if (allow.includes(userRole)) return children;
 
   // soporte para pasar 'capabilities' en el futuro: se podría chequear user.permisos
+  if (allowCalidad && user.isCalidad) return children;
 
   // allowReferente: permitir si es referente de algo
   if (allowReferente) {

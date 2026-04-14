@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
 import { MessageSquare, X, Send, Sparkles, Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useBonoBot } from "@/hooks/useBonoBot";
@@ -64,8 +65,8 @@ export default function BonoBot() {
                             >
                                 {/* Avatar */}
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-sm border ${msg.role === "user"
-                                        ? "bg-slate-200 border-slate-300 text-slate-600"
-                                        : "bg-indigo-100 border-indigo-200 text-indigo-600"
+                                    ? "bg-slate-200 border-slate-300 text-slate-600"
+                                    : "bg-indigo-100 border-indigo-200 text-indigo-600"
                                     }`}>
                                     {msg.role === "user" ? <span className="text-xs font-bold">YO</span> : <Sparkles className="w-4 h-4" />}
                                 </div>
@@ -73,11 +74,19 @@ export default function BonoBot() {
                                 {/* Bubble */}
                                 <div
                                     className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm shadow-sm leading-relaxed ${msg.role === "user"
-                                            ? "bg-indigo-600 text-white rounded-br-none"
-                                            : "bg-white text-slate-700 border border-slate-100 rounded-bl-none"
+                                        ? "bg-indigo-600 text-white rounded-br-none"
+                                        : "bg-white text-slate-700 border border-slate-100 rounded-bl-none"
                                         }`}
                                 >
-                                    {msg.text}
+                                    {msg.role === "user" ? (
+                                        msg.text
+                                    ) : (
+                                        <div className="prose prose-sm max-w-none prose-slate prose-p:my-0 prose-ul:my-2 prose-li:my-0 text-slate-700">
+                                            <ReactMarkdown>
+                                                {msg.text}
+                                            </ReactMarkdown>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ))}

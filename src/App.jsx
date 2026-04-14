@@ -35,19 +35,23 @@ const ResultadosBono = lazy(() => import('@/pages/ResultadosBono'));
 const GestionAvisos = lazy(() => import('@/pages/GestionAvisos'));
 const Sistemas = lazy(() => import('@/pages/Sistemas'));
 const GestionISO = lazy(() => import('@/pages/GestionISO'));
+const AnalisisISO = lazy(() => import('@/pages/AnalisisISO'));
+const GestionMejoras = lazy(() => import('@/pages/GestionMejoras'));
 
 
 function App() {
   const location = useLocation();
   const authed = !!getToken();
-  const { logout } = useAuth();
+  const { logout, isImpersonating, stopImpersonating, user } = useAuth();
   const [timedOut, setTimedOut] = useState(false);
 
   // Handle inactivity: log out and show overlay
   const handleInactivity = useCallback(() => {
+    // Si estamos enmascarando, primero volvemos a admin o simplemente deslogueamos
+    stopImpersonating();
     logout();
     setTimedOut(true);
-  }, [logout]);
+  }, [logout, stopImpersonating]);
 
   // Only run the timer when the user is authenticated
   useInactivityTimer(handleInactivity, 600_000, authed);
@@ -85,6 +89,28 @@ function App() {
 
   return (
     <>
+      {isImpersonating && (
+        <div className="bg-rose-600 text-white px-4 py-2 flex items-center justify-between sticky top-0 z-[100] shadow-lg animate-in slide-in-from-top duration-300">
+          <div className="flex items-center gap-3">
+            <div className="bg-white/20 p-1.5 rounded-lg flex items-center justify-center">
+              <Clock className="w-4 h-4" />
+            </div>
+            <div className="text-sm font-bold">
+              MODO ENMASCARADO: <span className="opacity-80 font-normal">Viendo como</span> {user?.nombre || user?.apellido || 'Usuario'}
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              stopImpersonating();
+              window.location.href = "/sistemas";
+            }}
+            className="bg-white text-rose-600 hover:bg-rose-50 px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all shadow-sm active:scale-95"
+          >
+            Volver a modo Admin
+          </button>
+        </div>
+      )}
+
       {showNavbar && <Navbar />}
 
       <main className="main-content">
@@ -220,8 +246,16 @@ function App() {
             <Route
               path="/gestion-iso"
               element={
-                <RequireAuth allow={['superadmin', 'directivo', 'rrhh']}>
+                <RequireAuth allow={['superadmin']} allowCalidad={true}>
                   <GestionISO />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/analisis-iso"
+              element={
+                <RequireAuth allow={['superadmin']} allowCalidad={true}>
+                  <AnalisisISO />
                 </RequireAuth>
               }
             />
@@ -230,6 +264,15 @@ function App() {
               element={
                 <RequireAuth allow={['superadmin', 'directivo', 'rrhh', 'jefe_area', 'jefe_sector']}>
                   <SeguimientoEjecutivo />
+                </RequireAuth>
+              }
+            />
+
+            <Route
+              path="/gestion-mejoras"
+              element={
+                <RequireAuth allow={['superadmin', 'directivo', 'rrhh']}>
+                  <GestionMejoras />
                 </RequireAuth>
               }
             />

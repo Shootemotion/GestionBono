@@ -180,9 +180,11 @@ export const completeInvite = async (req, res, next) => {
  */
 export const changePassword = async (req, res, next) => {
   try {
-    const { oldPassword, newPassword } = req.body || {};
-    if (!oldPassword || !newPassword) {
-      return res.status(400).json({ message: 'oldPassword y newPassword son requeridos' });
+    const { oldPassword, currentPassword, newPassword } = req.body || {};
+    const effectiveOldPassword = oldPassword || currentPassword;
+
+    if (!effectiveOldPassword || !newPassword) {
+      return res.status(400).json({ message: 'La contraseña actual y la nueva son requeridas' });
     }
     if (newPassword.length < MIN_PASSWORD_LEN) {
       return res.status(400).json({ message: `La nueva contraseña debe tener al menos ${MIN_PASSWORD_LEN} caracteres` });
@@ -191,7 +193,7 @@ export const changePassword = async (req, res, next) => {
     const user = await Usuario.findById(req.user._id);
     if (!user) return res.status(401).json({ message: 'No autenticado' });
 
-    const ok = await bcrypt.compare(oldPassword, user.passwordHash || '');
+    const ok = await bcrypt.compare(effectiveOldPassword, user.passwordHash || '');
     if (!ok) return res.status(400).json({ message: 'Clave actual incorrecta' });
 
     user.passwordHash = await bcrypt.hash(newPassword, 10);

@@ -10,6 +10,18 @@ const objetivoISOSchema = new mongoose.Schema(
         year: { type: Number, required: true },
         activo: { type: Boolean, default: true },
         representante: { type: mongoose.Schema.Types.ObjectId, ref: 'Empleado', default: null },
+        progreso: { type: Number, default: 0, min: 0, max: 100 },
+        meta: { type: Number, default: 80, min: 0, max: 100 },
+        desarrollo: { type: String, default: "" },
+        seguimientoMensual: [
+            {
+                mes: { type: Number, required: true }, // 1-12
+                year: { type: Number, required: true },
+                progreso: { type: Number, default: 0, min: 0, max: 100 },
+                comentario: { type: String, default: "" },
+                adjunto: { type: String, default: null } // nombre del archivo evidencia
+            }
+        ],
     },
     { timestamps: true }
 );

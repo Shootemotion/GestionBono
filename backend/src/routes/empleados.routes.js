@@ -210,13 +210,13 @@ router.get("/:id/capacitaciones",
   requireCapOrSelf("nomina:ver"), assertObjectId, preloadEmpleado, listCapacitaciones);
 
 router.post("/:id/capacitaciones",
-  requireCap("nomina:editar"), assertObjectId, preloadEmpleado, uploadCert.single("certificado"), createCapacitacion);
+  requireCapOrSelf("nomina:editar"), assertObjectId, preloadEmpleado, uploadCert.single("certificado"), createCapacitacion);
 
 router.put("/:id/capacitaciones/:itemId",
-  requireCap("nomina:editar"), assertObjectId, uploadCert.single("certificado"), updateCapacitacion);
+  requireCapOrSelf("nomina:editar"), assertObjectId, preloadEmpleado, uploadCert.single("certificado"), updateCapacitacion);
 
 router.delete("/:id/capacitaciones/:itemId",
-  requireCap("nomina:editar"), assertObjectId, deleteCapacitacion);
+  requireCapOrSelf("nomina:editar"), assertObjectId, preloadEmpleado, deleteCapacitacion);
 
 router.get("/:id/capacitaciones/resumen",
   requireCapOrSelf("nomina:ver"), assertObjectId, preloadEmpleado, getCapacitacionesResumen);

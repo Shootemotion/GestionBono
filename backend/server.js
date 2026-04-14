@@ -44,6 +44,8 @@ import globalAvisoRoutes from './src/routes/globalAviso.routes.js';
 import objetivosISORoutes from './src/routes/objetivosISO.routes.js';
 import procesosISORoutes from './src/routes/procesosISO.routes.js';
 import analyticsRoutes from './src/analytics/analytics.routes.js';
+import appFeedbackRoutes from './src/routes/appFeedback.routes.js';
+import botRoutes from './src/routes/bot.routes.js';
 import Empleado from './src/models/Empleado.model.js';
 
 // --- CRON JOBS ---
@@ -87,6 +89,10 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 // 1) Rutas públicas (sin JWT)
 app.use('/api/auth', authRouter);
 
+// --- Rutas de App Feedback ---
+app.use('/api/app-feedback', appFeedbackRoutes);
+app.use('/api/bot', botRoutes);
+
 // --- SWAGGER API DOCS (Dynamic Spec con picklist de empleados) ---
 
 const swaggerPath = path.join(__dirname, 'src', 'docs', 'swagger.json');
@@ -105,60 +111,47 @@ app.get('/api/docs/spec', async (req, res) => {
       ...swaggerBase,
       paths: {
         ...swaggerBase.paths,
-        '/api/dashboard/debug/empleado/{empleadoId}': {
+        '/api/analytics/debug/empleado/{empleadoId}': {
           get: {
             tags: ['🔍 Debug Sistema'],
             summary: 'Comparar fuentes de plantillas por empleado',
             description:
-              'Devuelve un análisis comparativo de las 3 fuentes de datos que usa el sistema:\n\n' +
-              '**Fuente 1 — Gantt** (`computeForEmployees`): override de inclusión tiene prioridad sobre `isTemplateApplicable`.\n\n' +
-              '**Fuente 2 — Mi Desempeño** (`dashByEmpleado`): solo aplica `isTemplateApplicable` (STICKY_HISTORY, scope activo).\n\n' +
-              '**Fuente 3 — Gestión Plantillas** (query directa): solo plantillas activas que coincidan con el scope actual del empleado.\n\n' +
+              '**Compara nombre + tipo + peso** de objetivos/competencias entre las 3 fuentes del sistema:\n\n' +
+              '- **fuenteA_MiDesempeno** → lo que ve el empleado en Mi Desempeño / Sala de Evaluación\n' +
+              '- **fuenteB_Gantt** → lo que compute el Gantt (computeForEmployees)\n' +
+              '- **fuenteC_GestionPlantillas** → query directa a la DB sin overrides\n\n' +
+              '> **🔑 Auth:** Usá el botón **Authorize** arriba e ingresá el token de analytics.\n\n' +
+              '> **🖥️ Servidor:** Seleccioná el servidor correcto arriba (Producción o Local).\n\n' +
               '---\n**Empleados disponibles:**\n```\n' + empEnumDesc + '\n```',
-            security: [{ BearerAuth: [] }],
+            security: [{ ApiKeyAuth: [] }],
             parameters: [
               {
                 name: 'empleadoId',
                 in: 'path',
                 required: true,
-                description: 'ID del empleado a analizar',
-                schema: {
-                  type: 'string',
-                  enum: empEnum,
-                },
+                description: 'Empleado a analizar (seleccioná del dropdown)',
+                schema: { type: 'string', enum: empEnum },
               },
               {
                 name: 'anio',
                 in: 'query',
                 required: false,
-                description: 'Año fiscal (por defecto el año actual)',
-                schema: {
-                  type: 'integer',
-                  example: new Date().getFullYear(),
-                },
+                description: 'Año fiscal',
+                schema: { type: 'integer', example: new Date().getFullYear() },
               },
             ],
             responses: {
-              200: {
-                description: 'Análisis completo con discrepancias entre fuentes',
-              },
-              401: { description: 'No autorizado' },
+              200: { description: 'Comparación compacta de las 3 fuentes con discrepancias' },
+              401: { description: 'Token inválido — asegurate de hacer Authorize con el X-Analytics-Token' },
               404: { description: 'Empleado no encontrado' },
             },
           },
         },
       },
-      // Agregar esquema de seguridad Bearer para el debug endpoint
       components: {
         ...(swaggerBase.components || {}),
         securitySchemes: {
           ...(swaggerBase.components?.securitySchemes || {}),
-          BearerAuth: {
-            type: 'http',
-            scheme: 'bearer',
-            bearerFormat: 'JWT',
-            description: 'Token JWT obtenido en /api/auth/login',
-          },
         },
       },
     };
@@ -200,6 +193,7 @@ app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/evaluaciones', evaluacionRoutes);
 app.use('/api/simulacion', simulacionRoutes);
 app.use('/api/feedbacks', feedbackRoutes);
+app.get('/api/test-me', (req, res) => res.json({ message: "I AM THE ONE" }));
 app.use('/api/avisos', globalAvisoRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/roles', rolesRouter);
@@ -266,7 +260,7 @@ app.use(errorHandler);
 
 // --- CONEXIÓN A DB y ARRANQUE DEL SERVIDOR ---
 const MONGO_URI = process.env.MONGO_URI;
-const PORT = process.env.PORT || 5000;
+const PORT = 5007; // Volviendo al puerto original solicitado por el usuario
 
 mongoose
   .connect(MONGO_URI)
@@ -280,3 +274,6 @@ mongoose
   .catch((error) => {
     console.error('Error al conectar a MongoDB:', error.message);
   });
+// Hot reload trigger
+// Hot reload trigger for feedback fix - v2.0
+// Force nodemon to pick up new engine files

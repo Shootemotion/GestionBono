@@ -44,6 +44,7 @@ export default function RRHHFeedbackClosing() {
     const [expandedManagers, setExpandedManagers] = useState(new Set());
     const [expandedRows, setExpandedRows] = useState(new Set()); // For employee rows
     const [openMenuAreaId, setOpenMenuAreaId] = useState(null); // For area bulk actions menu
+    const [reopening, setReopening] = useState(false);
 
     const loadData = async () => {
         setLoading(true);
@@ -288,28 +289,40 @@ export default function RRHHFeedbackClosing() {
 
 
     // --- DIALOG ACTIONS ---
-    const openBulkCloseDialog = (areaId, type) => {
+    const openBulkCloseDialog = (areaId, filterType, actionType = "CLOSE", targetPeriod = "ALL") => {
         // Find Area Data
         const area = groupedData[areaId];
         if (!area) return;
 
         // Collect IDs
-        const idsToClose = [];
+        const idsToProcess = [];
         Object.values(area.managers).forEach(manager => {
             Object.values(manager.employees).forEach(emp => {
                 Object.values(emp.items).forEach(fb => {
-                    if (!fb.isVirtual && fb.estado !== "CLOSED") {
+                    if (!fb.isVirtual) {
                         const ack = fb.empleadoAck?.estado;
-                        if (type === "ALL") idsToClose.push(fb._id);
-                        else if (type === "ACK" && ack === "ACK") idsToClose.push(fb._id);
-                        else if (type === "CONTEST" && ack === "CONTEST") idsToClose.push(fb._id);
+
+                        // Si vamos a CERRAR, no tomamos los que ya están cerrados
+                        if (actionType === "CLOSE" && fb.estado !== "CLOSED") {
+                            if (targetPeriod !== "ALL" && fb.periodo !== targetPeriod) return;
+
+                            if (filterType === "ALL") idsToProcess.push(fb._id);
+                            else if (filterType === "ACK" && ack === "ACK") idsToProcess.push(fb._id);
+                            else if (filterType === "CONTEST" && ack === "CONTEST") idsToProcess.push(fb._id);
+                        }
+                        // Si vamos a REABRIR, buscamos cerrados o pendientes de RRHH
+                        else if (actionType === "REOPEN" && ["PENDING_HR", "CLOSED"].includes(fb.estado)) {
+                            if (targetPeriod === "ALL" || fb.periodo === targetPeriod) {
+                                idsToProcess.push(fb._id);
+                            }
+                        }
                     }
                 });
             });
         });
 
-        if (idsToClose.length === 0) {
-            toast.info("No hay feedbacks pendientes para cerrar con este criterio.");
+        if (idsToProcess.length === 0) {
+            toast.info(`No hay feedbacks válidos para esta acción en el área ${areaId}${targetPeriod !== "ALL" ? ` (Periodo ${targetPeriod})` : ""}.`);
             setOpenMenuAreaId(null);
             return;
         }
@@ -318,9 +331,11 @@ export default function RRHHFeedbackClosing() {
             type: 'BULK',
             data: {
                 areaId,
-                closeType: type,
-                ids: idsToClose,
-                count: idsToClose.length
+                filterType,
+                actionType,
+                targetPeriod,
+                ids: idsToProcess,
+                count: idsToProcess.length
             }
         });
         setDialogComment("");
@@ -337,7 +352,7 @@ export default function RRHHFeedbackClosing() {
         setDialogOpen(true);
     };
 
-    const handleConfirmClose = async () => {
+    const handleConfirmBulkAction = async () => {
         setClosing(true);
         try {
             let ids = [];
@@ -346,24 +361,54 @@ export default function RRHHFeedbackClosing() {
             if (dialogConfig.type === 'BULK') {
                 ids = dialogConfig.data.ids;
                 comment = dialogComment;
+
+                if (dialogConfig.data.actionType === "CLOSE") {
+                    await api("/feedbacks/hr/close-bulk", {
+                        method: "POST",
+                        body: { ids, comentarioRRHH: comment }
+                    });
+                    toast.success(`Operación exitosa. Se cerraron ${ids.length} feedbacks.`);
+                } else {
+                    // Acción de Reabrir Masivamente
+                    await api("/feedbacks/hr/reopen-bulk", {
+                        method: "PUT",
+                        body: { ids }
+                    });
+                    toast.success(`Se reabrieron ${ids.length} feedbacks. Ahora están en estado Enviado.`);
+                }
             } else {
+                // Modo Individual siempre es Cerrar en este Dialog general
                 ids = [dialogConfig.data.id];
                 comment = dialogConfig.data.comment; // Comment from the card
+
+                await api("/feedbacks/hr/close-bulk", {
+                    method: "POST",
+                    body: { ids, comentarioRRHH: comment }
+                });
+                toast.success(`Feedback cerrado.`);
             }
 
-            await api("/feedbacks/hr/close-bulk", {
-                method: "POST",
-                body: { ids, comentarioRRHH: comment }
-            });
-
-            toast.success(`Operación exitosa. Se cerraron ${ids.length} feedbacks.`);
             loadData();
             setDialogOpen(false);
         } catch (e) {
             console.error(e);
-            toast.error("Error al cerrar feedbacks.");
+            toast.error("Error al procesar la acción grupal/individual.");
         } finally {
             setClosing(false);
+        }
+    };
+
+    const handleReopen = async (id) => {
+        setReopening(true);
+        try {
+            const res = await api(`/feedbacks/${id}/reopen`, { method: "PUT" });
+            toast.success(res.message || "Feedback reabierto.");
+            loadData();
+        } catch (e) {
+            console.error(e);
+            toast.error("Error al reabrir el feedback.");
+        } finally {
+            setReopening(false);
         }
     };
 
@@ -479,6 +524,7 @@ export default function RRHHFeedbackClosing() {
                             empName={`${emp.data.nombre} ${emp.data.apellido}`}
                             period={p}
                             onClose={openSingleCloseDialog}
+                            onReopen={handleReopen}
                         />
                     );
                 })}
@@ -492,7 +538,7 @@ export default function RRHHFeedbackClosing() {
     };
 
     // Sub-component for individual card to manage local comment state
-    const FeedbackCard = ({ fb, ev, globalScore, objScore, compScore, evaluatorName, empName, period, onClose }) => {
+    const FeedbackCard = ({ fb, ev, globalScore, objScore, compScore, evaluatorName, empName, period, onClose, onReopen }) => {
         const [comment, setComment] = useState("");
 
         // Determine border color based on ACK status
@@ -575,10 +621,24 @@ export default function RRHHFeedbackClosing() {
 
                 {/* ACTION */}
                 {fb.estado !== "CLOSED" && (
-                    <div className="pt-2 mt-auto">
+                    <div className="pt-2 mt-auto grid grid-cols-2 gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full text-indigo-600 border-indigo-200 hover:bg-indigo-50 h-8 text-[10px] sm:text-xs"
+                            disabled={reopening}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm("Esto restablecerá el estado a 'Enviado' y le dará 5 días más al empleado. ¿Continuar?")) {
+                                    onReopen(fb._id);
+                                }
+                            }}
+                        >
+                            Reabrir (5 días)
+                        </Button>
                         <Button
                             size="sm"
-                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs shadow-md shadow-indigo-200"
+                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-[10px] sm:text-xs shadow-md shadow-indigo-200"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 onClose(fb._id, comment, empName, period);
@@ -757,32 +817,49 @@ export default function RRHHFeedbackClosing() {
                                     </Button>
 
                                     {openMenuAreaId === area.id && (
-                                        <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                                            <div className="p-2 text-xs font-bold text-slate-400 uppercase tracking-wider bg-slate-50/50 border-b border-slate-50">
+                                        <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-100 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                                            <div className="p-2 text-xs font-bold text-slate-400 uppercase tracking-wider bg-slate-50/50 border-b border-slate-50 flex items-center justify-between">
                                                 Acciones Masivas
+                                                <Badge variant="outline" className="text-[9px] bg-white">Área: {area.id}</Badge>
                                             </div>
-                                            <div className="p-1">
+                                            <div className="p-1 border-b border-slate-100">
                                                 <button
-                                                    className="w-full text-left px-3 py-2 text-sm text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg transition-colors flex items-center gap-2"
-                                                    onClick={() => openBulkCloseDialog(area.id, "ALL")}
+                                                    className="w-full text-left px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-lg transition-colors flex items-center gap-2"
+                                                    onClick={() => openBulkCloseDialog(area.id, "ALL", "CLOSE", "ALL")}
                                                 >
-                                                    <CheckCircle className="w-4 h-4" />
+                                                    <CheckCircle className="w-4 h-4 text-slate-400" />
                                                     Cerrar Todos
                                                 </button>
                                                 <button
                                                     className="w-full text-left px-3 py-2 text-sm text-slate-600 hover:bg-emerald-50 hover:text-emerald-600 rounded-lg transition-colors flex items-center gap-2"
-                                                    onClick={() => openBulkCloseDialog(area.id, "ACK")}
+                                                    onClick={() => openBulkCloseDialog(area.id, "ACK", "CLOSE", "ALL")}
                                                 >
                                                     <UserCheck className="w-4 h-4" />
                                                     Cerrar Acuerdos
                                                 </button>
                                                 <button
                                                     className="w-full text-left px-3 py-2 text-sm text-slate-600 hover:bg-rose-50 hover:text-rose-600 rounded-lg transition-colors flex items-center gap-2"
-                                                    onClick={() => openBulkCloseDialog(area.id, "CONTEST")}
+                                                    onClick={() => openBulkCloseDialog(area.id, "CONTEST", "CLOSE", "ALL")}
                                                 >
                                                     <AlertCircle className="w-4 h-4" />
                                                     Cerrar Desacuerdos
                                                 </button>
+                                            </div>
+                                            <div className="p-2 border-b border-slate-100 bg-indigo-50/20">
+                                                <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-2 ml-1 flex items-center gap-1">
+                                                    <Clock className="w-3 h-3" /> Reabrir (5 Días)
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-1">
+                                                    {["Q1", "Q2", "Q3", "FINAL", "ALL"].map(p => (
+                                                        <button
+                                                            key={p}
+                                                            className={`w-full text-center px-2 py-1.5 text-xs font-bold rounded-md transition-colors ${p === 'ALL' ? 'col-span-2 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 mt-1' : 'bg-white border border-indigo-100 text-indigo-600 hover:bg-indigo-50 shadow-sm'}`}
+                                                            onClick={() => openBulkCloseDialog(area.id, "ALL", "REOPEN", p)}
+                                                        >
+                                                            {p === 'ALL' ? "Todos los Periodos" : p}
+                                                        </button>
+                                                    ))}
+                                                </div>
                                             </div>
                                         </div>
                                     )}
@@ -916,18 +993,23 @@ export default function RRHHFeedbackClosing() {
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle>
-                            {dialogConfig.type === 'BULK' ? 'Cierre Masivo de Feedbacks' : 'Cerrar Feedback'}
+                            {dialogConfig.type === 'BULK'
+                                ? (dialogConfig.data?.actionType === 'REOPEN' ? 'Reapertura Masiva de Feedbacks' : 'Cierre Masivo de Feedbacks')
+                                : 'Cerrar Feedback'
+                            }
                         </DialogTitle>
                         <DialogDescription>
                             {dialogConfig.type === 'BULK'
-                                ? `Se cerrarán ${dialogConfig.data?.count} feedbacks en ${dialogConfig.data?.areaId}. Esta acción no se puede deshacer.`
+                                ? (dialogConfig.data?.actionType === 'REOPEN'
+                                    ? `Estás por reabrir y reactivar ${dialogConfig.data?.count} feedbacks vencidos o cerrados para el área ${dialogConfig.data?.areaId}${dialogConfig.data?.targetPeriod !== 'ALL' ? ` (Periodo: ${dialogConfig.data?.targetPeriod})` : ''}. Se les otorgará 5 días a los empleados para firmar.`
+                                    : `Se cerrarán ${dialogConfig.data?.count} feedbacks en ${dialogConfig.data?.areaId}. Esta acción no se puede deshacer.`)
                                 : `¿Estás seguro de cerrar el feedback de ${dialogConfig.data?.empName} para el periodo ${dialogConfig.data?.period}?`
                             }
                         </DialogDescription>
                     </DialogHeader>
 
-                    {/* Input for Bulk Close */}
-                    {dialogConfig.type === 'BULK' && (
+                    {/* Input for Bulk Close (Not needed for Reopen) */}
+                    {dialogConfig.type === 'BULK' && dialogConfig.data?.actionType === "CLOSE" && (
                         <div className="space-y-2 py-2">
                             <label className="text-sm font-bold text-slate-700">Comentario de RRHH (Opcional)</label>
                             <Textarea
@@ -951,11 +1033,11 @@ export default function RRHHFeedbackClosing() {
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
                         <Button
-                            onClick={handleConfirmClose}
+                            onClick={handleConfirmBulkAction}
                             disabled={closing}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                            className={dialogConfig.data?.actionType === 'REOPEN' ? "bg-amber-500 hover:bg-amber-600 text-white" : "bg-indigo-600 hover:bg-indigo-700 text-white"}
                         >
-                            {closing ? "Cerrando..." : "Confirmar Cierre"}
+                            {closing ? "Procesando..." : (dialogConfig.data?.actionType === 'REOPEN' ? "Reabrir Ahora" : "Confirmar Cierre")}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

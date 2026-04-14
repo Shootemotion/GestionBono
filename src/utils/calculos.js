@@ -129,9 +129,15 @@ export const calculatePeriodCompliance = (actual, target, config) => {
  * 
  * @param {Object} metaDef - The Meta definition (from Objective or Template).
  * @param {Array} hitos - All hitos of the objective (Evaluaciones).
+ * @param {boolean} isFinalYearClosure - If true, applies strict rules (Todo o Nada). If false, it's intermediate tracking and assumes proportional progress.
  */
-export const calculateMetaScore = (metaDef, hitos) => {
+export const calculateMetaScore = (metaDef, hitos, isFinalYearClosure = false) => {
     const metaId = metaDef.metaId || metaDef._id; // ID to link hito results
+
+    // --- LOGIC OVERRIDE FOR INTERMEDIATE TRACKING ---
+    // If we are tracking progress during the year (not closed), we force "Reconoce Esfuerzo = Sí"
+    // to give a proportional visual progress. At year-end closure, we respect the strict configuration.
+    const effectiveReconoce = isFinalYearClosure ? metaDef.reconoceEsfuerzo : true;
 
     // 1. Gather Results
     // Extract results for THIS meta from all hitos
@@ -144,8 +150,8 @@ export const calculateMetaScore = (metaDef, hitos) => {
             actual: mRes ? mRes.resultado : null, // The raw value entered
             target: metaDef.esperado, // Use definition target (or hito override if supported)
             config: {
-                // Use hito config if it evolves, or metaDef default
-                reconoceEsfuerzo: metaDef.reconoceEsfuerzo,
+                // Apply the exact intermediate vs final tracking rule here:
+                reconoceEsfuerzo: effectiveReconoce,
                 tolerancia: metaDef.tolerancia,
                 permiteOver: metaDef.permiteOver,
                 operador: metaDef.operador,
@@ -166,9 +172,10 @@ export const calculateMetaScore = (metaDef, hitos) => {
     if (acumulativo) {
         const totalActual = results.reduce((sum, r) => sum + Number(r.actual), 0);
         const target = Number(metaDef.esperado || 0);
-        // Config properties (use the def)
+
+        // --- CÁLCULO ACUMULATIVO ---
         const config = {
-            reconoceEsfuerzo: metaDef.reconoceEsfuerzo,
+            reconoceEsfuerzo: effectiveReconoce, // Respetamos si es intermedio o final
             tolerancia: metaDef.tolerancia,
             permiteOver: metaDef.permiteOver,
             operador: metaDef.operador
@@ -198,7 +205,7 @@ export const calculateMetaScore = (metaDef, hitos) => {
         const binaryPeriodScores = results.map(r =>
             calculatePeriodCompliance(r.actual, r.target, {
                 ...r.config,
-                reconoceEsfuerzo: false, // Always binary per period for umbral
+                reconoceEsfuerzo: false, // Always binary per period for umbral pass/fail evaluation
                 permiteOver: false,      // No over in binary pass/fail
             })
         );
@@ -213,19 +220,21 @@ export const calculateMetaScore = (metaDef, hitos) => {
         // Already met or exceeded threshold → full score
         if (passedCount >= required) return 100;
 
-        // Preliminary scoring while in progress
-        if (metaDef.reconoceEsfuerzo && required > 0) {
-            // Proportional credit over the total requirement
+        // --- LÓGICA DE UMBRAL (INTERMEDIO VS FINAL) --- 
+        // Si estamos en "seguimiento intermedio" (isFinalYearClosure = false), effectiveReconoce es TRUE.
+        // Esto hará que pase siempre por el crédito proporcional: (aprobados / requeridos) * 100
+        // Dando un margen de evolución hermoso (Ej: 1 de 4 evalúa un 25% de progreso global).
+        if (effectiveReconoce && required > 0) {
+            // CÁLCULO INTERMEDIO (PROPORCIONAL / RECONOCE ESFUERZO)
             return (passedCount / required) * 100;
         } else if (evaluatedCount > 0) {
-            // Adaptive score based on periods evaluated so far relative to what was needed.
+            // CÁLCULO FINAL ESTRICTO (ADAPTATIVO - TODO O NADA AL CIERRE)
 
             // If evaluated count >= required periods, they failed to meet it in the given time
             // Hard fail - threshold not met
             if (evaluatedCount >= required) {
                 return 0; // The goal is lost
             } else {
-                // Give them adaptive credit based on evaluated so far (preliminary)
                 return (passedCount / evaluatedCount) * 100;
             }
         }
@@ -250,8 +259,9 @@ export const calculateMetaScore = (metaDef, hitos) => {
         representativeValue = results.length ? sumValues / results.length : 0;
     }
 
+    // --- CÁLCULO FINAL (PROMEDIO O ÚLTIMO VALOR) --- 
     const lastConfig = results[results.length - 1]?.config || {
-        reconoceEsfuerzo: metaDef.reconoceEsfuerzo,
+        reconoceEsfuerzo: effectiveReconoce,
         tolerancia: metaDef.tolerancia,
         permiteOver: metaDef.permiteOver,
         operador: metaDef.operador
@@ -267,8 +277,9 @@ export const calculateMetaScore = (metaDef, hitos) => {
  * 
  * @param {Object} objective - The objective definition.
  * @param {Array} hitosOverride - Optional hitos with results.
+ * @param {boolean} isFinalYearClosure - If true, evaluates strict logic.
  */
-export const calculateObjectiveProgress = (objective, hitosOverride = null) => {
+export const calculateObjectiveProgress = (objective, hitosOverride = null, isFinalYearClosure = false) => {
     const hitos = hitosOverride || objective.hitos || [];
 
     // 1. Identify Metas
@@ -288,8 +299,8 @@ export const calculateObjectiveProgress = (objective, hitosOverride = null) => {
     let totalWeights = 0;
 
     metasDefs.forEach(meta => {
-        // Calc Meta Score
-        const metaScore = calculateMetaScore(meta, hitos);
+        // Calc Meta Score (passing the isFinalYearClosure parameter down to Metas)
+        const metaScore = calculateMetaScore(meta, hitos, isFinalYearClosure);
 
         // Weighting
         const weight = meta.pesoMeta || (100 / metasDefs.length); // Default to equal weights
@@ -333,4 +344,45 @@ export const calculateGlobalScore = (objectivesScore, competenciesScore) => {
     const objPart = objectivesScore * 0.7;
     const compPart = competenciesScore * 0.3;
     return Math.round(objPart + compPart);
+};
+
+/**
+ * Calculates the progress of COMPETENCIES (Aptitudes) using weighted average.
+ * Each aptitude's score is a simple average of its relevant hitos,
+ * then these scores are combined using the aptitude's weight (peso).
+ * 
+ * @param {Array} aptitudes - Array of aptitude objects.
+ * @param {Function} getMonthFn - Function to get the month index for a period string (optional).
+ * @param {number} monthLimit - Month index limit (1-12) to filter hitos (optional).
+ */
+export const calculateCompetencyProgress = (aptitudes, getMonthFn, monthLimit) => {
+    let totalWeightedScore = 0;
+    let totalWeight = 0;
+
+    const items = Array.isArray(aptitudes) ? aptitudes : (aptitudes?.items || []);
+
+    items.forEach(apt => {
+        let relevantHitos = apt.hitos || [];
+        if (getMonthFn && monthLimit !== undefined) {
+            relevantHitos = relevantHitos.filter(h => getMonthFn(h.periodo) <= monthLimit);
+        }
+
+        const puntuaciones = relevantHitos
+            .map(h => h.actual)
+            .filter(val => val !== null && val !== undefined);
+
+        let aptitudeScore = 0;
+        if (puntuaciones.length > 0) {
+            aptitudeScore = Math.round(puntuaciones.reduce((a, b) => a + b, 0) / puntuaciones.length);
+        }
+
+        const peso = Number(apt.peso || 0);
+        totalWeightedScore += (aptitudeScore * peso);
+        totalWeight += peso;
+    });
+
+    if (totalWeight === 0) return 0;
+    
+    // Result is 0-100 scale (Normalized by total weight)
+    return totalWeightedScore / totalWeight;
 };

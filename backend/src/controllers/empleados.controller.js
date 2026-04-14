@@ -94,8 +94,13 @@ export const createEmpleado = async (req, res, next) => {
       sueldoBase, // { monto, moneda, vigenteDesde }
     } = req.body;
 
-    if (!nombre || !apellido || !dni || !cuil || !fechaIngreso || !puesto || !area || !sector) {
-      return res.status(400).json({ message: 'Faltan campos requeridos.' });
+    const requeridos = { nombre, apellido, dni, cuil, fechaIngreso, puesto, area };
+    const faltantes = Object.keys(requeridos).filter(key => !requeridos[key]);
+
+    if (faltantes.length > 0) {
+      return res.status(400).json({
+        message: `Faltan completar los siguientes campos obligatorios: ${faltantes.join(', ')}`
+      });
     }
 
     const empleado = await Empleado.create({

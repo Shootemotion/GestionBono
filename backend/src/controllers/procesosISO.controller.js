@@ -7,11 +7,11 @@ export async function getAll(req, res) {
         const { activo, objetivoISOId, year } = req.query;
         const filter = {};
         if (activo !== undefined) filter.activo = activo === "true";
-        if (objetivoISOId) filter.objetivoISOId = objetivoISOId;
+        if (objetivoISOId) filter.objetivosISO = objetivoISOId; // Query in array
         if (year !== undefined) filter.year = Number(year);
 
         const items = await ProcesoISO.find(filter)
-            .populate("objetivoISOId", "codigo nombre year")
+            .populate("objetivosISO", "codigo nombre year")
             .sort({ codigo: 1 });
 
         const result = items.map((p) => ({
@@ -27,7 +27,7 @@ export async function getAll(req, res) {
 
 export async function getById(req, res) {
     try {
-        const item = await ProcesoISO.findById(req.params.id).populate("objetivoISOId", "codigo nombre");
+        const item = await ProcesoISO.findById(req.params.id).populate("objetivosISO", "codigo nombre year");
         if (!item) return res.status(404).json({ message: "No encontrado" });
         res.json({ ...item.toObject({ virtuals: true }), fullName: item.fullName });
     } catch (err) {
@@ -37,21 +37,25 @@ export async function getById(req, res) {
 
 export async function create(req, res) {
     try {
-        const { codigo, nombre, descripcion, year, objetivoISOId, activo } = req.body;
+        const { codigo, nombre, descripcion, year, objetivosISO, activo } = req.body;
         if (!codigo?.trim()) return res.status(400).json({ message: "El código es obligatorio." });
         if (!nombre?.trim()) return res.status(400).json({ message: "El nombre es obligatorio." });
         if (!year) return res.status(400).json({ message: "El año fiscal es obligatorio." });
 
+        let objsArray = [];
+        if (Array.isArray(objetivosISO)) objsArray = objetivosISO;
+        else if (req.body.objetivoISOId) objsArray = [req.body.objetivoISOId]; // fallback para legados
+        
         const item = await ProcesoISO.create({
             codigo: codigo.trim().toUpperCase(),
             nombre: nombre.trim(),
             descripcion: descripcion?.trim() || "",
             year: Number(year),
-            objetivoISOId: objetivoISOId || null,
+            objetivosISO: objsArray,
             activo: activo !== false,
         });
 
-        await item.populate("objetivoISOId", "codigo nombre year");
+        await item.populate("objetivosISO", "codigo nombre year");
         res.status(201).json({ ...item.toObject({ virtuals: true }), fullName: item.fullName });
     } catch (err) {
         if (err.code === 11000) return res.status(409).json({ message: "El código ya existe para este año." });
@@ -61,20 +65,28 @@ export async function create(req, res) {
 
 export async function update(req, res) {
     try {
-        const { codigo, nombre, descripcion, year, objetivoISOId, activo } = req.body;
+        const { codigo, nombre, descripcion, year, objetivosISO, activo } = req.body;
+
+        const updateData = {
+            ...(codigo !== undefined && { codigo: codigo.trim().toUpperCase() }),
+            ...(nombre !== undefined && { nombre: nombre.trim() }),
+            ...(descripcion !== undefined && { descripcion: descripcion.trim() }),
+            ...(year !== undefined && { year: Number(year) }),
+            ...(activo !== undefined && { activo })
+        };
+        
+        if (objetivosISO !== undefined) {
+            updateData.objetivosISO = Array.isArray(objetivosISO) ? objetivosISO : [];
+        } else if (req.body.objetivoISOId !== undefined) {
+             // Fallback legacy
+             updateData.objetivosISO = req.body.objetivoISOId ? [req.body.objetivoISOId] : [];
+        }
 
         const updated = await ProcesoISO.findByIdAndUpdate(
             req.params.id,
-            {
-                ...(codigo !== undefined && { codigo: codigo.trim().toUpperCase() }),
-                ...(nombre !== undefined && { nombre: nombre.trim() }),
-                ...(descripcion !== undefined && { descripcion: descripcion.trim() }),
-                ...(year !== undefined && { year: Number(year) }),
-                ...(objetivoISOId !== undefined && { objetivoISOId: objetivoISOId || null }),
-                ...(activo !== undefined && { activo }),
-            },
+            updateData,
             { new: true, runValidators: true }
-        ).populate("objetivoISOId", "codigo nombre year");
+        ).populate("objetivosISO", "codigo nombre year");
 
         if (!updated) return res.status(404).json({ message: "No encontrado" });
         res.json({ ...updated.toObject({ virtuals: true }), fullName: updated.fullName });

@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import Usuario from '../models/Usuario.model.js';
 import Empleado from '../models/Empleado.model.js';
 import { sendCredentialsEmail } from '../utils/mailer.js';
+import { invalidateUserCacheByUserId } from '../auth/auth.middleware.js';
 
 // Util: asegura que devolvemos un usuario sin hash
 const safeUser = (u) => {
@@ -15,7 +16,7 @@ const safeUser = (u) => {
 // body: { email, rol, empleadoId? }
 export const crearUsuario = async (req, res) => {
   try {
-    let { email, rol = 'visor', empleadoId, permisos, enviarEmail = true } = req.body || {};
+    let { email, rol = 'visor', isCalidad, empleadoId, permisos, enviarEmail = true } = req.body || {};
 
     if (!email) return res.status(400).json({ message: 'Email requerido' });
 
@@ -44,6 +45,7 @@ export const crearUsuario = async (req, res) => {
       const user = await Usuario.create({
         email,
         rol,
+        isCalidad: Boolean(isCalidad),
         empleado: empleadoId || undefined,
         passwordHash,
         status: 'invited',
@@ -62,6 +64,7 @@ export const crearUsuario = async (req, res) => {
     if (!existing.empleado) {
       existing.empleado = empleadoId || undefined;
       existing.rol = rol || existing.rol;
+      if (isCalidad !== undefined) existing.isCalidad = Boolean(isCalidad);
       existing.passwordHash = passwordHash;
       existing.status = 'invited';
       existing.activo = true;
@@ -80,6 +83,7 @@ export const crearUsuario = async (req, res) => {
       existing.passwordHash = passwordHash;
       existing.status = 'invited';
       existing.rol = rol || existing.rol;   // 🔥 CORRECCIÓN
+      if (isCalidad !== undefined) existing.isCalidad = Boolean(isCalidad);
       await existing.save();
 
       if (enviarEmail !== false) {
@@ -182,7 +186,7 @@ export const unlinkEmpleado = async (req, res) => {
 export const actualizarUsuario = async (req, res) => {
   try {
     const { id } = req.params;
-    let { email, rol } = req.body;
+    let { email, rol, isCalidad } = req.body;
 
     // Normalizar email si viene
     if (email) email = String(email).trim().toLowerCase();
@@ -198,9 +202,13 @@ export const actualizarUsuario = async (req, res) => {
     const updates = {};
     if (email) updates.email = email;
     if (rol) updates.rol = rol;
+    if (isCalidad !== undefined) updates.isCalidad = Boolean(isCalidad);
 
     const user = await Usuario.findByIdAndUpdate(id, updates, { new: true });
     if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+    // Invalidar caché del middleware para que el próximo request refleje los cambios de rol
+    invalidateUserCacheByUserId(id);
 
     return res.json({ user: safeUser(user) });
   } catch (err) {

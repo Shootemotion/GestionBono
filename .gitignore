@@ -11,6 +11,11 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+.env.*
+backend/backups/
+backend/uploads/iso-evidencias/
+*.zip
 
 # Editor directories and files
 .vscode/*
@@ -22,3 +27,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Scripts de depuración
+debug_*.js
+backend/debug_*.js
+backend/list_*.js
+backend/recalculate_*.js
+backend/reset_*.js
+git status

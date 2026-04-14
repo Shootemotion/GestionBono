@@ -1,4 +1,6 @@
 import Feedback from "../models/Feedback.model.js";
+import { computeForEmployees } from "./dashboard.controller.js";
+import { calculateObjectiveProgress } from "../lib/scoreEngineUnified.js";
 
 // Helper to auto-close overdue feedbacks
 const checkAutoCloseFeedbacks = async (empleadoId = null) => {
@@ -26,18 +28,11 @@ const checkAutoCloseFeedbacks = async (empleadoId = null) => {
                 dynamicDeadline.setDate(dynamicDeadline.getDate() + 5);
             }
 
-            // Determine Effective Deadline (The earliest applicable date)
-            let effectiveDeadline = globalDeadline;
-            if (dynamicDeadline && globalDeadline) {
-                // If dynamic is earlier, use it
-                if (dynamicDeadline < globalDeadline) {
-                    effectiveDeadline = dynamicDeadline;
-                }
-            } else if (dynamicDeadline) {
-                effectiveDeadline = dynamicDeadline;
-            }
+            // Determine Effective Deadline
+            // If the manager sent/reopened it, ALWAYS grant the full 5-day dynamicDeadline, even if past globalDeadline.
+            let effectiveDeadline = dynamicDeadline || globalDeadline;
 
-            // Set end of day for deadline? Or strict start of day? usually End of Day.
+            // Set end of day for deadline
             if (effectiveDeadline) {
                 effectiveDeadline.setHours(23, 59, 59, 999);
 
@@ -179,7 +174,9 @@ export const getPendingFeedbacks = async (req, res) => {
         await checkAutoCloseFeedbacks();
 
         const { periodo, year } = req.query;
-        const query = { estado: { $in: ["PENDING_HR", "CLOSED"] } };
+        // Allows HR to see ALL feedbacks (DRAFT, SENT, PENDING_HR, CLOSED) 
+        // preventing them from "disappearing" from the tracking dashboard when reopened to SENT.
+        const query = {};
 
         if (periodo) query.periodo = periodo;
         if (year) query.year = Number(year);
@@ -265,5 +262,248 @@ export const getPendingNotifications = async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: "Error al obtener notificaciones" });
+    }
+};
+
+export const reopenFeedback = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Ensure only admin/HR/directivo can do this (handled via middleware in routes ideally)
+        const feedback = await Feedback.findById(id);
+
+        if (!feedback) {
+            return res.status(404).json({ message: "Feedback no encontrado" });
+        }
+
+        // Only allow reopening if it's strictly closed or pending HR
+        if (!["PENDING_HR", "CLOSED"].includes(feedback.estado)) {
+            return res.status(400).json({ message: "El feedback debe estar cerrado o pendiente por RRHH para ser reabierto" });
+        }
+
+        // Reset the timer and status
+        feedback.estado = "SENT";
+        feedback.submittedToEmployeeAt = new Date(); // Reset the 5-day timer
+
+        // Clear previous automatic closures or employee's acknowledgements
+        feedback.empleadoAck = undefined;
+        if (feedback.comentarioEmpleado?.includes("Cerrado automáticamente por sistema")) {
+            feedback.comentarioEmpleado = "";
+        }
+
+        await feedback.save();
+
+        res.json({ message: "Feedback reabierto con éxito. El empleado cuenta con 5 días para firmar su conformidad.", feedback });
+    } catch (error) {
+        console.error("Error reopening feedback:", error);
+        res.status(500).json({ message: "Error al intentar reabrir el feedback" });
+    }
+};
+
+export const reopenFeedbacksBulk = async (req, res) => {
+    try {
+        const { ids } = req.body;
+
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ message: "Se requieren IDs para reabrir múltiples feedbacks" });
+        }
+
+        const result = await Feedback.updateMany(
+            {
+                _id: { $in: ids },
+                estado: { $in: ["PENDING_HR", "CLOSED"] }
+            },
+            {
+                $set: {
+                    estado: "SENT",
+                    submittedToEmployeeAt: new Date()
+                },
+                $unset: {
+                    empleadoAck: ""
+                }
+            }
+        );
+
+        // We can't easily dynamically pull the exact "Cerrado automáticamente" string out 
+        // using just an updateMany without pipeline, so we clean it roughly via another operation or ignore it.
+        // For complete correctness we can do a second update for those specific comments:
+        await Feedback.updateMany(
+            {
+                _id: { $in: ids },
+                comentarioEmpleado: { $regex: /Cerrado automáticamente por sistema/ }
+            },
+            {
+                $set: { comentarioEmpleado: "" }
+            }
+        );
+
+        res.json({ message: `Se reabrieron ${result.modifiedCount} feedbacks correctamente.`, modifiedCount: result.modifiedCount });
+    } catch (error) {
+        console.error("Error bulk reopening feedbacks:", error);
+        res.status(500).json({ message: "Error al intentar reabrir los feedbacks masivamente" });
+    }
+};
+
+// ============================================================================
+// PANEL DE AUDITORIA DE SCORES (Superadmin O RRHH)
+// ============================================================================
+
+function getPeriodMonth(p) {
+    if (!p) return 0;
+    if (p === "Q1")    return 3;
+    if (p === "Q2")    return 6;
+    if (p === "Q3")    return 9;
+    if (p === "FINAL") return 12;
+    const suffix = p.length > 4 && !isNaN(p.slice(0, 4)) ? p.slice(4) : p;
+    if (suffix.startsWith("M")) { const m = parseInt(suffix.slice(1)); return m >= 9 ? m - 8 : m + 4; }
+    if (suffix.startsWith("Q")) return parseInt(suffix.slice(1)) * 3;
+    return 12;
+}
+
+function calcularScoresParaPeriodo(metrics, period) {
+    const feedbackLimit = getPeriodMonth(period);
+
+    // OBJETIVOS 
+    const objetivos = metrics.objetivos?.items || metrics.objetivos || [];
+    let totalObjScore = 0;
+    const breakdownObj = [];
+
+    objetivos.forEach(obj => {
+        const hitosRelevantes = (obj.hitos || []).filter(
+            h => getPeriodMonth(h.periodo) <= feedbackLimit
+        );
+        if (hitosRelevantes.length === 0) return;
+
+        // Use Unified Engine logic (same as Frontend)
+        const isFinalPeriod = feedbackLimit === 12;
+        const progreso = calculateObjectiveProgress(obj, hitosRelevantes, isFinalPeriod);
+        console.log(`[AUDIT] Obj: ${obj.nombre}, Metas: ${obj.metas?.length || 0}, Progreso: ${progreso}%`);        
+        totalObjScore  += (progreso * (obj.peso || 0));
+        breakdownObj.push({
+            nombre: obj.nombre,
+            peso: obj.peso,
+            progreso,
+            contribucion: (progreso * (obj.peso || 0)) / 100 * 0.7
+        });
+    });
+
+    // Normalización: Dividimos por 100 siempre, NO por la suma de pesos evaluados.
+    // Esto asegura escala absoluta (ej: 10 pts de 100) y no infla scores parciales.
+    const scoreObjRaw = totalObjScore / 100;
+    const scoreObjWeighted = scoreObjRaw * 0.7;
+
+    // COMPETENCIAS 
+    const aptitudes = metrics.aptitudes?.items || metrics.aptitudes || [];
+    let totalCompScore = 0, compCount = 0;
+
+    aptitudes.forEach(apt => {
+        const hitosRelevantes = (apt.hitos || []).filter(
+            h => h.actual !== null && h.actual !== undefined
+              && getPeriodMonth(h.periodo) <= feedbackLimit
+        );
+        if (hitosRelevantes.length === 0) return;
+
+        const avg = Math.round(hitosRelevantes.reduce((s, h) => s + Number(h.actual ?? 0), 0) / hitosRelevantes.length);
+        totalCompScore += avg;
+        compCount++;
+    });
+
+    const scoreCompRaw     = compCount > 0 ? totalCompScore / compCount : 0;
+    const scoreCompWeighted = scoreCompRaw * 0.3;
+
+    console.log(`[AUDIT] Periodo: ${period}, ObjScoreRaw: ${scoreObjRaw.toFixed(2)}, FinalObj: ${scoreObjWeighted.toFixed(2)}`);
+
+    return {
+        version: "v2.0-unified",
+        obj:    +(scoreObjWeighted.toFixed(4)),
+        comp:   +(scoreCompWeighted.toFixed(4)),
+        global: +((scoreObjWeighted + scoreCompWeighted).toFixed(4)),
+        breakdownObj
+    };
+}
+
+export const auditScores = async (req, res) => {
+    try {
+        const { year = 2025, empleadoId } = req.query;
+
+        const feedbackQuery = { year: Number(year) };
+        if (empleadoId) feedbackQuery.empleado = empleadoId;
+
+        // Solo traer feedbacks con sus scores almacenados en BD
+        // El cálculo "en vivo" lo realiza el frontend con la misma lógica que la Sala de Evaluación
+        const feedbacks = await Feedback.find(feedbackQuery)
+            .populate("empleado", "nombre apellido")
+            .lean();
+
+        if (!feedbacks || feedbacks.length === 0) {
+            return res.json({ results: [] });
+        }
+
+        // Agrupar por empleado
+        const empMap = new Map();
+        feedbacks.forEach(fb => {
+            const eid = String(fb.empleado._id);
+            if (!empMap.has(eid)) {
+                empMap.set(eid, {
+                    empleadoId: eid,
+                    empleado: `${fb.empleado.apellido}, ${fb.empleado.nombre}`,
+                    feedbacks: []
+                });
+            }
+            empMap.get(eid).feedbacks.push({
+                _id: String(fb._id),
+                periodo: fb.periodo,
+                estado: fb.estado,
+                // scores almacenados en BD (pueden estar desactualizados)
+                bdScores: {
+                    obj: Number(fb.scores?.obj ?? 0),
+                    comp: Number(fb.scores?.comp ?? 0),
+                    global: Number(fb.scores?.global ?? 0)
+                }
+            });
+        });
+
+        const empleadosArr = Array.from(empMap.values());
+        // Ordenar feedbacks por período dentro de cada empleado
+        empleadosArr.forEach(emp => {
+            emp.feedbacks.sort((a, b) => getPeriodMonth(a.periodo) - getPeriodMonth(b.periodo));
+        });
+
+        res.json({ results: empleadosArr });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: "Error al auditar scores" });
+    }
+};
+
+// fixScores: Acepta los scores calculados por el FRONTEND (misma lógica que la Sala de Evaluación)
+// y los guarda en la BD. No recalcula nada para evitar discrepancias.
+export const fixScores = async (req, res) => {
+    try {
+        const { feedbackId, scores } = req.body;
+
+        if (!feedbackId || !scores) {
+            return res.status(400).json({ message: "Faltan parametros: feedbackId y scores son requeridos" });
+        }
+
+        const obj = Number(scores.obj ?? 0);
+        const comp = Number(scores.comp ?? 0);
+        const global = Number(scores.global ?? 0);
+
+        await Feedback.updateOne(
+            { _id: feedbackId },
+            {
+                $set: {
+                    "scores.obj": obj,
+                    "scores.comp": comp,
+                    "scores.global": global
+                }
+            }
+        );
+
+        res.json({ message: "Scores corregidos", saved: { obj, comp, global } });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: "Error al corregir scores" });
     }
 };

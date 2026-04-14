@@ -6,6 +6,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog";
 import { useAuth } from "@/context/AuthContext";
 import { api, API_ORIGIN } from "@/lib/api";
 import { evaluarCumple, calcularResultadoGlobal } from "@/lib/evaluarCumple";
@@ -33,7 +43,8 @@ import {
   Megaphone,
   History
 } from "lucide-react";
-import { calculateObjectiveProgress, calculateWeightedScore, calculateGlobalScore, calculateMetaScore, calculatePeriodCompliance } from "@/utils/calculos";
+import { calculateObjectiveProgress, calculateWeightedScore, calculateGlobalScore, calculateMetaScore, calculatePeriodCompliance, calculateCompetencyProgress } from "@/utils/calculos";
+import { getPeriodMonth, calculatePeriodScores } from "@/lib/scoreHelpers";
 
 import { ReferenceRulesDialog } from "@/components/ReferenceRulesDialog";
 import { ReporteFinal } from "@/components/ReporteFinal";
@@ -114,12 +125,10 @@ const ProgressBar = ({ value = 0 }) => (
   </div>
 );
 
-function buildResumenEmpleado(data) {
+function buildResumenEmpleado(data, isFinalYearClosure = false) {
   if (!data) return null;
   let objetivos = Array.isArray(data.objetivos) ? data.objetivos : (data.objetivos?.items || []);
   let aptitudes = Array.isArray(data.aptitudes) ? data.aptitudes : (data.aptitudes?.items || []);
-
-  console.group("🧮 Debug Cálculo de Scores");
 
   // Calculate Objective Score (LIVE RECALCULATION)
   const pesosObj = objetivos.map((o) => Number(o.peso ?? 0));
@@ -135,7 +144,7 @@ function buildResumenEmpleado(data) {
     totalBasePesoObj += pesoBase;
 
     const hitosValidos = o.hitos?.filter(h => h.actual != null) || [];
-    const scoreRaw = calculateObjectiveProgress(o, hitosValidos);
+    const scoreRaw = calculateObjectiveProgress(o, hitosValidos, isFinalYearClosure);
     const scoreContrib = calculateWeightedScore(scoreRaw, peso, o); // Pass objective for permiteOver check
 
     scoreObjRaw += scoreContrib;
@@ -146,39 +155,26 @@ function buildResumenEmpleado(data) {
   // The calculateWeightedScore already handles the 100 division, so scoreObjRaw is already a percentage of total possible.
   // If totalBasePesoObj is 0, scoreObjRaw will be 0, which is correct.
 
-  console.log("Objetivos (Live Calc):", objetivos.map((o, i) => ({
-    nombre: o.nombre,
-    peso: pesosObj[i],
-    progreso: progObj[i],
-    scoreContrib: (pesosObj[i] * progObj[i]) / 100
-  })));
-
   // scoreObjRaw is already calculated in the loop above.
-  console.log("Score Objetivos (Raw):", scoreObjRaw);
 
   const scoreObj = scoreObjRaw;
 
-  // Calculate Aptitude Score
-  const pesosApt = aptitudes.map((a) => Number(a.peso ?? 0));
-  const progApt = aptitudes.map((a) => Number(a.puntuacion ?? a.score ?? 0));
-
-  console.log("Aptitudes:", aptitudes.map((a, i) => ({
-    nombre: a.nombre,
-    score: progApt[i]
-  })));
-
-  const scoreApt = progApt.length
-    ? progApt.reduce((a, b) => a + b, 0) / progApt.length
-    : 0;
-
-  console.log("Score Aptitudes (Raw):", scoreApt);
+  // Calculate Aptitude Score (Weighted)
+  const progApt = aptitudes.map((a) => {
+    const puntuaciones = (a.hitos || [])
+      .map(h => h.actual)
+      .filter(val => val !== null && val !== undefined);
+    return puntuaciones.length > 0 
+      ? Math.round(puntuaciones.reduce((acc, b) => acc + b, 0) / puntuaciones.length)
+      : (a.puntuacion ?? a.score ?? 0);
+  });
+  
+  const scoreApt = calculateCompetencyProgress(aptitudes);
 
   // Global Score (70/30)
   const scoreObjWeighted = scoreObj * 0.7;
   const scoreAptWeighted = scoreApt * 0.3;
   const global = scoreObjWeighted + scoreAptWeighted;
-
-  console.log("Final:", { scoreObjWeighted, scoreAptWeighted, global });
 
   // --- DEBUG: CÁLCULO POR TRIMESTRE (Q1, Q2, Q3, Q4) ---
   const periods = ["Q1", "Q2", "Q3", "4"]; // Helper to identify periods (checking string contains)
@@ -202,7 +198,7 @@ function buildResumenEmpleado(data) {
       // Calculate PROPER score for this hito using the helper
       // This will respect reconoceEsfuerzo, tolerancia, permiteOver from the meta definitions
       // We create a temporary objective object with only this hito to use the helper
-      const scoreRaw = calculateObjectiveProgress(o, [hito].filter(Boolean));
+      const scoreRaw = calculateObjectiveProgress(o, [hito].filter(Boolean), isFinalYearClosure);
 
       p_totalPesoObj += peso;
       p_weightedScoreObj += calculateWeightedScore(scoreRaw, peso, o);
@@ -212,17 +208,7 @@ function buildResumenEmpleado(data) {
 
 
 
-    // 2. Calc Apt Score for this period
-    let p_aptSum = 0;
-    let p_aptCount = 0;
-    aptitudes.forEach(a => {
-      const hito = a.hitos?.find(h => h.periodo === periodo);
-      if (hito && hito.actual != null) {
-        p_aptSum += Number(hito.actual);
-        p_aptCount++;
-      }
-    });
-    const p_scoreApt = p_aptCount > 0 ? (p_aptSum / p_aptCount) : 0;
+    const p_scoreApt = calculateCompetencyProgress(aptitudes, getPeriodMonth, getPeriodMonth(periodo));
 
     // 3. Global
     const p_global = (p_scoreObj * 0.7) + (p_scoreApt * 0.3);
@@ -235,8 +221,6 @@ function buildResumenEmpleado(data) {
     };
   });
 
-  console.log("Breakdown Periods:", periodBreakdown);
-  console.groupEnd();
 
   return {
     objetivos: { cantidad: objetivos.length, peso: totalBasePesoObj, score: scoreObjWeighted, rawScore: scoreObj },
@@ -532,6 +516,9 @@ export default function EvaluacionFlujo() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
+  // Custom Confirmation Dialog State
+  const [confirmSubmit, setConfirmSubmit] = useState(null);
+
   // Roles
   const esReferente = Boolean((Array.isArray(user?.referenteAreas) && user.referenteAreas.length > 0) || (Array.isArray(user?.referenteSectors) && user.referenteSectors.length > 0));
   const esDirector = user?.rol === "directivo" || user?.isRRHH === true;
@@ -753,7 +740,8 @@ export default function EvaluacionFlujo() {
 
                 // Recalculate Objective Progress using the strict rules
                 // We use calculateObjectiveProgress from existing imports
-                const strictProgress = calculateObjectiveProgress({ ...obj, metas: mergedMetas }, obj.hitos);
+                const isFinalYearClosure = getPeriodMonth(periodo) === 12 || periodo === "FINAL";
+                const strictProgress = calculateObjectiveProgress({ ...obj, metas: mergedMetas }, obj.hitos, isFinalYearClosure);
 
                 return {
                   ...obj,
@@ -959,7 +947,7 @@ export default function EvaluacionFlujo() {
     });
   };
 
-  const handleSaveItem = async (item, action = "draft") => {
+  const handleSaveItem = async (item, action = "draft", isConfirmed = false) => {
     const data = evaluacionData[item._id];
     if (!data || !data.localHito) return;
 
@@ -973,6 +961,15 @@ export default function EvaluacionFlujo() {
         toast.error("Seleccioná una escala (1-5)");
         return;
       }
+    }
+
+    if (action === "toEmployee" && !isConfirmed) {
+      setConfirmSubmit({
+        title: "¿Estás seguro de enviar la evaluación al colaborador?",
+        description: "El empleado recibirá la notificación y podrá ver los resultados en su panel de desempeño inmediatamente.",
+        onConfirm: () => handleSaveItem(item, action, true)
+      });
+      return;
     }
 
     // [SECURITY] Prevent saving future periods if not in Testing Mode
@@ -1073,7 +1070,7 @@ export default function EvaluacionFlujo() {
     }
   };
 
-  const handleSaveFeedback = async (periodo, comentario, estado) => {
+  const handleSaveFeedback = async (periodo, comentario, estado, isConfirmed = false) => {
     // [SECURITY] Check if future
     if (!isTestingMode) {
       const timeline = [
@@ -1099,6 +1096,14 @@ export default function EvaluacionFlujo() {
     }
 
     try {
+      if (estado === "SENT" && !isConfirmed) {
+        setConfirmSubmit({
+          title: "¿Estás seguro de enviar el feedback al colaborador?",
+          description: "El empleado recibirá la notificación y podrá verlo inmediatamente en su panel de desempeño.",
+          onConfirm: () => handleSaveFeedback(periodo, comentario, estado, true)
+        });
+        return;
+      }
       const saved = await api("/feedbacks", {
         method: "POST",
         body: {
@@ -1107,15 +1112,11 @@ export default function EvaluacionFlujo() {
           periodo,
           comentario,
           estado,
-          // Snapshot of scores at the moment of saving
-          scores: resumenEmpleado ? {
-            obj: resumenEmpleado.objetivos.score,
-            comp: resumenEmpleado.aptitudes.score,
-            global: resumenEmpleado.global
-          } : null
+          // Snapshot of scores recalculated uniquely for the requested period
+          scores: dashEmpleadoData ? calculatePeriodScores(dashEmpleadoData, periodo) : null
         }
       });
-      toast.success(`Feedback ${periodo} guardado`);
+      toast.success(estado === "SENT" ? `Feedback ${periodo} enviado` : `Feedback ${periodo} guardado`);
       // Recargar
       const res = await api(`/feedbacks/empleado/${selectedEmpleadoId}?year=${anio}`);
       setFeedbacks(res || []);
@@ -1144,7 +1145,8 @@ export default function EvaluacionFlujo() {
     return 0;
   };
 
-  const resumenEmpleado = useMemo(() => buildResumenEmpleado(dashEmpleadoData), [dashEmpleadoData]);
+  const isFinalYearClosure = getPeriodMonth(periodo) === 12 || periodo === "FINAL";
+  const resumenEmpleado = useMemo(() => buildResumenEmpleado(dashEmpleadoData, isFinalYearClosure), [dashEmpleadoData, isFinalYearClosure]);
   const empleadoNombreCompleto = empleadoInfo ? `${empleadoInfo.apellido} ${empleadoInfo.nombre}` : "Colaborador";
 
   // DEBUG FINAL REPORT
@@ -1166,7 +1168,7 @@ export default function EvaluacionFlujo() {
         <div className="max-w-[1600px] mx-auto px-6 py-4">
           <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
             <div className="flex flex-col items-start gap-4">
-              <Button variant="ghost" size="sm" onClick={() => state?.from === "seguimiento" ? navigate("/seguimiento") : navigate(-1)} className={isTestingMode ? "text-indigo-600 hover:text-indigo-800 hover:bg-indigo-200/50" : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}>
+              <Button variant="ghost" size="sm" onClick={() => state?.from === "seguimiento" ? navigate("/seguimiento" + (state.search || "")) : navigate(-1)} className={isTestingMode ? "text-indigo-600 hover:text-indigo-800 hover:bg-indigo-200/50" : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}>
                 {state?.from === "seguimiento" ? "← Volver al Gantt" : "← Volver"}
               </Button>
               <div>
@@ -2245,32 +2247,20 @@ export default function EvaluacionFlujo() {
                       const scoreObjRaw = totalObjScore; // Already correct scale (sum of weighted scores)
                       const scoreObj = scoreObjRaw * 0.7; // Weighted contribution (Max 70)
 
-                      // Competencias
-                      let totalCompScore = 0;
-                      let compCount = 0;
+                      // Competencias (UNIFICADO: Promedio Ponderado)
+                      const scoreCompRaw = calculateCompetencyProgress(dashEmpleadoData.aptitudes, getPeriodMonth, feedbackLimit);
+                      
                       const detailsComp = [];
-
                       dashEmpleadoData.aptitudes?.forEach(apt => {
-                        // Filter hitos up to the feedback period
                         const relevantHitos = apt.hitos?.filter(h => getPeriodMonth(h.periodo) <= feedbackLimit) || [];
-
-                        // Recalculate score based on relevant hitos (ignoring nulls)
                         let score = 0;
-                        const puntuaciones = relevantHitos
-                          .map(h => h.actual)
-                          .filter(val => val !== null && val !== undefined);
-
+                        const puntuaciones = relevantHitos.map(h => h.actual).filter(val => val !== null && val !== undefined);
                         if (puntuaciones.length > 0) {
                           score = Math.round(puntuaciones.reduce((a, b) => a + b, 0) / puntuaciones.length);
                         }
-
-                        totalCompScore += score;
-                        compCount++;
-
-                        // For simple average, we just show the score. 
                         detailsComp.push({ nombre: apt.nombre, score: score, rawScore: score });
                       });
-                      const scoreCompRaw = compCount > 0 ? (totalCompScore / compCount) : 0;
+
                       const scoreComp = scoreCompRaw * 0.3; // Weighted contribution (Max 30)
 
                       // Global
@@ -2765,6 +2755,24 @@ export default function EvaluacionFlujo() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Modern Confirmation Dialog */}
+      <AlertDialog open={!!confirmSubmit} onOpenChange={(open) => { if (!open) setConfirmSubmit(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmSubmit?.title}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmSubmit?.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              confirmSubmit?.onConfirm();
+              setConfirmSubmit(null);
+            }}>Aceptar y Enviar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div >
   );
 }

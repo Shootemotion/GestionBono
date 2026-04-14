@@ -23,6 +23,9 @@ const usuarioSchema = new Schema({
     index: true,
   },
 
+  // Capacidad extra transversal para Gestión ISO
+  isCalidad: { type: Boolean, default: false },
+
   // Estado de la cuenta
   status: { type: String, enum: ['invited','active','disabled'], default: 'invited' },
   lastLoginAt: Date,

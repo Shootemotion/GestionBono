@@ -4,15 +4,17 @@
 // Los procesos son documentos en BD (ProcesoISO). Al crear uno acá,
 // aparece en el select de Proceso de las Plantillas automáticamente.
 import { useEffect, useMemo, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import Modal from "@/components/Modal.jsx";
 import FormularioObjetivoISO from "@/components/FormularioObjetivoISO.jsx";
+import ModalCargaAvanceISO from "@/components/ModalCargaAvanceISO.jsx";
 import FormularioProceso from "@/components/FormularioProceso.jsx";
 import { Button } from "@/components/ui/button";
 import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
-import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Info, UserCheck } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Info, UserCheck, Eye, Search, TrendingUp } from "lucide-react";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 function fiscalLabel(y) {
@@ -21,6 +23,7 @@ function fiscalLabel(y) {
 
 export default function GestionISO() {
     const { user } = useAuth();
+    const navigate = useNavigate();
 
     // ─── estado núcleo ────────────────────────────────────────────────────────
     const [objetivos, setObjetivos] = useState([]);
@@ -37,13 +40,15 @@ export default function GestionISO() {
 
     // ─── modales ──────────────────────────────────────────────────────────────
     const [modalObj, setModalObj] = useState({ open: false, data: null });
+    const [modalAvance, setModalAvance] = useState({ open: false, data: null });
     const [modalProc, setModalProc] = useState({ open: false, data: null });
 
     // ─── permisos ─────────────────────────────────────────────────────────────
     const userRole = String(user?.rol || "").toLowerCase();
     const canEdit =
-        user?.isSuper || user?.isRRHH ||
-        userRole === "rrhh" || userRole === "directivo" || userRole === "superadmin";
+        user?.isSuper ||
+        user?.isCalidad ||
+        userRole === "superadmin";
 
     // ─── carga inicial ───────────────────────────────────────────────────────
     const loadAll = useCallback(async () => {
@@ -95,9 +100,11 @@ export default function GestionISO() {
     const procesosView = useMemo(() => {
         if (!selectedObjId) return procesos;
         return procesos.filter((p) => {
-            const ref = p.objetivoISOId;
-            const id = typeof ref === "object" ? ref?._id : ref;
-            return String(id) === selectedObjId;
+            const refList = p.objetivosISO || [];
+            return refList.some(obj => {
+                const id = typeof obj === "object" ? obj?._id : obj;
+                return String(id) === selectedObjId;
+            });
         });
     }, [procesos, selectedObjId]);
 
@@ -132,24 +139,27 @@ export default function GestionISO() {
     const procesosPorObj = useMemo(() => {
         const map = new Map();
         for (const p of procesos) {
-            const ref = p.objetivoISOId;
-            const id = typeof ref === "object" ? ref?._id : ref;
-            if (id) map.set(String(id), (map.get(String(id)) || 0) + 1);
+            const refList = p.objetivosISO || [];
+            for (const ref of refList) {
+                const id = typeof ref === "object" ? ref?._id : ref;
+                if (id) map.set(String(id), (map.get(String(id)) || 0) + 1);
+            }
         }
         return map;
     }, [procesos]);
 
     // ─── CRUD objetivos ───────────────────────────────────────────────────────
-    const handleGuardarObj = async (payload) => {
+    const handleGuardarObj = async (payload, explicitId = null) => {
         try {
-            const isEdit = !!modalObj.data?._id;
+            const id = explicitId || modalObj.data?._id;
+            const isEdit = !!id;
             const saved = isEdit
-                ? await api(`/objetivos-iso/${modalObj.data._id}`, { method: "PUT", body: payload })
+                ? await api(`/objetivos-iso/${id}`, { method: "PUT", body: payload })
                 : await api("/objetivos-iso", { method: "POST", body: payload });
             setObjetivos((prev) => isEdit ? prev.map((o) => o._id === saved._id ? saved : o) : [...prev, saved]);
             toast.success(isEdit ? "Objetivo actualizado." : "Objetivo creado.");
             setModalObj({ open: false, data: null });
-        } catch { toast.error("Error al guardar el objetivo."); }
+        } catch (err) { toast.error(`Error al guardar: ${err?.message || err?.data?.message || "Error desconocido"}`); }
     };
 
     const handleEliminarObj = async (id) => {
@@ -218,6 +228,15 @@ export default function GestionISO() {
                         <span className="text-sm font-semibold min-w-[80px] text-center">{fiscalLabel(year)}</span>
                         <button onClick={() => setYear((y) => y + 1)} className="p-1 hover:bg-slate-100 rounded-full"><ChevronRight size={16} /></button>
                     </div>
+
+                    <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="bg-blue-600 text-white hover:bg-blue-700 hover:text-white border-none shadow-md flex items-center gap-2 px-4 py-3 h-auto rounded-xl transition-all active:scale-95"
+                        onClick={() => navigate("/analisis-iso")}
+                    >
+                        <TrendingUp size={16} /> Análisis ISO
+                    </Button>
                 </div>
 
                 {/* Breadcrumb de filtros activos */}
@@ -281,11 +300,12 @@ export default function GestionISO() {
                                     const cantP = procesosPorObj.get(id) || 0;
                                     return (
                                         <li key={id}
-                                            className={`group rounded-xl border cursor-pointer transition-all hover:shadow-md
+                                            className={`group relative rounded-xl border transition-all duration-300 overflow-hidden hover:shadow-md cursor-pointer
                         ${selected ? "ring-2 ring-blue-500 bg-blue-50 border-blue-200" : "bg-white border-slate-200 hover:border-blue-200"}`}
+                                            style={{ paddingBottom: '2.5rem' }}
                                             onClick={() => { setSelectedObjId(selected ? null : id); setSelectedProcId(null); }}
                                         >
-                                            <div className="flex flex-col gap-2 px-3 py-2.5">
+                                            <div className="flex flex-col gap-2 px-3 py-2.5 relative z-0">
                                                 <div className="flex items-start gap-3">
                                                     {obj.codigo && (
                                                         <span className={`shrink-0 mt-0.5 text-[10px] font-black px-2 py-0.5 rounded-full
@@ -300,16 +320,6 @@ export default function GestionISO() {
                                                         ${selected ? "bg-blue-200 text-blue-900" : "bg-slate-100 text-slate-500"}`}>
                                                         {cantP}P
                                                     </span>
-                                                    {canEdit && (
-                                                        <div className="flex gap-1 ml-1 mt-0.5">
-                                                            {actionBtn("Editar",
-                                                                () => setModalObj({ open: true, data: obj }),
-                                                                "text-blue-500 hover:text-blue-700")}
-                                                            {actionBtn("Eliminar",
-                                                                () => handleEliminarObj(id),
-                                                                "text-rose-500 hover:text-rose-700")}
-                                                        </div>
-                                                    )}
                                                 </div>
 
                                                 {/* Representante de Calidad */}
@@ -320,6 +330,59 @@ export default function GestionISO() {
                                                             Rep. Calidad: <span className="text-slate-700">{obj.representante.nombre} {obj.representante.apellido}</span>
                                                         </span>
                                                     </div>
+                                                )}
+
+                                                {/* Barra de progreso visual */}
+                                                <div className="ml-[2.75rem] mt-1 space-y-1">
+                                                    <div className="flex items-center justify-between text-[10px] font-semibold text-slate-500">
+                                                        <span>Avance global</span>
+                                                        <span className="text-blue-600">{obj.progreso || 0}%</span>
+                                                    </div>
+                                                    <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                                                        <div className="bg-blue-500 h-1.5 rounded-full transition-all duration-500" style={{ width: `${obj.progreso || 0}%` }}></div>
+                                                    </div>
+                                                    {obj.desarrollo && (
+                                                        <p className="text-[10px] text-slate-500 mt-1.5 line-clamp-2 bg-slate-50 p-1.5 rounded border border-slate-100">
+                                                            <span className="font-semibold text-slate-600">Actualización:</span> {obj.desarrollo}
+                                                        </p>
+                                                    )}
+
+                                                    {/* Resumen Seguimiento Mensual */}
+                                                    {obj.seguimientoMensual?.some(s => s.progreso > 0) && (
+                                                        <div className="mt-2 flex flex-wrap gap-1">
+                                                            {[...obj.seguimientoMensual].reverse().find(s => s.progreso > 0) && (() => {
+                                                                const s = [...obj.seguimientoMensual].reverse().find(m => m.progreso > 0);
+                                                                const meses = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+                                                                return (
+                                                                    <span className="text-[9px] bg-blue-600 text-white px-1.5 py-0.5 rounded-full font-bold">
+                                                                        Última carga: {meses[s.mes]} ({s.progreso}%)
+                                                                    </span>
+                                                                );
+                                                            })()}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="absolute bottom-0 left-0 right-0 transform translate-y-full opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300 ease-in-out border-t border-slate-200/60 bg-white/95 backdrop-blur-sm z-20 flex text-center divide-x divide-slate-100 shadow-[0_-4px_15px_-5px_rgba(0,0,0,0.05)]">
+                                                <button
+                                                    className="flex-1 py-2.5 text-[10px] font-bold text-blue-600 hover:bg-blue-50 transition-colors uppercase tracking-wide flex items-center justify-center gap-1.5"
+                                                    onClick={(e) => { e.stopPropagation(); setModalAvance({ open: true, data: obj }); }}
+                                                >
+                                                    <TrendingUp size={14} /> Avance
+                                                </button>
+                                                <button
+                                                    className="flex-1 py-2.5 text-[10px] font-bold text-slate-500 hover:text-amber-600 hover:bg-amber-50/50 transition-colors uppercase tracking-wide flex items-center justify-center gap-1.5"
+                                                    onClick={(e) => { e.stopPropagation(); setModalObj({ open: true, data: obj }); }}
+                                                >
+                                                    {canEdit ? <Pencil size={14} /> : <Eye size={14} />} {canEdit ? "Editar" : "Detalles"}
+                                                </button>
+                                                {canEdit && (
+                                                    <button
+                                                        className="flex-1 py-2.5 text-[10px] font-bold text-slate-500 hover:text-rose-600 hover:bg-rose-50/50 transition-colors uppercase tracking-wide flex items-center justify-center gap-1.5"
+                                                        onClick={() => handleEliminarObj(id)}
+                                                    >
+                                                        <Trash2 size={14} /> Quitar
+                                                    </button>
                                                 )}
                                             </div>
                                         </li>
@@ -355,9 +418,12 @@ export default function GestionISO() {
                                     const id = String(proc._id);
                                     const selected = selectedProcId === id;
                                     const cantPl = plantillasPorProc.get(proc.fullName?.trim()) || 0;
-                                    const sinObjetivo = !proc.objetivoISOId;
-                                    const objRef = proc.objetivoISOId;
-                                    const objLabel = objRef?.codigo ? `[${objRef.codigo}]` : (objRef?.nombre?.slice(0, 12) ?? null);
+                                    const listaObj = proc.objetivosISO || [];
+                                    const sinObjetivo = listaObj.length === 0;
+                                    const objLabels = listaObj
+                                         .map(obj => obj?.codigo ? `[${obj.codigo}]` : (obj?.nombre?.slice(0, 12) ?? null))
+                                         .filter(Boolean)
+                                         .join(", ");
 
                                     return (
                                         <li key={id}
@@ -374,8 +440,8 @@ export default function GestionISO() {
                                                     <p className={`text-sm font-semibold leading-tight truncate ${selected ? "text-emerald-800" : "text-slate-800"}`}>
                                                         {proc.nombre}
                                                     </p>
-                                                    {objLabel && (
-                                                        <p className="text-[10px] text-muted-foreground">{objLabel}</p>
+                                                    {objLabels && (
+                                                        <p className="text-[10px] text-muted-foreground">{objLabels}</p>
                                                     )}
                                                     {sinObjetivo && (
                                                         <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full border border-amber-200">
@@ -478,8 +544,28 @@ export default function GestionISO() {
                         <FormularioObjetivoISO
                             initialData={modalObj.data}
                             defaultYear={year}
-                            onGuardar={handleGuardarObj}
+                            procesosDisponibles={procesos}
+                            readOnly={!canEdit}
+                            onGuardar={async (payload) => {
+                                await handleGuardarObj(payload, modalObj.data?._id);
+                                await loadAll(); // Recargar procesos y objetivos tras guardar
+                            }}
                             onCancelar={() => setModalObj({ open: false, data: null })}
+                        />
+                    )}
+                </Modal>
+
+                <Modal isOpen={modalAvance.open} onClose={() => setModalAvance({ open: false, data: null })}
+                    title={`Cargar Avance: ${modalAvance.data?.nombre || ""}`}>
+                    {modalAvance.open && (
+                        <ModalCargaAvanceISO
+                            objetivo={modalAvance.data}
+                            onGuardar={async (payload) => {
+                                await handleGuardarObj(payload, modalAvance.data?._id);
+                                await loadAll();
+                                setModalAvance({ open: false, data: null });
+                            }}
+                            onCancelar={() => setModalAvance({ open: false, data: null })}
                         />
                     )}
                 </Modal>

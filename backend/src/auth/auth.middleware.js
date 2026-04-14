@@ -19,7 +19,17 @@ function buildFullName(userDoc) {
 }
 
 const userCache = new Map(); // cache simple en memoria
-const CACHE_TTL = 60 * 1000; // 1 minuto
+const CACHE_TTL = 15 * 1000; // 15 segundos (reduce tiempo de stale para permisos)
+
+// Permite invalidar la caché de un usuario por su userId (llamado al actualizar isCalidad, rol, etc)
+export function invalidateUserCacheByUserId(userId) {
+  const uid = String(userId);
+  for (const [token, cached] of userCache.entries()) {
+    if (String(cached?.user?._id) === uid || String(cached?.user?.userId) === uid) {
+      userCache.delete(token);
+    }
+  }
+}
 
 export const authenticateJWT = async (req, res, next) => {
   try {
@@ -132,6 +142,7 @@ export const authenticateJWT = async (req, res, next) => {
         sectorId,
         fullName: buildFullName(userDoc),
         isSuper: rolSlug === "superadmin",
+        isCalidad: userDoc.isCalidad || false,
         isRRHH: rolSlug === "rrhh",
         isDirectivo: rolSlug === "directivo",
         isJefeArea: rolEfectivo === "jefe_area" || referenteAreas.length > 0,
@@ -203,6 +214,58 @@ export const requireCapOrSelf = (cap) => (req, res, next) => {
   return res.status(403).json({ message: "No autorizado", needed: cap });
 };
 
-export const whoami = (req, res) => {
-  res.json(req.user || { _id: "anon", rol: "visor", permisos: [] });
+export const whoami = async (req, res) => {
+  const u = req.user;
+  if (!u) return res.json({ _id: "anon", rol: "visor", permisos: [] });
+
+  // 🎭 Soporte para Enmascaramiento (Impersonation)
+  // Si soy superadmin y pido un empleadoId, buscamos ESE perfil para devolverlo al front
+  if (u.isSuper && req.query.empleadoId) {
+    try {
+      const targetUserId = req.query.empleadoId;
+      const targetUserDoc = await Usuario.findOne({ empleado: targetUserId })
+        .populate({
+          path: "empleado",
+          populate: [{ path: "area" }, { path: "sector" }]
+        });
+
+      if (targetUserDoc) {
+        // Construimos el objeto req.user para el target (casi igual a authenticateJWT)
+        const rolSlug = targetUserDoc.rol;
+        let rolePerms = [];
+        const roleDoc = await Role.findOne({ slug: rolSlug }).select('permissions').lean();
+        if (roleDoc) rolePerms = roleDoc.permissions;
+
+        const arrayUnion = (a = [], b = []) => Array.from(new Set([...(a || []), ...(b || [])]));
+        const permisos = arrayUnion(rolePerms, targetUserDoc.permisos || []);
+
+        return res.json({
+          _id: String(targetUserDoc._id),
+          email: targetUserDoc.email,
+          rol: rolSlug,
+          rolEfectivo: rolSlug,
+          permisos,
+          empleado: targetUserDoc.empleado ? {
+            _id: String(targetUserDoc.empleado._id),
+            nombre: targetUserDoc.empleado.nombre,
+            apellido: targetUserDoc.empleado.apellido,
+            apodo: targetUserDoc.empleado.apodo,
+            puesto: targetUserDoc.empleado.puesto,
+            fotoUrl: targetUserDoc.empleado.fotoUrl,
+            area: targetUserDoc.empleado.area,
+            sector: targetUserDoc.empleado.sector,
+          } : null,
+          empleadoId: String(targetUserDoc.empleado?._id || ""),
+          fullName: buildFullName(targetUserDoc),
+          isSuper: rolSlug === "superadmin",
+          isRRHH: rolSlug === "rrhh",
+          isDirectivo: rolSlug === "directivo"
+        });
+      }
+    } catch (err) {
+      console.error("Error en whoami impersonation:", err);
+    }
+  }
+
+  res.json(u);
 };
