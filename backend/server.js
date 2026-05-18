@@ -47,6 +47,7 @@ import analyticsRoutes from './src/analytics/analytics.routes.js';
 import appFeedbackRoutes from './src/routes/appFeedback.routes.js';
 import botRoutes from './src/routes/bot.routes.js';
 import Empleado from './src/models/Empleado.model.js';
+import { botLimiter } from './src/middleware/rateLimiter.middleware.js';
 
 // --- CRON JOBS ---
 // Run Daily Backup at 03:00 AM
@@ -91,7 +92,7 @@ app.use('/api/auth', authRouter);
 
 // --- Rutas de App Feedback ---
 app.use('/api/app-feedback', appFeedbackRoutes);
-app.use('/api/bot', botRoutes);
+app.use('/api/bot', botLimiter, botRoutes); // 🔒 máx 30 req / min
 
 // --- SWAGGER API DOCS (Dynamic Spec con picklist de empleados) ---
 

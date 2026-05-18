@@ -837,6 +837,14 @@ export default function FormularioObjetivos({
                           </option>
                         </select>
                       </div>
+                      {(m.modoAcumulacion === "acumulativo" && (m.reglaCierre === "promedio" || !m.reglaCierre)) && (
+                        <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 mt-2">
+                          <p className="font-semibold flex items-center gap-1">⚠️ Atención</p>
+                          <p className="mt-1">
+                            Al combinar "Acumulativo" con "Promedio", el sistema promediará los valores acumulados de cada período en lugar de tomar el total final. Si buscás que el puntaje final sea el total acumulado al último período, elegí la regla <strong>Último Valor / Cierre Único</strong>.
+                          </p>
+                        </div>
+                      )}
                       {m.reglaCierre === "umbral_periodos" && (
                         <div>
                           <label className="mb-1 block text-xs text-muted-foreground">
