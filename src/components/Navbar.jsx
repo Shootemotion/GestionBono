@@ -347,7 +347,7 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                       items={[
                         { to: '/plantillas', label: 'Objetivos', icon: <Target className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo },
                         { to: '/gestion-avisos', label: 'Avisos', icon: <Megaphone className="w-4 h-4" />, allowed: isRealRRHH || hasRoleDirectivo },
-                        { to: '/gestion-iso', label: 'Gestión ISO', icon: <FileCheck2 className="w-4 h-4" />, allowed: isSuperAdmin || user?.isCalidad }
+                        { to: '/gestion-iso', label: 'Gestión de Calidad', icon: <FileCheck2 className="w-4 h-4" />, allowed: isSuperAdmin || user?.isCalidad }
                       ]}
                       isOpen={activeMenu === 'Gestión'}
                       onMouseEnter={() => handleMenuEnter('Gestión')}
@@ -614,7 +614,7 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                     <div className="space-y-1">
                       {(hasRoleRRHH || hasRoleDirectivo) && <MobileLink to="/plantillas" label="Gestión Objetivos" />}
                       {(isRealRRHH || hasRoleDirectivo) && <MobileLink to="/gestion-avisos" label="Gestión Avisos" />}
-                      {(isSuperAdmin || user?.isCalidad) && <MobileLink to="/gestion-iso" label="Gestión ISO" />}
+                      {(isSuperAdmin || user?.isCalidad) && <MobileLink to="/gestion-iso" label="Gestión de Calidad" />}
                     </div>
                   </div>
 

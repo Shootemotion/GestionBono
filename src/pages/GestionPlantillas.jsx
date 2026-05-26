@@ -11,7 +11,61 @@ import { api } from "@/lib/api";
 import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
-import { XCircle, History } from "lucide-react";
+import { XCircle, History, Plus, MoreHorizontal, GitBranch, Calculator, Target, Lightbulb, User, Search } from "lucide-react";
+import VersionesTimelineDialog from "@/components/VersionesTimelineDialog";
+
+// Agrupa plantillas por linaje (parentPlantillaId encadenado) y devuelve un
+// solo "representante" por linaje. Representante = activa, o la última versión
+// si no hay ninguna activa. Cuando hay una versión pendiente distinta del
+// representante, se expone en __lineagePendiente para que la card la muestre.
+function agruparPorLinaje(items) {
+  if (!items || items.length === 0) return [];
+  const idMap = new Map(items.map((p) => [String(p._id), p]));
+  const childrenByParent = new Map();
+  items.forEach((p) => {
+    if (p.parentPlantillaId) {
+      const pid = String(p.parentPlantillaId);
+      if (!childrenByParent.has(pid)) childrenByParent.set(pid, []);
+      childrenByParent.get(pid).push(p);
+    }
+  });
+
+  const roots = items.filter(
+    (p) => !p.parentPlantillaId || !idMap.has(String(p.parentPlantillaId))
+  );
+
+  const result = [];
+  for (const root of roots) {
+    const chain = [root];
+    const queue = [String(root._id)];
+    while (queue.length) {
+      const cid = queue.shift();
+      const hijos = childrenByParent.get(cid) || [];
+      for (const c of hijos) {
+        chain.push(c);
+        queue.push(String(c._id));
+      }
+    }
+    chain.sort((a, b) => (a.version || 1) - (b.version || 1));
+
+    const activa = chain.find(
+      (c) => c.activo === true && c.estadoAprobacion !== "pendiente"
+    );
+    const pendiente = chain.find((c) => c.estadoAprobacion === "pendiente");
+    const ultima = chain[chain.length - 1];
+    const rep = activa || ultima;
+
+    result.push({
+      ...rep,
+      __lineageCount: chain.length,
+      __lineageChain: chain,
+      __lineagePendiente:
+        pendiente && String(pendiente._id) !== String(rep._id) ? pendiente : null,
+      __lineageRootId: String(root._id),
+    });
+  }
+  return result;
+}
 async function fetchAll(path, { pageSize = 200, params = {} } = {}) {
   const out = [];
   let page = 1;
@@ -114,6 +168,15 @@ export default function GestionPlantillasPage() {
   const [empOpenSidebar, setEmpOpenSidebar] = useState(false);
   const empBoxSidebarRef = useRef(null);
 
+  // Toolbar dropdowns
+  const [crearMenuOpen, setCrearMenuOpen] = useState(false);
+  const [masMenuOpen, setMasMenuOpen] = useState(false);
+  const crearMenuRef = useRef(null);
+  const masMenuRef = useRef(null);
+
+  // Buscador por nombre de actividad (objetivo / competencia)
+  const [nombreQuery, setNombreQuery] = useState("");
+
   const selectedEmpleado = useMemo(
     () => empleados.find((e) => String(e._id) === String(empleadoId)) || null,
     [empleados, empleadoId]
@@ -168,6 +231,23 @@ export default function GestionPlantillasPage() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [empOpenHeader, empOpenSidebar]);
+
+  // Click-outside para los dropdowns del toolbar
+  useEffect(() => {
+    function handleClickOutside(ev) {
+      const t = ev.target;
+      if (crearMenuRef.current && !crearMenuRef.current.contains(t)) {
+        setCrearMenuOpen(false);
+      }
+      if (masMenuRef.current && !masMenuRef.current.contains(t)) {
+        setMasMenuOpen(false);
+      }
+    }
+    if (crearMenuOpen || masMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [crearMenuOpen, masMenuOpen]);
 
 
   // Ensure role is normalized
@@ -281,15 +361,20 @@ export default function GestionPlantillasPage() {
     setScopeId("");
   }, [user]);
 
+  // Cuando hay búsqueda por nombre de actividad, forzamos a "todos" en el
+  // backend para que el filtro de Vista (activas/inactivas/etc.) no oculte
+  // matches. La búsqueda es global por nombre, no acotada al estado.
+  const effectiveTipoFiltro = nombreQuery.trim() ? "todos" : tipoFiltro;
+
   // Hook de plantillas (back ya filtra por estos params)
   const hookParams = useMemo(
     () => ({
       year,
       scopeType: scopeType || undefined,
       scopeId: scopeId || undefined,
-      tipoFiltro,
+      tipoFiltro: effectiveTipoFiltro,
     }),
-    [year, scopeType, scopeId, tipoFiltro, refreshKey]
+    [year, scopeType, scopeId, effectiveTipoFiltro, refreshKey]
   );
   const hook = usePlantillas(hookParams);
   const { loading, reload, addLocal, updateLocal, removeLocal } = hook;
@@ -339,6 +424,7 @@ export default function GestionPlantillasPage() {
               year,
               scopeType: "sector",
               scopeId: String(scopeId),
+              tipoFiltro: effectiveTipoFiltro,
             })}`
           ),
         ];
@@ -349,6 +435,7 @@ export default function GestionPlantillasPage() {
                 year,
                 scopeType: "area",
                 scopeId: areaId,
+                tipoFiltro: effectiveTipoFiltro,
               })}`
             )
           );
@@ -369,7 +456,7 @@ export default function GestionPlantillasPage() {
         setPlantillasSector([]);
       }
     })();
-  }, [year, scopeType, scopeId, empleadoId, sectores, refreshKey]);
+  }, [year, scopeType, scopeId, empleadoId, sectores, refreshKey, effectiveTipoFiltro]);
 
 
   // 🔁 Empleado: empleado + sector + área (sin aplicar overrides todavía)
@@ -395,6 +482,7 @@ export default function GestionPlantillasPage() {
                 year,
                 scopeType: "area",
                 scopeId: areaId,
+                tipoFiltro: effectiveTipoFiltro,
               })}`
             )
           );
@@ -406,6 +494,7 @@ export default function GestionPlantillasPage() {
                 year,
                 scopeType: "sector",
                 scopeId: sectorId,
+                tipoFiltro: effectiveTipoFiltro,
               })}`
             )
           );
@@ -416,6 +505,7 @@ export default function GestionPlantillasPage() {
               year,
               scopeType: "empleado",
               scopeId: empleadoId,
+              tipoFiltro: effectiveTipoFiltro,
             })}`
           )
         );
@@ -435,7 +525,7 @@ export default function GestionPlantillasPage() {
         setPlantillasByEmpRaw([]);
       }
     })();
-  }, [empleadoId, selectedEmpleado, year, refreshKey]);
+  }, [empleadoId, selectedEmpleado, year, refreshKey, effectiveTipoFiltro]);
 
   // Aplica overrides del empleado a las plantillas heredadas (oculta excluidas y marca overrides)
   const plantillasByEmp = useMemo(() => {
@@ -489,7 +579,7 @@ export default function GestionPlantillasPage() {
         setAllPlantillas("loading");
         const base = {
           year,
-          tipoFiltro, // Backend now requires explicit 'todos' or 'inactivas' to show others
+          tipoFiltro: effectiveTipoFiltro, // Backend now requires explicit 'todos' or 'inactivas' to show others
         };
         const [byArea, bySector, byEmpleado] = await Promise.all([
           api(`/templates?${qsFromObj({ ...base, scopeType: "area" })}`),
@@ -514,7 +604,7 @@ export default function GestionPlantillasPage() {
         setAllPlantillas([]);
       }
     })();
-  }, [year, tipoFiltro, empleadoId, scopeType, scopeId, refreshKey]);
+  }, [year, tipoFiltro, empleadoId, scopeType, scopeId, refreshKey, effectiveTipoFiltro]);
 
 
 
@@ -549,15 +639,50 @@ export default function GestionPlantillasPage() {
     return hook.plantillas;
   }, [plantillasByEmp, plantillasSector, allPlantillas, hook.plantillas]);
 
-  // Derivados
-  const objetivos = useMemo(
-    () => plantillas.filter((p) => p.tipo === "objetivo"),
-    [plantillas]
-  );
-  const aptitudes = useMemo(
-    () => plantillas.filter((p) => p.tipo === "aptitud"),
-    [plantillas]
-  );
+  // Helper: matchea texto contra un único doc plantilla
+  const matchTextoPlantilla = (p, q) => {
+    const hay = `${p?.nombre ?? ""} ${p?.descripcion ?? ""} ${p?.proceso ?? ""}`.toLowerCase();
+    return hay.includes(q);
+  };
+
+  // Helper: matchea contra el linaje completo (cualquier versión cuenta como hit)
+  const matchLinaje = (rep) => {
+    const q = nombreQuery.trim().toLowerCase();
+    if (!q) return true;
+    const chain = Array.isArray(rep.__lineageChain) && rep.__lineageChain.length > 0
+      ? rep.__lineageChain
+      : [rep];
+    return chain.some((v) => matchTextoPlantilla(v, q));
+  };
+
+  // SIEMPRE agrupamos por linaje — el usuario quiere ver 1 card por objetivo
+  // conceptual, con indicador del historial. La búsqueda matchea si cualquier
+  // versión del linaje contiene el texto, así no se pierden hits que viven en
+  // versiones no-representantes (renombradas, históricas, etc.).
+  const objetivos = useMemo(() => {
+    const base = plantillas.filter((p) => p.tipo === "objetivo");
+    const agrupado = agruparPorLinaje(base);
+    return agrupado.filter(matchLinaje);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plantillas, nombreQuery]);
+
+  const aptitudes = useMemo(() => {
+    const base = plantillas.filter((p) => p.tipo === "aptitud");
+    const agrupado = agruparPorLinaje(base);
+    return agrupado.filter(matchLinaje);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plantillas, nombreQuery]);
+
+  // Dialog de historial de un linaje específico
+  const [historialOpen, setHistorialOpen] = useState(false);
+  const [historialLineageRootId, setHistorialLineageRootId] = useState(null);
+  const [historialYear, setHistorialYear] = useState(null);
+
+  const openHistorial = (plantilla) => {
+    setHistorialLineageRootId(plantilla.__lineageRootId || String(plantilla._id));
+    setHistorialYear(plantilla.year || year);
+    setHistorialOpen(true);
+  };
   const totalObjetivos = useMemo(
     () => objetivos.reduce((acc, o) => {
       const ov = o.__override?.peso;
@@ -731,28 +856,96 @@ export default function GestionPlantillasPage() {
     <div className="min-h-screen bg-[#f5f9fc]">
       <div className="mx-auto max-w-[1500px] px-6 lg:px-8 py-6 flex flex-col gap-6 h-screen">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">
-              Gestión de Plantillas
+              Actividad
             </h1>
             <p className="text-sm text-muted-foreground">
               Creá y administrá objetivos y competencias base por Año y Alcance.
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <Button onClick={() => nav("/asignaciones")} variant="outline" className="gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-git-branch"><line x1="6" x2="6" y1="3" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></svg>
-              Excepciones & Override
-            </Button>
-            <Button onClick={() => nav("/simulador")} variant="outline" className="gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-calculator"><rect width="16" height="20" x="4" y="2" rx="2" /><line x1="8" x2="16" y1="6" y2="6" /><line x1="16" x2="16" y1="14" y2="18" /><path d="M16 10h.01" /><path d="M12 10h.01" /><path d="M8 10h.01" /><path d="M12 14h.01" /><path d="M8 14h.01" /><path d="M12 18h.01" /><path d="M8 18h.01" /></svg>
-              Simulador
-            </Button>
-            <Button onClick={() => nav(`/versiones-timeline?year=${year}`)} className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm border-0">
-              <History className="w-4 h-4" />
-              Línea de Versiones
-            </Button>
+
+          <div className="flex items-center gap-2">
+            {/* Dropdown: + Crear */}
+            {(permisos.canCreateObjetivo || permisos.canCreateAptitud) && (
+              <div className="relative" ref={crearMenuRef}>
+                <Button
+                  onClick={() => { setCrearMenuOpen((v) => !v); setMasMenuOpen(false); }}
+                  className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm border-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  Crear
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${crearMenuOpen ? "rotate-180" : ""}`}><polyline points="6 9 12 15 18 9" /></svg>
+                </Button>
+                {crearMenuOpen && (
+                  <div className="absolute right-0 mt-1 z-50 w-56 rounded-md border border-slate-200 bg-white shadow-lg overflow-hidden">
+                    {permisos.canCreateObjetivo && (
+                      <button
+                        type="button"
+                        onClick={() => { setCrearMenuOpen(false); openNew("objetivo"); }}
+                        className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm hover:bg-emerald-50 transition-colors"
+                      >
+                        <Target className="w-4 h-4 text-indigo-600" />
+                        <span className="font-medium text-slate-700">Nuevo Objetivo</span>
+                      </button>
+                    )}
+                    {permisos.canCreateAptitud && (
+                      <button
+                        type="button"
+                        onClick={() => { setCrearMenuOpen(false); openNew("aptitud"); }}
+                        className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm hover:bg-emerald-50 transition-colors border-t border-slate-100"
+                      >
+                        <Lightbulb className="w-4 h-4 text-amber-600" />
+                        <span className="font-medium text-slate-700">Nueva Competencia</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Dropdown: Más (herramientas) */}
+            <div className="relative" ref={masMenuRef}>
+              <Button
+                variant="outline"
+                onClick={() => { setMasMenuOpen((v) => !v); setCrearMenuOpen(false); }}
+                className="gap-2"
+                title="Más herramientas"
+              >
+                <MoreHorizontal className="w-4 h-4" />
+                Más
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${masMenuOpen ? "rotate-180" : ""}`}><polyline points="6 9 12 15 18 9" /></svg>
+              </Button>
+              {masMenuOpen && (
+                <div className="absolute right-0 mt-1 z-50 w-56 rounded-md border border-slate-200 bg-white shadow-lg overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => { setMasMenuOpen(false); nav("/asignaciones"); }}
+                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 transition-colors"
+                  >
+                    <GitBranch className="w-4 h-4 text-slate-500" />
+                    <span className="font-medium text-slate-700">Excepciones & Override</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setMasMenuOpen(false); nav("/simulador"); }}
+                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 transition-colors border-t border-slate-100"
+                  >
+                    <Calculator className="w-4 h-4 text-slate-500" />
+                    <span className="font-medium text-slate-700">Simulador</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setMasMenuOpen(false); nav(`/versiones-timeline?year=${year}`); }}
+                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm hover:bg-indigo-50 transition-colors border-t border-slate-100"
+                  >
+                    <History className="w-4 h-4 text-indigo-500" />
+                    <span className="font-medium text-slate-700">Línea de Versiones</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -903,86 +1096,105 @@ export default function GestionPlantillasPage() {
             {/* Controles (sticky dentro del main) */}
             <div className="sticky top-0 z-30 bg-[#f5f9fc]/80 backdrop-blur supports-[backdrop-filter]:bg-[#f5f9fc]/60">
               <div className="rounded-xl bg-card text-card-foreground shadow-md ring-1 ring-border/60 p-4 mb-5">
-                {/* Fila 1 */}
-                <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-base font-semibold">
-                    Plantillas{" "}
-                    <span className="text-muted-foreground">
-                      ({scopeLabel} · {year})
-                    </span>
-                  </h2>
-                  <div className="flex gap-2">
-                    {permisos.canCreateObjetivo && (
-                      <Button
-                        className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-0"
-                        variant="outline"
-                        onClick={() => openNew("objetivo")}
+                {/* Fila 1: Año + Vista + Limpiar */}
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Año fiscal */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Año</span>
+                    <div className="inline-flex items-center bg-slate-100 rounded-full p-0.5">
+                      {[year - 1, year, year + 1].map((y) => (
+                        <button
+                          key={y}
+                          className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                            year === y
+                              ? "bg-white text-slate-900 shadow-sm"
+                              : "text-slate-500 hover:text-slate-800"
+                          }`}
+                          onClick={() => setYear(y)}
+                        >
+                          {y}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="hidden sm:block h-6 w-px bg-slate-200" />
+
+                  {/* Vista (tipoFiltro) */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Vista</span>
+                    {(isDirectivo || userRole === "rrhh") ? (
+                      <div className="relative">
+                        <select
+                          value={tipoFiltro}
+                          onChange={(e) => setTipoFiltro(e.target.value)}
+                          className="appearance-none pl-3 pr-8 py-1.5 rounded-md border border-slate-200 text-xs font-semibold bg-white text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-100 cursor-pointer shadow-sm transition-all"
+                        >
+                          <option value="activas">⭐ Activas (+ Pendientes)</option>
+                          <option value="pendientes">⏳ Solo Pendientes</option>
+                          <option value="inactivas">🚫 Archivo / Inactivas</option>
+                          <option value="todos">📦 Todas</option>
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
+                          <svg className="fill-current h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() =>
+                          setTipoFiltro(tipoFiltro === "activas" ? "todos" : "activas")
+                        }
+                        className="px-3 py-1.5 rounded-md border border-slate-200 text-xs font-semibold bg-white text-slate-700 hover:bg-slate-50 shadow-sm transition-colors"
                       >
-                        + Nuevo Objetivo
-                      </Button>
-                    )}
-                    {permisos.canCreateAptitud && (
-                      <Button
-                        className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-0"
-                        variant="outline"
-                        onClick={() => openNew("aptitud")}
-                      >
-                        + Nueva Competencia
-                      </Button>
+                        {tipoFiltro === "activas" ? "⭐ Activas" : "📦 Todas"}
+                      </button>
                     )}
                   </div>
+
+                  {/* Limpiar todo (sólo si hay filtros activos) */}
+                  {(empleadoId || scopeType || nombreQuery) && (
+                    <button
+                      type="button"
+                      onClick={() => { clearAlcance(); setNombreQuery(""); }}
+                      className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition-colors"
+                      title="Limpiar empleado, alcance y búsqueda"
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                      Limpiar filtros
+                    </button>
+                  )}
                 </div>
 
-                {/* Fila 2: filtros + buscador empleado header */}
-                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-[auto_auto_1fr_auto] items-center">
-                  {/* Botones año */}
-                  <div className="flex items-center gap-2">
-                    {[year - 1, year, year + 1].map((y) => (
-                      <button
-                        key={y}
-                        className={`px-3 py-1 rounded-full text-sm ${year === y
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted"
-                          }`}
-                        onClick={() => setYear(y)}
-                      >
-                        {y}
-                      </button>
-                    ))}
-                  </div>
-
-
-
-
-                  {/* Bloque derecho: buscador empleado header + extras */}
-                  <div className="flex items-center justify-end gap-3">
-                    {/* 🔎 Buscador empleado (header) */}
+                {/* Fila 2: Búsquedas etiquetadas */}
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Buscador empleado */}
+                  <div>
+                    <label className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-1 flex items-center gap-1.5">
+                      <User className="w-3 h-3" /> Filtrar por empleado
+                    </label>
                     <div className="relative" ref={empBoxHeaderRef}>
                       {selectedEmpleado ? (
-                        <div className="flex items-center gap-2 rounded-md border px-3 py-2 bg-background">
-                          <span className="text-sm">
-                            {selectedEmpleado.apellido},{" "}
-                            {selectedEmpleado.nombre}
-                            {selectedEmpleado.apodo ? (
-                              <span className="text-xs text-muted-foreground">
-                                {" "}
-                                ({selectedEmpleado.apodo})
-                              </span>
-                            ) : null}
+                        <div className="flex items-center justify-between gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2">
+                          <span className="text-sm font-medium text-blue-900 truncate">
+                            {selectedEmpleado.apellido}, {selectedEmpleado.nombre}
+                            {selectedEmpleado.apodo && (
+                              <span className="ml-1 text-xs text-blue-700/70">({selectedEmpleado.apodo})</span>
+                            )}
                           </span>
                           <button
-                            className="text-xs text-blue-600 hover:underline"
+                            className="text-blue-600 hover:text-blue-900 shrink-0"
                             onClick={clearAlcance}
-                            title="Limpiar"
+                            title="Quitar empleado"
                           >
-                            ✕
+                            <XCircle className="w-4 h-4" />
                           </button>
                         </div>
                       ) : (
                         <>
+                          <User className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                           <input
-                            className="w-72 rounded-md border border-border bg-background px-3 py-2 text-sm"
-                            placeholder="Buscar empleado por apellido o nombre…"
+                            className="w-full pl-9 pr-3 py-2 rounded-md border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 transition-all placeholder:text-slate-400"
+                            placeholder="Apellido, nombre o apodo…"
                             value={empQueryHeader}
                             onChange={(e) => {
                               setEmpQueryHeader(e.target.value);
@@ -991,9 +1203,9 @@ export default function GestionPlantillasPage() {
                             onFocus={() => setEmpOpenHeader(true)}
                           />
                           {empOpenHeader && (
-                            <div className="absolute right-0 mt-1 z-20 max-h-64 w-72 overflow-auto rounded-md border bg-popover text-popover-foreground shadow">
+                            <div className="absolute left-0 right-0 mt-1 z-20 max-h-64 overflow-auto rounded-md border bg-popover text-popover-foreground shadow-lg">
                               {empleadosFiltradosHeader.length === 0 && (
-                                <div className="px-3 py-2 text-sm text-muted-foreground">
+                                <div className="px-3 py-2 text-sm text-muted-foreground italic">
                                   Sin resultados
                                 </div>
                               )}
@@ -1011,11 +1223,9 @@ export default function GestionPlantillasPage() {
                                   }}
                                 >
                                   {e.apellido}, {e.nombre}
-                                  {e.apodo ? (
-                                    <span className="ml-1 text-xs text-muted-foreground">
-                                      ({e.apodo})
-                                    </span>
-                                  ) : null}
+                                  {e.apodo && (
+                                    <span className="ml-1 text-xs text-muted-foreground">({e.apodo})</span>
+                                  )}
                                 </button>
                               ))}
                             </div>
@@ -1023,61 +1233,42 @@ export default function GestionPlantillasPage() {
                         </>
                       )}
                     </div>
+                  </div>
 
-                    {/* Limpiar filtros alcance */}
-                    <button
-                      type="button"
-                      onClick={clearAlcance}
-                      className="px-3 py-2 rounded-md border text-sm bg-background"
-                      title="Ver todas las plantillas (sin filtros de alcance)"
-                    >
-                      Limpiar filtros
-                    </button>
-
-                    {/* Totales SOLO si hay alcance (área/sector/empleado) */}
-                    {hasScopedFilter && (
-                      <div className="flex flex-wrap gap-4 px-3 py-2 bg-muted rounded-lg text-sm">
-                        <div>
-                          <span className="font-semibold">🎯 Objetivos:</span>{" "}
-                          {totalObjetivos}%
-                        </div>
-                        <div>
-                          <span className="font-semibold">💡 Aptitudes:</span>{" "}
-                          {totalAptitudes}%
-                        </div>
-                      </div>
-                    )}
-
-                    {(isDirectivo || userRole === "rrhh") ? (
-                      <div className="relative">
-                        <select
-                          value={tipoFiltro}
-                          onChange={(e) => setTipoFiltro(e.target.value)}
-                          className="appearance-none px-3 py-2 pr-8 rounded-md border border-slate-200 text-sm bg-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-100 text-slate-700 hover:bg-slate-50 cursor-pointer shadow-sm transition-all"
+                  {/* Buscador por nombre de actividad */}
+                  <div>
+                    <label className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-1 flex items-center gap-1.5">
+                      <Search className="w-3 h-3" /> Buscar actividad
+                      {nombreQuery.trim() && (
+                        <span
+                          className="ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 text-[9px] font-bold normal-case tracking-normal"
+                          title="La búsqueda ignora el filtro de Vista — muestra activas, pendientes, históricas e inactivas que matchean."
                         >
-                          <option value="activas">⭐ Activas (+ Pendientes)</option>
-                          <option value="pendientes">⏳ Solo Pendientes de Aprob.</option>
-                          <option value="inactivas">🚫 Archivo / Inactivas</option>
-                          <option value="todos">📦 Mostrar Todas</option>
-                        </select>
-                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
-                          <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
-                        </div>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() =>
-                          setTipoFiltro(
-                            tipoFiltro === "activas" ? "todos" : "activas"
-                          )
-                        }
-                        className="px-3 py-2 rounded-md border text-sm bg-background font-medium hover:bg-slate-50 transition-colors"
-                      >
-                        {tipoFiltro === "activas"
-                          ? "⭐ Mostrando Activas"
-                          : "📦 Mostrar Todas"}
-                      </button>
-                    )}
+                          🌐 Buscando en todas las vistas
+                        </span>
+                      )}
+                    </label>
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={nombreQuery}
+                        onChange={(e) => setNombreQuery(e.target.value)}
+                        placeholder="Por nombre, descripción o proceso…"
+                        className="w-full pl-9 pr-8 py-2 rounded-md border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 transition-all placeholder:text-slate-400"
+                      />
+                      {nombreQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setNombreQuery("")}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 rounded-full p-0.5 hover:bg-slate-100"
+                          title="Limpiar búsqueda"
+                          aria-label="Limpiar búsqueda"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1086,7 +1277,7 @@ export default function GestionPlantillasPage() {
             {/* Contenido: Objetivos / Aptitudes */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-6">
               {/* Objetivos */}
-              <div className="rounded-xl bg-card shadow-sm ring-1 ring-border/60 p-3">
+              <div className="rounded-2xl bg-slate-50/60 ring-1 ring-slate-200/70 p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <h2 className="font-semibold">🎯 Objetivos</h2>
@@ -1115,6 +1306,7 @@ export default function GestionPlantillasPage() {
                     onDelete={handleDelete}
                     onToggleActive={handleToggleActive}
                     onAprobarVersion={handleAprobarVersion}
+                    onHistorial={openHistorial}
                     permisos={permisos}
                     areas={areas}
                     sectores={sectores}
@@ -1126,7 +1318,7 @@ export default function GestionPlantillasPage() {
               </div>
 
               {/* Competencias */}
-              <div className="rounded-xl bg-card shadow-sm ring-1 ring-border/60 p-3">
+              <div className="rounded-2xl bg-slate-50/60 ring-1 ring-slate-200/70 p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <h2 className="font-semibold">💡 Competencias</h2>
@@ -1155,6 +1347,7 @@ export default function GestionPlantillasPage() {
                     onDelete={handleDelete}
                     onToggleActive={handleToggleActive}
                     onAprobarVersion={handleAprobarVersion}
+                    onHistorial={openHistorial}
                     permisos={permisos}
                     areas={areas}
                     sectores={sectores}
@@ -1183,6 +1376,14 @@ export default function GestionPlantillasPage() {
           sectores={sectores}
           empleados={empleados}
           scopeType={scopeType}
+        />
+
+        {/* Dialog Historial de Linaje */}
+        <VersionesTimelineDialog
+          open={historialOpen}
+          onOpenChange={setHistorialOpen}
+          year={historialYear || year}
+          lineageRootId={historialLineageRootId}
         />
 
         {/* Modal Clonar */}

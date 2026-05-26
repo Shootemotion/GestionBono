@@ -1,12 +1,29 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, Search } from 'lucide-react';
+import { Download, Search, EyeOff } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import TablaEmpleados from '@/components/TablaEmpleados';
+import { useAuth } from '@/context/AuthContext';
 
 function Nomina() {
+  const { user } = useAuth();
+  const rolesPrivilegiados = new Set(['superadmin', 'rrhh', 'directivo']);
+  const rolNormalizado = String(user?.rol || '').toLowerCase();
+  const rolEfectivoNorm = String(user?.rolEfectivo || '').toLowerCase();
+  const permisos = Array.isArray(user?.permisos) ? user.permisos : [];
+  const puedeVerDesvinculados = !!(
+    user?.isSuper ||
+    user?.isRRHH ||
+    user?.isDirectivo ||
+    rolesPrivilegiados.has(rolNormalizado) ||
+    rolesPrivilegiados.has(rolEfectivoNorm) ||
+    // Fallback por permiso: si tiene capacidad de editar nómina, también es RRHH-equivalent
+    permisos.includes('nomina:editar') ||
+    permisos.includes('nomina:*') ||
+    permisos.includes('*')
+  );
   const [empleados, setEmpleados] = useState([]);
   const [areas, setAreas] = useState([]);
   const [sectores, setSectores] = useState([]);
@@ -14,25 +31,38 @@ function Nomina() {
   const [query, setQuery] = useState('');
   const [areaId, setAreaId] = useState('all');
   const [sectorId, setSectorId] = useState('all');
+  const [incluirDesvinculados, setIncluirDesvinculados] = useState(false);
 
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       try {
+        setLoading(true);
+        // Sólo RRHH / Directivo / Super pueden pedir desvinculados
+        const includeAllowed = incluirDesvinculados && puedeVerDesvinculados;
+        const empleadosPath = includeAllowed
+          ? '/empleados?incluirDesvinculados=true&limit=100'
+          : '/empleados?limit=100';
         const [areasRes, sectoresRes, empleadosRes] = await Promise.all([
           api('/areas'),
           api('/sectores'),
-          api('/empleados'),
+          api(empleadosPath),
         ]);
         setAreas(areasRes);
         setSectores(sectoresRes);
-        setEmpleados(empleadosRes);
+        // El endpoint puede responder { items: [...] } (paginado) o un array directo
+        const emps = Array.isArray(empleadosRes)
+          ? empleadosRes
+          : Array.isArray(empleadosRes?.items)
+            ? empleadosRes.items
+            : [];
+        setEmpleados(emps);
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [incluirDesvinculados]);
 
   const filteredSectores = useMemo(() => {
     if (areaId === 'all') return sectores;
@@ -132,6 +162,24 @@ function Nomina() {
             ))}
           </Select>
         </div>
+
+        {puedeVerDesvinculados && (
+          <div className="mt-3 flex items-center gap-2">
+            <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={incluirDesvinculados}
+                onChange={(e) => setIncluirDesvinculados(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-slate-300 text-rose-600 focus:ring-rose-400"
+              />
+              <EyeOff className="h-3.5 w-3.5 text-rose-500" />
+              Incluir empleados desvinculados
+              <span className="ml-1 text-[10px] font-bold uppercase tracking-wide text-rose-600/70 bg-rose-50 border border-rose-100 rounded-full px-1.5 py-0.5">
+                RRHH / Dirección
+              </span>
+            </label>
+          </div>
+        )}
       </div>
 
       {/* Tabla */}

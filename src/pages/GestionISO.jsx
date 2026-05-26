@@ -43,6 +43,16 @@ export default function GestionISO() {
     const [modalAvance, setModalAvance] = useState({ open: false, data: null });
     const [modalProc, setModalProc] = useState({ open: false, data: null });
 
+    // ─── plantillas: descripciones expandidas ─────────────────────────────────
+    const [plantillasExpandidas, setPlantillasExpandidas] = useState(() => new Set());
+    const toggleDescripcionPlantilla = (id) => {
+        setPlantillasExpandidas((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    };
+
     // ─── permisos ─────────────────────────────────────────────────────────────
     const userRole = String(user?.rol || "").toLowerCase();
     const canEdit =
@@ -215,7 +225,7 @@ export default function GestionISO() {
                 {/* Header */}
                 <div className="flex flex-wrap items-center justify-between gap-4">
                     <div>
-                        <h1 className="text-xl font-semibold tracking-tight">Gestión ISO 9001</h1>
+                        <h1 className="text-xl font-semibold tracking-tight">Gestión de Calidad</h1>
                         <p className="text-sm text-muted-foreground flex items-center gap-1">
                             <Info size={12} className="inline" />
                             Las plantillas se asocian automáticamente: <code className="bg-slate-100 px-1 rounded text-xs">Plantilla.proceso === "P01 - Nombre"</code>
@@ -235,7 +245,7 @@ export default function GestionISO() {
                         className="bg-blue-600 text-white hover:bg-blue-700 hover:text-white border-none shadow-md flex items-center gap-2 px-4 py-3 h-auto rounded-xl transition-all active:scale-95"
                         onClick={() => navigate("/analisis-iso")}
                     >
-                        <TrendingUp size={16} /> Análisis ISO
+                        <TrendingUp size={16} /> Análisis
                     </Button>
                 </div>
 
@@ -265,11 +275,11 @@ export default function GestionISO() {
                 {loading ? (
                     <div className="flex items-center justify-center py-24 text-sm text-muted-foreground">Cargando…</div>
                 ) : (
-                    <div className="grid gap-5 lg:grid-cols-3">
+                    <div className="grid gap-4 lg:grid-cols-3">
 
                         {/* ── COL 1: Objetivos ISO ────────────────────────────────── */}
                         <section className="rounded-xl bg-white shadow-md ring-1 ring-border/60 flex flex-col">
-                            <div className="flex items-center justify-between px-4 py-3 border-b">
+                            <div className="flex items-center justify-between px-3 py-2.5 border-b">
                                 <div className="flex items-center gap-2">
                                     <h2 className="text-sm font-bold">Objetivos - Mejora de Calidad</h2>
                                     <span className="text-[11px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">{objetivos.length}</span>
@@ -283,17 +293,6 @@ export default function GestionISO() {
                             </div>
 
                             <ul className="p-3 flex flex-col gap-2 overflow-y-auto max-h-[72vh]">
-                                {/* "Todos" pill */}
-                                <li>
-                                    <button
-                                        onClick={() => { setSelectedObjId(null); setSelectedProcId(null); }}
-                                        className={`w-full text-left text-xs px-3 py-2 rounded-lg font-medium transition-all
-                      ${!selectedObjId ? "bg-blue-600 text-white shadow" : "bg-slate-100 hover:bg-slate-200 text-slate-600"}`}
-                                    >
-                                        Todos los objetivos
-                                    </button>
-                                </li>
-
                                 {objetivos.map((obj) => {
                                     const id = String(obj._id);
                                     const selected = selectedObjId === id;
@@ -302,10 +301,10 @@ export default function GestionISO() {
                                         <li key={id}
                                             className={`group relative rounded-xl border transition-all duration-300 overflow-hidden hover:shadow-md cursor-pointer
                         ${selected ? "ring-2 ring-blue-500 bg-blue-50 border-blue-200" : "bg-white border-slate-200 hover:border-blue-200"}`}
-                                            style={{ paddingBottom: '2.5rem' }}
+                                            style={{ paddingBottom: '2.25rem' }}
                                             onClick={() => { setSelectedObjId(selected ? null : id); setSelectedProcId(null); }}
                                         >
-                                            <div className="flex flex-col gap-2 px-3 py-2.5 relative z-0">
+                                            <div className="flex flex-col gap-1.5 px-3 py-2 relative z-0">
                                                 <div className="flex items-start gap-3">
                                                     {obj.codigo && (
                                                         <span className={`shrink-0 mt-0.5 text-[10px] font-black px-2 py-0.5 rounded-full
@@ -333,7 +332,7 @@ export default function GestionISO() {
                                                 )}
 
                                                 {/* Barra de progreso visual */}
-                                                <div className="ml-[2.75rem] mt-1 space-y-1">
+                                                <div className="ml-[2.75rem] mt-0.5 space-y-0.5">
                                                     <div className="flex items-center justify-between text-[10px] font-semibold text-slate-500">
                                                         <span>Avance global</span>
                                                         <span className="text-blue-600">{obj.progreso || 0}%</span>
@@ -342,7 +341,7 @@ export default function GestionISO() {
                                                         <div className="bg-blue-500 h-1.5 rounded-full transition-all duration-500" style={{ width: `${obj.progreso || 0}%` }}></div>
                                                     </div>
                                                     {obj.desarrollo && (
-                                                        <p className="text-[10px] text-slate-500 mt-1.5 line-clamp-2 bg-slate-50 p-1.5 rounded border border-slate-100">
+                                        <p className="text-[10px] text-slate-500 mt-1 line-clamp-2 bg-slate-50 p-1 rounded border border-slate-100">
                                                             <span className="font-semibold text-slate-600">Actualización:</span> {obj.desarrollo}
                                                         </p>
                                                     )}
@@ -365,20 +364,20 @@ export default function GestionISO() {
                                             </div>
                                             <div className="absolute bottom-0 left-0 right-0 transform translate-y-full opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300 ease-in-out border-t border-slate-200/60 bg-white/95 backdrop-blur-sm z-20 flex text-center divide-x divide-slate-100 shadow-[0_-4px_15px_-5px_rgba(0,0,0,0.05)]">
                                                 <button
-                                                    className="flex-1 py-2.5 text-[10px] font-bold text-blue-600 hover:bg-blue-50 transition-colors uppercase tracking-wide flex items-center justify-center gap-1.5"
+                                                    className="flex-1 py-2 text-[10px] font-bold text-blue-600 hover:bg-blue-50 transition-colors uppercase tracking-wide flex items-center justify-center gap-1.5"
                                                     onClick={(e) => { e.stopPropagation(); setModalAvance({ open: true, data: obj }); }}
                                                 >
                                                     <TrendingUp size={14} /> Avance
                                                 </button>
                                                 <button
-                                                    className="flex-1 py-2.5 text-[10px] font-bold text-slate-500 hover:text-amber-600 hover:bg-amber-50/50 transition-colors uppercase tracking-wide flex items-center justify-center gap-1.5"
+                                                    className="flex-1 py-2 text-[10px] font-bold text-slate-500 hover:text-amber-600 hover:bg-amber-50/50 transition-colors uppercase tracking-wide flex items-center justify-center gap-1.5"
                                                     onClick={(e) => { e.stopPropagation(); setModalObj({ open: true, data: obj }); }}
                                                 >
                                                     {canEdit ? <Pencil size={14} /> : <Eye size={14} />} {canEdit ? "Editar" : "Detalles"}
                                                 </button>
                                                 {canEdit && (
                                                     <button
-                                                        className="flex-1 py-2.5 text-[10px] font-bold text-slate-500 hover:text-rose-600 hover:bg-rose-50/50 transition-colors uppercase tracking-wide flex items-center justify-center gap-1.5"
+                                                        className="flex-1 py-2 text-[10px] font-bold text-slate-500 hover:text-rose-600 hover:bg-rose-50/50 transition-colors uppercase tracking-wide flex items-center justify-center gap-1.5"
                                                         onClick={() => handleEliminarObj(id)}
                                                     >
                                                         <Trash2 size={14} /> Quitar
@@ -400,7 +399,7 @@ export default function GestionISO() {
 
                         {/* ── COL 2: Procesos ─────────────────────────────────────── */}
                         <section className="rounded-xl bg-white shadow-md ring-1 ring-border/60 flex flex-col">
-                            <div className="flex items-center justify-between px-4 py-3 border-b">
+                            <div className="flex items-center justify-between px-3 py-2.5 border-b">
                                 <div className="flex items-center gap-2">
                                     <h2 className="text-sm font-bold">Procesos</h2>
                                     <span className="text-[11px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold">{procesosView.length}</span>
@@ -413,7 +412,7 @@ export default function GestionISO() {
                                 )}
                             </div>
 
-                            <ul className="p-3 flex flex-col gap-2 overflow-y-auto max-h-[72vh]">
+                            <ul className="p-2.5 flex flex-col gap-1.5 overflow-y-auto max-h-[70vh]">
                                 {procesosView.map((proc) => {
                                     const id = String(proc._id);
                                     const selected = selectedProcId === id;
@@ -431,7 +430,7 @@ export default function GestionISO() {
                         ${selected ? "ring-2 ring-emerald-500 bg-emerald-50 border-emerald-200" : "bg-white border-slate-200 hover:border-emerald-200"}`}
                                             onClick={() => setSelectedProcId(selected ? null : id)}
                                         >
-                                            <div className="flex items-center gap-3 px-3 py-2.5">
+                                            <div className="flex items-center gap-3 px-3 py-2">
                                                 <span className={`shrink-0 text-[10px] font-black px-2 py-0.5 rounded-full
                           ${selected ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-500"}`}>
                                                     {proc.codigo}
@@ -484,9 +483,9 @@ export default function GestionISO() {
 
                         {/* ── COL 3: Plantillas ───────────────────────────────────── */}
                         <section className="rounded-xl bg-white shadow-md ring-1 ring-border/60 flex flex-col">
-                            <div className="flex items-center justify-between px-4 py-3 border-b">
+                            <div className="flex items-center justify-between px-3 py-2.5 border-b">
                                 <div className="flex items-center gap-2">
-                                    <h2 className="text-sm font-bold">Plantillas</h2>
+                                    <h2 className="text-sm font-bold">Actividad</h2>
                                     <span className="text-[11px] bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-bold">
                                         {plantillasView.length}
                                     </span>
@@ -494,34 +493,82 @@ export default function GestionISO() {
                                 </div>
                             </div>
 
-                            <ul className="p-3 flex flex-col gap-2 overflow-y-auto max-h-[72vh]">
-                                {plantillasView.map((pl) => (
-                                    <li key={pl._id}
-                                        className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 hover:border-violet-200 hover:shadow-sm transition-all">
-                                        <div className="flex items-start gap-2">
-                                            <span className={`shrink-0 mt-0.5 text-[10px] font-bold px-2 py-0.5 rounded-full
-                        ${pl.tipo === "objetivo" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}`}>
-                                                {pl.tipo === "objetivo" ? "OBJ" : "APT"}
-                                            </span>
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-semibold text-slate-800 leading-snug truncate">{pl.nombre}</p>
-                                                <div className="flex flex-wrap gap-1.5 mt-1">
-                                                    {pl.proceso && (
-                                                        <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">{pl.proceso.split(" - ")[0]}</span>
+                            <ul className="p-2.5 flex flex-col gap-1.5 overflow-y-auto max-h-[70vh]">
+                                {plantillasView.map((pl) => {
+                                    const expandida = plantillasExpandidas.has(pl._id);
+                                    const sufijoUnidad = (u) => u === "Porcentual" ? "%" : (u === "Cumple/No Cumple" ? "" : "");
+                                    const metasChips = (pl.metas || [])
+                                        .map((m) => {
+                                            const valor = m?.esperado ?? m?.target;
+                                            if (valor === null || valor === undefined || valor === "") return null;
+                                            return {
+                                                nombre: m.nombre,
+                                                texto: `${m.operador || ">="} ${valor}${sufijoUnidad(m.unidad)}`.trim(),
+                                            };
+                                        })
+                                        .filter(Boolean);
+                                    return (
+                                        <li key={pl._id}
+                                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 hover:border-violet-200 hover:shadow-sm transition-all">
+                                            <div className="flex items-start gap-2">
+                                                <span className={`shrink-0 mt-0.5 text-[10px] font-bold px-2 py-0.5 rounded-full
+                            ${pl.tipo === "objetivo" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}`}>
+                                                    {pl.tipo === "objetivo" ? "OBJ" : "APT"}
+                                                </span>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-semibold text-slate-800 leading-snug">{pl.nombre}</p>
+                                                    <div className="flex flex-wrap gap-1 mt-0.5">
+                                                        {pl.proceso && (
+                                                            <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">{pl.proceso.split(" - ")[0]}</span>
+                                                        )}
+                                                        {pl.frecuencia && (
+                                                            <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{pl.frecuencia}</span>
+                                                        )}
+                                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full
+                                ${pl.activo ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-600"}`}>
+                                                            {pl.activo ? "Activa" : "Inactiva"}
+                                                        </span>
+                                                    </div>
+
+                                                    {/* Metas: qué se espera alcanzar */}
+                                                    {metasChips.length > 0 && (
+                                                        <div className="mt-1 flex flex-wrap gap-1">
+                                                            {metasChips.map((m, i) => (
+                                                                <span key={i}
+                                                                    className="text-[10px] bg-violet-50 text-violet-700 border border-violet-100 px-1.5 py-0.5 rounded-full"
+                                                                    title={`${m.nombre}: ${m.texto}`}>
+                                                                    <span className="font-semibold">{m.nombre}:</span> {m.texto}
+                                                                </span>
+                                                            ))}
+                                                        </div>
                                                     )}
-                                                    {pl.frecuencia && (
-                                                        <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{pl.frecuencia}</span>
+
+                                                    {/* Descripción expandible */}
+                                                    {expandida && pl.descripcion && (
+                                                        <div className="mt-1.5 text-[11px] text-slate-600 bg-slate-50 border border-slate-100 rounded-md p-1.5 leading-snug whitespace-pre-wrap">
+                                                            <span className="font-semibold text-slate-500 text-[10px] uppercase tracking-wide block mb-0.5">Descripción</span>
+                                                            {pl.descripcion}
+                                                        </div>
                                                     )}
-                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full
-                            ${pl.activo ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-600"}`}>
-                                                        {pl.activo ? "Activa" : "Inactiva"}
-                                                    </span>
                                                 </div>
+
+                                                {pl.descripcion && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => toggleDescripcionPlantilla(pl._id)}
+                                                        className={`shrink-0 p-1 rounded-full transition
+                                ${expandida ? "text-violet-700 bg-violet-50" : "text-slate-400 hover:text-violet-600 hover:bg-violet-50"}`}
+                                                        title={expandida ? "Ocultar descripción" : "Ver descripción"}
+                                                        aria-label={expandida ? "Ocultar descripción" : "Ver descripción"}
+                                                        aria-expanded={expandida}
+                                                    >
+                                                        <Info size={14} />
+                                                    </button>
+                                                )}
                                             </div>
-                                            <span className="shrink-0 text-xs font-bold text-slate-500">{pl.pesoBase}%</span>
-                                        </div>
-                                    </li>
-                                ))}
+                                        </li>
+                                    );
+                                })}
 
                                 {plantillasView.length === 0 && (
                                     <li className="text-xs text-muted-foreground text-center py-10">

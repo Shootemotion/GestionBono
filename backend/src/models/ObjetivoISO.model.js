@@ -11,13 +11,17 @@ const objetivoISOSchema = new mongoose.Schema(
         activo: { type: Boolean, default: true },
         representante: { type: mongoose.Schema.Types.ObjectId, ref: 'Empleado', default: null },
         progreso: { type: Number, default: 0, min: 0, max: 100 },
-        meta: { type: Number, default: 80, min: 0, max: 100 },
+        meta: { type: Number, default: 80, min: 0 },
+        unidadMeta: { type: String, default: "" }, // unidad de la meta (%, unidades, horas, etc.)
+        comentarioMeta: { type: String, default: "" },
+        operador: { type: String, enum: ["=", ">", "<"], default: ">" }, // operador para comparar resultado vs meta
         desarrollo: { type: String, default: "" },
         seguimientoMensual: [
             {
                 mes: { type: Number, required: true }, // 1-12
                 year: { type: Number, required: true },
                 progreso: { type: Number, default: 0, min: 0, max: 100 },
+                resultadoMes: { type: Number, default: 0 }, // resultado/valor alcanzado del mes
                 comentario: { type: String, default: "" },
                 adjunto: { type: String, default: null } // nombre del archivo evidencia
             }

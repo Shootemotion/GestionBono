@@ -22,9 +22,12 @@ export async function seguimientoEjecutivo(req, res, next) {
       .sort({ nombre: 1 })
       .lean();
 
-    // 2) Empleados por área
+    // 2) Empleados por área (sólo vinculados — los desvinculados no cuentan en KPIs vigentes)
+    const baseFilter = areaId
+      ? { area: areaId }
+      : { area: { $in: areas.map((a) => a._id) } };
     const empleados = await Empleado.find(
-      areaId ? { area: areaId } : { area: { $in: areas.map((a) => a._id) } },
+      { ...baseFilter, estadoLaboral: { $ne: "DESVINCULADO" } },
       "_id area sector rol"
     ).lean();
 

@@ -34,4 +34,8 @@ backend/debug_*.js
 backend/list_*.js
 backend/recalculate_*.js
 backend/reset_*.js
+
+# Snapshots con datos reales de empleados (no subir al repo)
+backend/snapshot_*.json
+
 git status

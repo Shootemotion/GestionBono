@@ -75,7 +75,9 @@ export async function listPlantillas(req, res) {
       query.activo = true;
     }
 
-    const list = await Plantilla.find(query).sort({ createdAt: -1 });
+    const list = await Plantilla.find(query)
+      .populate("objetivosCalidad", "codigo nombre year")
+      .sort({ createdAt: -1 });
     res.json(list);
   } catch (err) {
     console.error("listPlantillas error:", err);
@@ -87,7 +89,8 @@ export async function listPlantillas(req, res) {
 export async function getPlantillaById(req, res) {
   try {
     const { id } = req.params;
-    const tpl = await Plantilla.findById(id);
+    const tpl = await Plantilla.findById(id)
+      .populate("objetivosCalidad", "codigo nombre year");
     if (!tpl) return res.status(404).json({ message: "Plantilla no encontrada" });
     res.json(tpl);
   } catch (err) {

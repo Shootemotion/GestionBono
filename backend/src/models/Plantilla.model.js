@@ -75,6 +75,9 @@ const plantillaSchema = new mongoose.Schema(
     descripcion: { type: String },
     proceso: { type: String, trim: true },
 
+    // Objetivos de Mejora de Calidad asociados (opcional, varios)
+    objetivosCalidad: [{ type: mongoose.Schema.Types.ObjectId, ref: "ObjetivoISO" }],
+
     /* --- Aptitudes (opcionales) --- */
     metodo: { type: String, enum: ["cuantitativo", "cualitativo"] },
     target: { type: Number },

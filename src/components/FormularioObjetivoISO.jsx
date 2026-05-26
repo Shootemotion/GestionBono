@@ -12,6 +12,8 @@ export default function FormularioObjetivoISO({ initialData = null, onGuardar, o
     const [year, setYear] = useState(initialData?.year || defaultYear || currentFiscal);
     const [activo, setActivo] = useState(initialData?.activo ?? true);
     const [meta, setMeta] = useState(initialData?.meta ?? 80);
+    const [unidadMeta, setUnidadMeta] = useState(initialData?.unidadMeta ?? "");
+    const [operador, setOperador] = useState(initialData?.operador ?? ">");
     const [desarrollo, setDesarrollo] = useState(initialData?.desarrollo || "");
 
     // Nuevo estado para Representante y Lista de Empleados
@@ -69,6 +71,12 @@ export default function FormularioObjetivoISO({ initialData = null, onGuardar, o
     const inputCls =
         `w-full rounded-md border border-border px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring ${readOnly ? 'opacity-80 bg-slate-100 cursor-not-allowed text-slate-600' : 'bg-background'}`;
 
+    const operadorDescriptions = {
+        ">": "Cumple si el resultado es mayor que la meta. Ej: resultado 85 > meta 80 → Cumple.",
+        "=": "Cumple si el resultado es igual a la meta. Ej: resultado 80 = meta 80 → Cumple.",
+        "<": "Cumple si el resultado es menor que la meta. Ej: resultado 70 < meta 80 → Cumple.",
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         const errs = {};
@@ -91,6 +99,8 @@ export default function FormularioObjetivoISO({ initialData = null, onGuardar, o
                 representante: representante || null,
                 procesos: selectedProcesos,
                 meta,
+                unidadMeta,
+                operador,
                 desarrollo: desarrollo.trim(),
             });
         } finally {
@@ -253,19 +263,49 @@ export default function FormularioObjetivoISO({ initialData = null, onGuardar, o
 
             {/* Meta de Avance y Desarrollo (Trasladados al final) */}
             <div className="grid gap-3 mt-2 bg-blue-50/50 p-4 rounded-xl border border-blue-100">
-                {/* Meta de Avance */}
-                <div>
-                    <label className="text-[11px] font-bold text-blue-900 mb-1 block uppercase tracking-wide">Meta de Avance Esperado (%)</label>
-                    <select
-                        className={`${inputCls} border-blue-200 focus-visible:ring-blue-300 font-bold text-blue-800`}
-                        value={meta}
-                        onChange={(e) => setMeta(Number(e.target.value))}
-                        disabled={readOnly}
-                    >
-                        {[10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95, 100].map(m => (
-                            <option key={m} value={m}>{m}% de avance</option>
-                        ))}
-                    </select>
+                {/* Compact: Meta libre, Unidad y Operador con explicación */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
+                    <div>
+                        <label className="text-[11px] font-bold text-blue-900 mb-1 block uppercase tracking-wide">Meta objetivo (valor libre)</label>
+                        <input
+                            type="number"
+                            step="0.01"
+                            className={`${inputCls} border-blue-200 focus-visible:ring-blue-300 font-bold text-blue-800 max-w-[180px]`}
+                            value={meta}
+                            onChange={(e) => setMeta(Number(e.target.value))}
+                            disabled={readOnly}
+                            placeholder="Ej: 80"
+                        />
+                        <p className="text-[10px] text-slate-500 mt-1">Valor libre para la meta (porcentaje o unidades)</p>
+                    </div>
+
+                    <div>
+                        <label className="text-[11px] font-bold text-blue-900 mb-1 block uppercase tracking-wide">Unidad de medida (opcional)</label>
+                        <input
+                            type="text"
+                            className={`${inputCls} border-blue-200 focus-visible:ring-blue-300 max-w-[220px]`}
+                            value={unidadMeta}
+                            onChange={(e) => setUnidadMeta(e.target.value)}
+                            disabled={readOnly}
+                            placeholder="%, unidades, horas..."
+                        />
+                        <p className="text-[10px] text-blue-700 mt-1">Cómo se mide la meta</p>
+                    </div>
+
+                    <div>
+                        <label className="text-[11px] font-bold text-blue-900 mb-1 block uppercase tracking-wide">Operador (resultado vs meta)</label>
+                        <select
+                            className={`${inputCls} border-blue-200 focus-visible:ring-blue-300 font-bold text-blue-800 max-w-[160px]`}
+                            value={operador}
+                            onChange={(e) => setOperador(e.target.value)}
+                            disabled={readOnly}
+                        >
+                            <option value=">">Mayor que (&gt;)</option>
+                            <option value="=">Igual a (=)</option>
+                            <option value="<">Menor que (&lt;)</option>
+                        </select>
+                        <p className="text-[10px] text-slate-600 mt-1">{operadorDescriptions[operador]}</p>
+                    </div>
                 </div>
 
                 {/* Desarrollo */}

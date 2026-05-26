@@ -4,25 +4,26 @@ import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
-import { 
-    ChevronLeft, 
-    TrendingUp, 
-    Calendar, 
-    FileText, 
-    Layers, 
-    MessageSquare, 
-    User, 
+import {
+    ChevronLeft,
+    TrendingUp,
+    Calendar,
+    FileText,
+    Layers,
+    User,
     ArrowRight,
     Info,
     LayoutDashboard,
     ExternalLink,
     ChevronDown,
-    Paperclip,
-    Download
+    Paperclip
 } from "lucide-react";
 import {
-    AreaChart,
+    ComposedChart,
     Area,
+    Bar,
+    Line,
+    Scatter,
     XAxis,
     YAxis,
     CartesianGrid,
@@ -32,7 +33,6 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/button";
 
-const MONTH_NAMES = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 const MONTH_NAMES_SHORT = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 const FISCAL_MONTH_ORDER = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
 
@@ -48,8 +48,7 @@ export default function AnalisisISO() {
     
     // Selection state
     const [selectedObjId, setSelectedObjId] = useState(null);
-    const [activeMonthFilter, setActiveMonthFilter] = useState(null);
-    
+
     // Accordion state
     const [expandedProc, setExpandedProc] = useState(null);
     const [expandedPl, setExpandedPl] = useState(null);
@@ -105,6 +104,18 @@ export default function AnalisisISO() {
         return plantillas.filter(pl => procNames.includes(pl.proceso?.trim()));
     }, [plantillas, procesosDelObj]);
 
+    // Si hay un proceso expandido, filtra las actividades a ese proceso
+    const procesoFiltro = useMemo(
+        () => procesosDelObj.find(p => p._id === expandedProc) || null,
+        [procesosDelObj, expandedProc]
+    );
+
+    const plantillasFiltradas = useMemo(() => {
+        if (!procesoFiltro) return plantillasDelObj;
+        const procName = procesoFiltro.fullName?.trim();
+        return plantillasDelObj.filter(pl => pl.proceso?.trim() === procName);
+    }, [plantillasDelObj, procesoFiltro]);
+
     // Prepara datos para el gráfico
     const chartData = useMemo(() => {
         if (!selectedObj) return [];
@@ -125,26 +136,15 @@ export default function AnalisisISO() {
                 mesNum: m,
                 name: MONTH_NAMES_SHORT[m],
                 incremento: increment,
+                resultado: entry?.resultadoMes ?? null,
                 // Si el índice es <= al último con carga, es "Real"
                 totalReal: idx <= lastMonthIndex ? accumulated : null,
-                // Proyectado es siempre el acumulado
-                totalProyectado: accumulated,
                 isReal: idx <= lastMonthIndex,
                 comentario: entry?.comentario || "",
                 adjunto: entry?.adjunto || null
             };
         });
     }, [selectedObj]);
-
-    const filteredComments = useMemo(() => {
-        if (!selectedObj) return [];
-        if (activeMonthFilter) {
-            return selectedObj.seguimientoMensual?.filter(s => s.mes === activeMonthFilter) || [];
-        }
-        return [...(selectedObj.seguimientoMensual || [])].sort((a,b) => {
-            return FISCAL_MONTH_ORDER.indexOf(a.mes) - FISCAL_MONTH_ORDER.indexOf(b.mes);
-        });
-    }, [selectedObj, activeMonthFilter]);
 
     // ─── Render ───────────────────────────────────────────────────────────────
     if (loading && objetivos.length === 0) {
@@ -159,7 +159,7 @@ export default function AnalisisISO() {
     }
 
     return (
-        <div className="min-h-screen bg-[#f8fafc] flex">
+        <div className="min-h-screen bg-[#f8fafc] flex" style={{ zoom: 0.9 }}>
             {/* SIDEBAR DE OBJETIVOS */}
             <aside className="w-80 bg-white border-r border-slate-200 flex flex-col sticky top-0 h-screen shadow-sm z-10">
                 <div className="p-6 border-b border-slate-100 bg-slate-50/50">
@@ -167,7 +167,7 @@ export default function AnalisisISO() {
                         <div className="p-2 bg-blue-600 rounded-lg text-white">
                             <LayoutDashboard size={20} />
                         </div>
-                        <h2 className="font-bold text-slate-800 tracking-tight">Análisis ISO</h2>
+                        <h2 className="font-bold text-slate-800 tracking-tight">Análisis</h2>
                     </div>
                     <Button 
                         variant="ghost" 
@@ -184,7 +184,7 @@ export default function AnalisisISO() {
                     {objetivos.map(obj => (
                         <button
                             key={obj._id}
-                            onClick={() => { setSelectedObjId(obj._id); setActiveMonthFilter(null); }}
+                            onClick={() => setSelectedObjId(obj._id)}
                             className={`w-full text-left p-3 rounded-xl transition-all border flex flex-col gap-1.5
                                 ${selectedObjId === obj._id 
                                     ? "bg-blue-50 border-blue-200 shadow-sm" 
@@ -261,7 +261,7 @@ export default function AnalisisISO() {
                                 <FileText size={24} />
                             </div>
                             <p className="text-2xl font-black text-slate-900">{plantillasDelObj.length}</p>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Plantillas/KPIs</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actividades/KPIs</p>
                         </div>
                     </div>
 
@@ -274,152 +274,133 @@ export default function AnalisisISO() {
                                 </h3>
                                 <p className="text-xs text-slate-500 mt-1">Progreso acumulado a lo largo del año fiscal.</p>
                             </div>
-                            {activeMonthFilter && (
-                                <Button 
-                                    variant="outline" 
-                                    size="xs" 
-                                    className="text-[10px] h-7 px-3 rounded-full"
-                                    onClick={() => setActiveMonthFilter(null)}
-                                >
-                                    Limpiar filtro de mes
-                                </Button>
-                            )}
+                        </div>
+
+                        {/* Leyenda personalizada (incluye la referencia de Meta) */}
+                        <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-2 mb-4 px-1">
+                            <span className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600">
+                                <span className="w-3 h-3 rounded-[3px] bg-blue-600"></span>
+                                Resultado
+                            </span>
+                            <span className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600">
+                                <span className="relative w-5 h-[3px] rounded-full bg-emerald-600">
+                                    <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-emerald-600 ring-2 ring-white"></span>
+                                </span>
+                                Avance acumulado
+                            </span>
+                            <span className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600">
+                                <span className="w-2.5 h-2.5 rounded-full bg-orange-500 ring-2 ring-orange-200"></span>
+                                Comentario
+                            </span>
+                            <span className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600">
+                                <svg width="22" height="6" viewBox="0 0 22 6" className="overflow-visible">
+                                    <line x1="0" y1="3" x2="22" y2="3" stroke="#ef4444" strokeWidth="2" strokeDasharray="4 3" strokeLinecap="round" />
+                                </svg>
+                                Meta {selectedObj?.meta ?? 80}{selectedObj?.unidadMeta ? ` ${selectedObj.unidadMeta}` : '%'}
+                            </span>
                         </div>
 
                         <div className="h-[400px] w-full">
                             <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart
+                                <ComposedChart
                                     data={chartData}
-                                    margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
-                                    onClick={(data) => {
-                                        if (data && data.activePayload) {
-                                            setActiveMonthFilter(data.activePayload[0].payload.mesNum);
-                                        }
-                                    }}
+                                    margin={{ top: 16, right: 36, left: 0, bottom: 0 }}
                                 >
                                     <defs>
                                         <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
-                                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.25}/>
+                                            <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                                         </linearGradient>
-                                        <linearGradient id="colorProyectado" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#cbd5e1" stopOpacity={0.1}/>
-                                            <stop offset="95%" stopColor="#cbd5e1" stopOpacity={0}/>
+                                        <linearGradient id="colorBar" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0%" stopColor="#3b82f6" stopOpacity={1}/>
+                                            <stop offset="100%" stopColor="#2563eb" stopOpacity={0.85}/>
                                         </linearGradient>
                                     </defs>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                    <XAxis 
-                                        dataKey="name" 
-                                        axisLine={false} 
-                                        tickLine={false} 
-                                        tick={{fontSize: 12, fill: '#64748b', fontWeight: 500}}
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                    <XAxis
+                                        dataKey="name"
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tick={{fontSize: 12, fill: '#64748b', fontWeight: 600}}
                                         dy={10}
                                     />
-                                    <YAxis 
-                                        axisLine={false} 
-                                        tickLine={false} 
-                                        tick={{fontSize: 12, fill: '#64748b'}}
-                                        unit="%"
-                                        domain={[0, 100]}
-                                        ticks={[0, 25, 50, 75, 100]}
+                                    <YAxis
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tick={{fontSize: 11, fill: '#94a3b8'}}
+                                        unit={selectedObj?.unidadMeta ? ` ${selectedObj.unidadMeta}` : '%'}
+                                        domain={[0, 'dataMax']}
+                                        width={56}
                                     />
-                                    <Tooltip 
+                                    <Tooltip
+                                        cursor={{ fill: 'rgba(59, 130, 246, 0.06)' }}
                                         contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                                        formatter={(value, name) => {
-                                            const label = name === "totalReal" ? "Avance Real" : "Proyección";
-                                            return [`${value}%`, label];
+                                        formatter={(value, name, props) => {
+                                            return [value, name];
                                         }}
                                         labelFormatter={(label) => `Mes: ${label}`}
+                                        content={(props) => {
+                                            if (!props || !props.payload || props.payload.length === 0) return null;
+                                            const p = props.payload[0].payload;
+                                            return (
+                                                <div className="p-3 bg-white rounded-lg shadow-md" style={{ minWidth: 220 }}>
+                                                    <div className="text-xs text-slate-500">Mes: <strong>{p.name}</strong></div>
+                                                    <div className="mt-1 text-sm font-bold">Resultado: {p.resultado ?? '-'}{selectedObj?.unidadMeta ? ` ${selectedObj.unidadMeta}` : ''}</div>
+                                                    <div className="mt-1 text-[11px] text-slate-600">Incremento (mes): {p.incremento}%</div>
+                                                    <div className="mt-1 text-[11px] text-slate-600">Avance acumulado: <span className="font-bold">{p.totalReal ?? '-'}{selectedObj?.unidadMeta ? ` ${selectedObj.unidadMeta}` : '%'}</span></div>
+                                                    <div className="mt-1 text-[11px] text-slate-600">Meta objetivo: <span className="font-bold">{selectedObj?.meta ?? '-'}{selectedObj?.unidadMeta ? ` ${selectedObj.unidadMeta}` : '%'}</span></div>
+                                                    {selectedObj?.comentarioMeta && (
+                                                        <div className="mt-1 text-[11px] text-slate-600 italic">Comentario meta: "{selectedObj.comentarioMeta}"</div>
+                                                    )}
+                                                    {p.comentario && (
+                                                        <div className="mt-2 text-[12px] italic text-slate-700">"{p.comentario}"</div>
+                                                    )}
+                                                </div>
+                                            );
+                                        }}
                                     />
-                                    {/* Serie Proyectada (Dashed) */}
-                                    <Area 
-                                        type="monotone" 
-                                        dataKey="totalProyectado" 
-                                        stroke="#cbd5e1" 
-                                        strokeWidth={2}
-                                        strokeDasharray="5 5"
-                                        fillOpacity={1} 
-                                        fill="url(#colorProyectado)"
+                                    {/* Área degradada bajo el avance acumulado */}
+                                    <Area
+                                        type="monotone"
+                                        dataKey="totalReal"
+                                        stroke="none"
+                                        fill="url(#colorTotal)"
+                                        isAnimationActive={false}
+                                        legendType="none"
                                         activeDot={false}
                                     />
-                                    {/* Serie Real (Solid) */}
-                                    <Area 
-                                        type="monotone" 
-                                        dataKey="totalReal" 
-                                        stroke="#3b82f6" 
-                                        strokeWidth={4}
-                                        fillOpacity={1} 
-                                        fill="url(#colorTotal)"
-                                        activeDot={{ r: 8, strokeWidth: 0, fill: '#3b82f6' }}
+                                    {/* Bars: Resultado del mes */}
+                                    <Bar dataKey="resultado" barSize={26} fill="url(#colorBar)" name="Resultado" radius={[6, 6, 0, 0]} />
+
+                                    {/* Serie Real (Line - Avance acumulado) */}
+                                    <Line
+                                        type="monotone"
+                                        dataKey="totalReal"
+                                        stroke="#059669"
+                                        strokeWidth={3}
+                                        dot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: '#059669' }}
+                                        activeDot={{ r: 7, strokeWidth: 3, stroke: '#fff', fill: '#059669' }}
+                                        name="Avance"
                                     />
-                                    <ReferenceLine 
-                                        y={selectedObj?.meta ?? 80} 
-                                        stroke="#ef4444" 
-                                        strokeDasharray="5 5" 
+                                    {/* Scatter: puntos para comentarios (si existe comentario) */}
+                                    <Scatter dataKey="resultado" fill="#f97316" name="Comentario" shape="circle" />
+                                    <ReferenceLine
+                                        y={selectedObj?.meta ?? 80}
+                                        stroke="#ef4444"
+                                        strokeDasharray="6 5"
                                         strokeWidth={2}
-                                    >
-                                        <label position="right" fill="#ef4444" fontSize={11} fontWeight="800" dy={-10}>
-                                            Meta Mínima Esperada: {selectedObj?.meta ?? 80}%
-                                        </label>
-                                    </ReferenceLine>
-                                </AreaChart>
+                                        ifOverflow="extendDomain"
+                                        label={{
+                                            position: 'right',
+                                            value: `Meta ${selectedObj?.meta ?? 80}${selectedObj?.unidadMeta ? ` ${selectedObj.unidadMeta}` : '%'}`,
+                                            fill: '#ef4444',
+                                            fontSize: 11,
+                                            fontWeight: 800,
+                                            dy: -8,
+                                        }}
+                                    />
+                                </ComposedChart>
                             </ResponsiveContainer>
-                        </div>
-                    </div>
-
-                    {/* COMENTARIOS Y JUSTIFICACIÓN */}
-                    <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-                        <div className="px-8 py-6 border-b border-slate-50 flex items-center justify-between bg-white">
-                            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                <MessageSquare className="text-blue-500" size={18} /> 
-                                Justificación del Avance {activeMonthFilter ? `(${MONTH_NAMES[activeMonthFilter]})` : "(Resumen)"}
-                            </h3>
-                        </div>
-                        
-                        <div className="p-8 space-y-6 max-h-[500px] overflow-y-auto bg-slate-50/30">
-                            {filteredComments.length > 0 ? (
-                                filteredComments.map((s, idx) => (
-                                    <div key={idx} className="flex gap-6 animate-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: `${idx * 50}ms` }}>
-                                        <div className="flex flex-col items-center">
-                                            <div className="w-10 h-10 rounded-full bg-white border-2 border-primary flex items-center justify-center z-10 shadow-sm shrink-0">
-                                                <span className="text-xs font-black text-primary">{MONTH_NAMES_SHORT[s.mes]}</span>
-                                            </div>
-                                            {idx !== filteredComments.length - 1 && <div className="w-0.5 flex-1 bg-slate-200 my-1"></div>}
-                                        </div>
-                                        <div className="flex-1 bg-white rounded-2xl p-5 border border-slate-100 shadow-sm mb-2">
-                                            <div className="flex justify-between items-start mb-2">
-                                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                                    Incremento: <span className="text-blue-600 font-black">+{s.progreso}%</span>
-                                                </span>
-                                                <span className="text-[10px] font-bold text-slate-400">{s.year}</span>
-                                            </div>
-                                            <p className="text-sm text-slate-700 leading-relaxed italic">
-                                                "{s.comentario || "Sin comentario registrado para este mes."}"
-                                            </p>
-
-                                            {s.adjunto && (
-                                                <div className="mt-3 pt-3 border-t border-slate-50 flex justify-end">
-                                                    <a 
-                                                        href={`/uploads/iso-evidencias/${s.adjunto}`} 
-                                                        target="_blank" 
-                                                        rel="noopener noreferrer"
-                                                        className="flex items-center gap-2 text-[10px] font-bold text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-1.5 rounded-full transition-colors border border-blue-100"
-                                                    >
-                                                        <Download size={12} /> Ver Evidencia Adjunta
-                                                    </a>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))
-                            ) : (
-                                <div className="text-center py-12 flex flex-col items-center gap-3">
-                                    <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-slate-300">
-                                        <MessageSquare size={32} />
-                                    </div>
-                                    <p className="text-sm text-slate-400 font-medium italic">No hay comentarios registrados para este período.</p>
-                                </div>
-                            )}
                         </div>
                     </div>
 
@@ -458,51 +439,115 @@ export default function AnalisisISO() {
                             </div>
                         </div>
 
-                        {/* Plantillas */}
+                        {/* Actividad */}
                         <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
-                            <h3 className="text-md font-bold text-slate-800 mb-6 flex items-center gap-2">
-                                <FileText size={18} className="text-violet-500" /> Plantillas / KPIs
-                            </h3>
-                            <div className="space-y-3">
-                                {plantillasDelObj.map(pl => (
-                                    <div key={pl._id} className="flex flex-col rounded-xl border border-slate-50 bg-slate-50/30 hover:bg-white hover:border-violet-100 transition-all overflow-hidden">
-                                        <button 
-                                            onClick={() => setExpandedPl(expandedPl === pl._id ? null : pl._id)}
-                                            className="w-full flex items-center justify-between p-3"
+                            <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
+                                <h3 className="text-md font-bold text-slate-800 flex items-center gap-2">
+                                    <FileText size={18} className="text-violet-500" /> Actividad / KPIs
+                                </h3>
+                                {procesoFiltro && (
+                                    <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-full pl-3 pr-1 py-1 animate-in fade-in slide-in-from-top-1 duration-200">
+                                        <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wide">Filtrado por:</span>
+                                        <span className="text-[11px] font-semibold text-emerald-800 truncate max-w-[180px]" title={procesoFiltro.nombre}>
+                                            {procesoFiltro.codigo} · {procesoFiltro.nombre}
+                                        </span>
+                                        <button
+                                            onClick={() => setExpandedProc(null)}
+                                            className="text-emerald-700 hover:text-white hover:bg-emerald-600 w-5 h-5 rounded-full flex items-center justify-center transition-colors text-xs font-bold"
+                                            title="Quitar filtro"
                                         >
-                                            <div className="flex items-center gap-3">
-                                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-md ${pl.activo ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-500'}`}>
-                                                    {pl.activo ? 'ACTIVA' : 'INACT.'}
-                                                </span>
-                                                <span className="text-sm font-semibold text-slate-700 truncate max-w-[200px]">{pl.nombre}</span>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xs font-bold text-slate-400">{pl.pesoBase}%</span>
-                                                <ChevronDown size={14} className={`text-slate-300 transition-transform ${expandedPl === pl._id ? 'rotate-180 text-violet-500' : ''}`} />
-                                            </div>
+                                            ×
                                         </button>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="space-y-3">
+                                {plantillasFiltradas.map(pl => {
+                                    const sufijoUnidad = (u) => u === "Porcentual" ? "%" : "";
+                                    const metasResumen = (pl.metas || [])
+                                        .map((m) => {
+                                            const valor = m?.esperado ?? m?.target;
+                                            if (valor === null || valor === undefined || valor === "") return null;
+                                            return {
+                                                nombre: m.nombre,
+                                                texto: `${m.operador || ">="} ${valor}${sufijoUnidad(m.unidad)}`.trim(),
+                                            };
+                                        })
+                                        .filter(Boolean);
+                                    const metaPreview = metasResumen[0];
 
-                                        {expandedPl === pl._id && (
-                                            <div className="px-4 pb-4 pt-1 animate-in slide-in-from-top-2 duration-300">
-                                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-tight">Descripción del KPI / Plantilla</p>
-                                                <div className="text-xs text-slate-600 leading-relaxed bg-white border border-violet-50 rounded-lg p-3">
-                                                    <p className="italic mb-2 text-slate-500">"{pl.descripcion || "Sin descripción registrada."}"</p>
-                                                    <div className="flex items-center gap-4 border-t border-slate-50 pt-2 mt-2">
-                                                        <div>
-                                                            <span className="text-[9px] font-bold text-slate-400 uppercase block">Frecuencia</span>
-                                                            <span className="font-bold text-slate-600">{pl.frecuencia}</span>
-                                                        </div>
-                                                        <div>
-                                                            <span className="text-[9px] font-bold text-slate-400 uppercase block">Proceso</span>
-                                                            <span className="font-bold text-slate-600 truncate">{pl.proceso || "-"}</span>
+                                    return (
+                                        <div key={pl._id} className="flex flex-col rounded-xl border border-slate-50 bg-slate-50/30 hover:bg-white hover:border-violet-100 transition-all overflow-hidden">
+                                            <button
+                                                onClick={() => setExpandedPl(expandedPl === pl._id ? null : pl._id)}
+                                                className="w-full flex items-center justify-between p-3 gap-3 text-left"
+                                            >
+                                                <div className="flex items-center gap-3 flex-1 min-w-0">
+                                                    <span className={`shrink-0 text-[9px] font-black px-2 py-0.5 rounded-md ${pl.activo ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-500'}`}>
+                                                        {pl.activo ? 'ACTIVA' : 'INACT.'}
+                                                    </span>
+                                                    <span className="text-sm font-semibold text-slate-700 break-words leading-snug flex-1 min-w-0" title={pl.nombre}>
+                                                        {pl.nombre}
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    {metaPreview ? (
+                                                        <span
+                                                            className="text-[11px] bg-violet-50 text-violet-700 border border-violet-100 px-2 py-0.5 rounded-full font-semibold"
+                                                            title={metasResumen.length > 1 ? `+${metasResumen.length - 1} meta(s) más` : metaPreview.nombre}
+                                                        >
+                                                            {metaPreview.texto}
+                                                            {metasResumen.length > 1 && (
+                                                                <span className="ml-1 text-violet-500/80 font-bold">+{metasResumen.length - 1}</span>
+                                                            )}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-[11px] text-slate-400 italic">sin meta</span>
+                                                    )}
+                                                    <ChevronDown size={14} className={`text-slate-300 transition-transform ${expandedPl === pl._id ? 'rotate-180 text-violet-500' : ''}`} />
+                                                </div>
+                                            </button>
+
+                                            {expandedPl === pl._id && (
+                                                <div className="px-4 pb-4 pt-1 animate-in slide-in-from-top-2 duration-300">
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-tight">Descripción de la Actividad / KPI</p>
+                                                    <div className="text-xs text-slate-600 leading-relaxed bg-white border border-violet-50 rounded-lg p-3 space-y-3">
+                                                        <p className="italic text-slate-500">"{pl.descripcion || "Sin descripción registrada."}"</p>
+
+                                                        {metasResumen.length > 0 && (
+                                                            <div>
+                                                                <span className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Metas — qué se espera alcanzar</span>
+                                                                <div className="flex flex-wrap gap-1.5">
+                                                                    {metasResumen.map((m, i) => (
+                                                                        <span key={i} className="text-[11px] bg-violet-50 text-violet-700 border border-violet-100 px-2 py-0.5 rounded-full">
+                                                                            <span className="font-semibold">{m.nombre}:</span> {m.texto}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        <div className="flex items-center gap-4 border-t border-slate-50 pt-2">
+                                                            <div>
+                                                                <span className="text-[9px] font-bold text-slate-400 uppercase block">Frecuencia</span>
+                                                                <span className="font-bold text-slate-600">{pl.frecuencia}</span>
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <span className="text-[9px] font-bold text-slate-400 uppercase block">Proceso</span>
+                                                                <span className="font-bold text-slate-600 truncate block">{pl.proceso || "-"}</span>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
-                                {plantillasDelObj.length === 0 && <p className="text-xs text-slate-400 italic text-center py-4">Sin plantillas vinculadas.</p>}
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                                {plantillasFiltradas.length === 0 && (
+                                    <p className="text-xs text-slate-400 italic text-center py-4">
+                                        {procesoFiltro ? "Este proceso no tiene actividades vinculadas." : "Sin actividades vinculadas."}
+                                    </p>
+                                )}
                             </div>
                         </div>
                     </div>

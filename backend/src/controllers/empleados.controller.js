@@ -4,6 +4,7 @@ import Carrera from '../models/Carrera.model.js';
 import OverrideObjetivo from '../models/OverrideObjetivo.model.js';
 import Plantilla from '../models/Plantilla.model.js';
 import mongoose from "mongoose";
+import { matchCap } from '../auth/auth.middleware.js';
 
 export const getEmpleados = async (req, res, next) => {
   try {
@@ -16,9 +17,14 @@ export const getEmpleados = async (req, res, next) => {
       page = 1,
       limit = 25,
       sort = "apellido,nombre", // "campo" o "-campo"
+      incluirDesvinculados,
     } = req.query;
 
     const filter = {};
+    // Por defecto excluimos desvinculados. Para verlos: ?incluirDesvinculados=true
+    if (incluirDesvinculados !== "true" && incluirDesvinculados !== "1") {
+      filter.estadoLaboral = { $ne: "DESVINCULADO" };
+    }
     if (area && mongoose.isValidObjectId(area)) filter.area = area;
     if (sector && mongoose.isValidObjectId(sector)) filter.sector = sector;
     if (q) {
@@ -47,7 +53,7 @@ export const getEmpleados = async (req, res, next) => {
 
     const [items, total] = await Promise.all([
       Empleado.find(filter)
-        .select("nombre apellido email dni cuil puesto categoria area sector sueldoBase fotoUrl createdAt updatedAt celular apodo fechaIngreso domicilio genero")
+        .select("nombre apellido email dni cuil puesto categoria area sector sueldoBase fotoUrl createdAt updatedAt celular apodo fechaIngreso domicilio genero estadoLaboral")
         .populate("area", "nombre")
         .populate("sector", "nombre")
         .sort(sortObj)
@@ -150,25 +156,44 @@ export const updateEmpleado = async (req, res, next) => {
 
     // Restricción para empleados editando su propio perfil
     const u = req.user;
-    const isRRHH = u.isSuper || u.isRRHH || u.permisos?.includes("nomina:editar");
+    const isRRHH = u.isSuper || u.isRRHH || matchCap(u.permisos, "nomina:editar");
 
     if (!isRRHH) {
-      // Si no es RRHH, solo permitimos editar email, celular y apodo
-      const allowed = ["email", "celular", "apodo"];
-      const filtered = {};
-      Object.keys(updates).forEach(k => {
-        if (allowed.includes(k)) filtered[k] = updates[k];
-      });
-      updates = filtered;
+      // Si no es RRHH, solo permitimos editar email, celular y apodo.
+      // Si se intentaron tocar otros campos, fallamos explícitamente para no dar
+      // falsos "guardado OK" al frontend cuando en realidad no se persiste nada.
+      const allowed = new Set(["email", "celular", "apodo"]);
+      const intentados = Object.keys(updates);
+      const noPermitidos = intentados.filter((k) => !allowed.has(k));
+      if (noPermitidos.length > 0) {
+        return res.status(403).json({
+          message: `No autorizado a modificar: ${noPermitidos.join(", ")}`,
+          fields: noPermitidos,
+        });
+      }
     }
 
     // ---------------------------------------------------------
     // AUTO-CIERRE DE CARRERA SI SE DESVINCULA
     // ---------------------------------------------------------
+    // `fechaDesvinculacion` viene del modal del legajo; no es campo del modelo
+    // Empleado, así que lo extraemos del payload antes de findByIdAndUpdate.
+    const fechaDesvinculacionRaw = updates.fechaDesvinculacion;
+    if ("fechaDesvinculacion" in updates) delete updates.fechaDesvinculacion;
+
     if (updates.estadoLaboral === "DESVINCULADO") {
+      // Parseamos a mediodía local para evitar corrimientos por timezone cuando
+      // el cliente manda "YYYY-MM-DD".
+      let fechaCierre = new Date();
+      if (fechaDesvinculacionRaw) {
+        const parsed = /^\d{4}-\d{2}-\d{2}$/.test(fechaDesvinculacionRaw)
+          ? new Date(`${fechaDesvinculacionRaw}T12:00:00`)
+          : new Date(fechaDesvinculacionRaw);
+        if (!isNaN(parsed.getTime())) fechaCierre = parsed;
+      }
       const puestoActual = await Carrera.findOne({ empleado: id, hasta: null });
       if (puestoActual) {
-        puestoActual.hasta = new Date();
+        puestoActual.hasta = fechaCierre;
         await puestoActual.save();
       }
     }

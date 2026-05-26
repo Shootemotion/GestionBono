@@ -340,7 +340,7 @@ export async function dashByArea(req, res) {
       const cached = getCache(cacheKey);
       if (cached) return res.json(cached);
 
-      const empleadosDocs = await Empleado.find({}, { _id: 1 }).lean();
+      const empleadosDocs = await Empleado.find({ estadoLaboral: { $ne: "DESVINCULADO" } }, { _id: 1 }).lean();
       const ids = empleadosDocs.map((e) => e._id);
       const data = await computeForEmployees(ids, anio || new Date().getFullYear());
 
@@ -396,7 +396,8 @@ export async function dashByArea(req, res) {
     const empleadosDocs = await Empleado.find(
       {
         $or: [{ area: asObjectId(areaId) }, { sector: { $in: sectorIds } }],
-        _id: { $nin: exclusionIds }
+        _id: { $nin: exclusionIds },
+        estadoLaboral: { $ne: "DESVINCULADO" },
       },
       { _id: 1 }
     ).lean();
@@ -423,7 +424,7 @@ export const dashBySector = async (req, res) => {
       const cached = getCache(cacheKey);
       if (cached) return res.json(cached);
 
-      const empleadosDocs = await Empleado.find({}, { _id: 1 }).lean();
+      const empleadosDocs = await Empleado.find({ estadoLaboral: { $ne: "DESVINCULADO" } }, { _id: 1 }).lean();
       const ids = empleadosDocs.map((e) => e._id);
       const data = await computeForEmployees(ids, anio || new Date().getFullYear());
 
@@ -454,7 +455,8 @@ export const dashBySector = async (req, res) => {
     const empleadosDocs = await Empleado.find(
       {
         sector: asObjectId(sectorId),
-        _id: { $nin: exclusionIdsSec }
+        _id: { $nin: exclusionIdsSec },
+        estadoLaboral: { $ne: "DESVINCULADO" },
       },
       { _id: 1 }
     ).lean();

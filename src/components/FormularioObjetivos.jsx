@@ -43,6 +43,8 @@ export default function FormularioObjetivos({
 
   const MAX_LIST = 2000;
   const [metas, setMetas] = useState([]);
+  const [objetivosCalidad, setObjetivosCalidad] = useState([]); // ids seleccionados
+  const [objetivosCalidadAvail, setObjetivosCalidadAvail] = useState([]); // catálogo del año
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -50,6 +52,11 @@ export default function FormularioObjetivos({
   const [empQuery, setEmpQuery] = useState("");
   const [empOpen, setEmpOpen] = useState(false);
   const empBoxRef = useRef(null);
+
+  // Combobox de Objetivos de Calidad
+  const [objCalQuery, setObjCalQuery] = useState("");
+  const [objCalOpen, setObjCalOpen] = useState(false);
+  const objCalBoxRef = useRef(null);
 
   const [usarFechaCierreCustom, setUsarFechaCierreCustom] = useState(false);
   const [fechaCierre, setFechaCierre] = useState("");
@@ -75,6 +82,21 @@ export default function FormularioObjetivos({
       }
     }).catch(() => { });
   }, []);
+
+  // Objetivos de Mejora de Calidad del año fiscal (catálogo)
+  useEffect(() => {
+    if (!year) return;
+    api(`/objetivos-iso?year=${year}`)
+      .then((d) => {
+        if (Array.isArray(d)) setObjetivosCalidadAvail(d);
+      })
+      .catch(() => { });
+  }, [year]);
+
+  const toggleObjetivoCalidad = (id) =>
+    setObjetivosCalidad((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
 
   const selectedEmpleado = useMemo(() => {
     const lista = Array.isArray(empleados) ? empleados : [];
@@ -162,6 +184,15 @@ export default function FormularioObjetivos({
         : []
     );
 
+    // Objetivos de Mejora de Calidad (pueden venir poblados o como ids)
+    setObjetivosCalidad(
+      Array.isArray(initialData.objetivosCalidad)
+        ? initialData.objetivosCalidad
+            .map((o) => (typeof o === "object" ? String(o?._id ?? "") : String(o)))
+            .filter(Boolean)
+        : []
+    );
+
     setUsarFechaCierreCustom(!!initialData.fechaCierreCustom);
     setFechaCierre(
       initialData.fechaCierre
@@ -180,6 +211,17 @@ export default function FormularioObjetivos({
     return () =>
       document.removeEventListener("mousedown", handleClickOutside);
   }, [empOpen]);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (objCalBoxRef.current && !objCalBoxRef.current.contains(e.target)) {
+        setObjCalOpen(false);
+      }
+    }
+    if (objCalOpen) document.addEventListener("mousedown", handleClickOutside);
+    return () =>
+      document.removeEventListener("mousedown", handleClickOutside);
+  }, [objCalOpen]);
 
   // Metas helpers
   const handleAddMeta = () =>
@@ -227,7 +269,6 @@ export default function FormularioObjetivos({
           : "Seleccioná un área o sector.";
     }
     if (!nombre.trim()) errs.nombre = "El nombre es obligatorio.";
-    if (!proceso.trim()) errs.proceso = "El campo Proceso es obligatorio.";
 
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
@@ -317,6 +358,8 @@ export default function FormularioObjetivos({
     }
 
     if (metasClean.length > 0) body.metas = metasClean;
+
+    body.objetivosCalidad = objetivosCalidad;
 
     setIsSubmitting(true);
     try {
@@ -422,14 +465,13 @@ export default function FormularioObjetivos({
             </div>
 
             <div>
-              <label className="text-xs">Proceso</label>
+              <label className="text-xs">Proceso <span className="text-gray-400">(opcional)</span></label>
               <select
                 className={inputCls}
                 value={proceso}
                 onChange={(e) => setProceso(e.target.value)}
-                required
               >
-                <option value="">Seleccioná un proceso…</option>
+                <option value="">Sin asignar</option>
                 {procesosApi.map((p) => (
                   <option key={p._id} value={p.fullName}>
                     {p.fullName}
@@ -709,6 +751,147 @@ export default function FormularioObjetivos({
             onChange={(e) => setDescripcion(e.target.value)}
           />
           <FieldError name="descripcion" />
+        </div>
+
+        {/* Objetivos de Mejora de Calidad asociados */}
+        <div className="space-y-2 border-t pt-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-semibold">🏅 Objetivos de Mejora de Calidad</h3>
+              <p className="text-xs text-muted-foreground">
+                Asociá esta plantilla a uno o varios objetivos de Gestión de Calidad del año {year}.
+              </p>
+            </div>
+            {objetivosCalidad.length > 0 && (
+              <button
+                type="button"
+                className="text-[11px] text-blue-600 hover:underline"
+                onClick={() => setObjetivosCalidad([])}
+              >
+                Limpiar selección ({objetivosCalidad.length})
+              </button>
+            )}
+          </div>
+
+          {objetivosCalidadAvail.length === 0 ? (
+            <p className="text-xs text-muted-foreground italic bg-slate-50 border border-slate-100 rounded-md p-3">
+              No hay objetivos de mejora de calidad cargados para el año {year}. Podés crearlos desde la sección Gestión de Calidad.
+            </p>
+          ) : (
+            <div ref={objCalBoxRef} className="relative">
+              {/* Trigger / control compacto */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setObjCalOpen((v) => !v)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setObjCalOpen((v) => !v);
+                  }
+                }}
+                className="w-full min-h-[44px] rounded-md border border-border bg-background px-3 py-2 text-sm cursor-pointer flex items-center gap-2 flex-wrap focus-visible:ring-2 focus-visible:ring-ring outline-none"
+              >
+                {objetivosCalidad.length === 0 ? (
+                  <span className="text-muted-foreground text-xs">
+                    Seleccioná uno o más objetivos…
+                  </span>
+                ) : (
+                  objetivosCalidad.map((id) => {
+                    const obj = objetivosCalidadAvail.find((o) => String(o._id) === id);
+                    if (!obj) return null;
+                    return (
+                      <span
+                        key={id}
+                        className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-full pl-2 pr-1 py-0.5 text-[11px]"
+                      >
+                        {obj.codigo && <span className="font-bold">{obj.codigo}</span>}
+                        <span className="font-medium max-w-[160px] truncate">{obj.nombre}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleObjetivoCalidad(id);
+                          }}
+                          className="ml-0.5 rounded-full hover:bg-blue-100 text-blue-600 p-0.5"
+                          title="Quitar"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                        </button>
+                      </span>
+                    );
+                  })
+                )}
+                <span className="ml-auto text-slate-400">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${objCalOpen ? "rotate-180" : ""}`}><polyline points="6 9 12 15 18 9" /></svg>
+                </span>
+              </div>
+
+              {/* Panel desplegable */}
+              {objCalOpen && (
+                <div className="absolute left-0 right-0 mt-1 z-20 rounded-md border border-slate-200 bg-popover text-popover-foreground shadow-lg overflow-hidden">
+                  <div className="p-2 border-b border-slate-100 bg-slate-50/50">
+                    <input
+                      type="text"
+                      autoFocus
+                      value={objCalQuery}
+                      onChange={(e) => setObjCalQuery(e.target.value)}
+                      placeholder="Buscar por código o nombre…"
+                      className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                  </div>
+                  <ul className="max-h-64 overflow-y-auto py-1">
+                    {(() => {
+                      const q = objCalQuery.trim().toLowerCase();
+                      const filtrados = q
+                        ? objetivosCalidadAvail.filter((o) =>
+                            `${o.codigo ?? ""} ${o.nombre ?? ""}`.toLowerCase().includes(q)
+                          )
+                        : objetivosCalidadAvail;
+                      if (filtrados.length === 0) {
+                        return (
+                          <li className="px-3 py-2 text-xs text-muted-foreground italic">
+                            Sin resultados.
+                          </li>
+                        );
+                      }
+                      return filtrados.map((obj) => {
+                        const id = String(obj._id);
+                        const selected = objetivosCalidad.includes(id);
+                        return (
+                          <li key={id}>
+                            <button
+                              type="button"
+                              onClick={() => toggleObjetivoCalidad(id)}
+                              className={`w-full text-left flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent ${selected ? "bg-blue-50/50" : ""}`}
+                            >
+                              <span className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors ${selected ? "bg-blue-600 border-blue-600" : "bg-white border-slate-300"}`}>
+                                {selected && (
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                )}
+                              </span>
+                              {obj.codigo && <span className="text-[10px] font-black text-slate-500 shrink-0">{obj.codigo}</span>}
+                              <span className="font-medium text-slate-700 truncate">{obj.nombre}</span>
+                            </button>
+                          </li>
+                        );
+                      });
+                    })()}
+                  </ul>
+                  <div className="flex items-center justify-between px-3 py-2 border-t border-slate-100 bg-slate-50/50 text-[11px] text-slate-500">
+                    <span>{objetivosCalidad.length} seleccionado{objetivosCalidad.length === 1 ? "" : "s"} · {objetivosCalidadAvail.length} disponibles</span>
+                    <button
+                      type="button"
+                      onClick={() => setObjCalOpen(false)}
+                      className="text-blue-600 hover:underline font-medium"
+                    >
+                      Listo
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Metas */}

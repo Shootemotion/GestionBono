@@ -55,9 +55,8 @@ export const calculateAll = async (req, res, next) => {
                 filter.area = targetId;
             }
         } else {
-            // If manual calculation, respect strict filter or allow both?
-            // Let's use robust filter here too
-            filter.estadoLaboral = { $in: ["ACTIVO", "VINCULADO"] };
+            // Excluir desvinculados — alineado con el enum real del modelo
+            filter.estadoLaboral = { $ne: "DESVINCULADO" };
         }
 
         const empleadosDocs = await Empleado.find(filter, '_id').lean();
@@ -275,8 +274,8 @@ export const getResults = async (req, res, next) => {
             });
         }
 
-        // 2. Get All Active Employees (Robust Filter)
-        const empleadosDocs = await Empleado.find({ estadoLaboral: { $in: ["ACTIVO", "VINCULADO"] } }, "_id").lean();
+        // 2. Get All Active Employees (excluye desvinculados, alineado al enum real)
+        const empleadosDocs = await Empleado.find({ estadoLaboral: { $ne: "DESVINCULADO" } }, "_id").lean();
         const ids = empleadosDocs.map(e => e._id);
 
         if (ids.length === 0) return res.json([]);

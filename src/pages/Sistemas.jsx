@@ -30,6 +30,10 @@ const ScoreAuditPanel = () => {
     const [impersonatingId, setImpersonatingId] = useState(null);
     const [impersonateSelect, setImpersonateSelect] = useState("");
 
+    // Lista completa de usuarios para enmascarar (independiente de la auditoría):
+    // [{ empleadoId, label, rol }]
+    const [impersonateOptions, setImpersonateOptions] = useState([]);
+
     // Change Password State
     const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
     const [passLoading, setPassLoading] = useState(false);
@@ -98,6 +102,28 @@ const ScoreAuditPanel = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [year]);
 
+    // Cargar usuarios para el selector de enmascaramiento — se carga 1 vez,
+    // independiente del año fiscal y de la auditoría de feedbacks. Así aparecen
+    // todos los usuarios con login (incluidos directores que no reciben feedback).
+    useEffect(() => {
+        (async () => {
+            try {
+                const usuarios = await api(`/usuarios`);
+                const opts = (Array.isArray(usuarios) ? usuarios : [])
+                    .filter((u) => u?.empleado?._id)
+                    .map((u) => ({
+                        empleadoId: String(u.empleado._id),
+                        label: `${u.empleado.apellido ?? ""}, ${u.empleado.nombre ?? ""}`.trim().replace(/^,\s*/, ""),
+                        rol: u.rol || "",
+                    }))
+                    .sort((a, b) => a.label.localeCompare(b.label));
+                setImpersonateOptions(opts);
+            } catch (e) {
+                console.error("No se pudieron cargar usuarios para enmascarar:", e);
+            }
+        })();
+    }, []);
+
     const results = useMemo(() => {
         if (!searchVal) return allData;
         return allData.filter(e => e.empleado.toLowerCase().includes(searchVal.toLowerCase()));
@@ -113,7 +139,12 @@ const ScoreAuditPanel = () => {
             const userData = await api(`/_whoami?empleadoId=${empId}`);
             if (userData) {
                 impersonateUser(userData);
-                toast.success(`Ahora estás viendo la App como ${userData.nombre}`);
+                const targetName = userData?.fullName
+                    || userData?.empleado?.nombre
+                    || userData?.empleado?.apellido
+                    || userData?.email
+                    || "Usuario";
+                toast.success(`Ahora estás viendo la App como ${targetName}`);
                 navigate("/");
             }
         } catch (e) {
@@ -358,16 +389,18 @@ const ScoreAuditPanel = () => {
                                     className="w-full p-2 pl-9 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white text-sm outline-none focus:ring-2 focus:ring-blue-100 transition-all font-medium"
                                 />
                                 <datalist id="impersonate-list">
-                                    {uniqueEmpleados.map(emp => (
-                                        <option key={emp} value={emp} />
+                                    {impersonateOptions.map(opt => (
+                                        <option key={opt.empleadoId} value={opt.label}>
+                                            {opt.rol ? `${opt.rol}` : ""}
+                                        </option>
                                     ))}
                                 </datalist>
                             </div>
                         </div>
                         <Button
                             onClick={() => {
-                                const emp = allData.find(e => e.empleado === impersonateSelect);
-                                if (emp) handleImpersonate(emp.empleadoId);
+                                const opt = impersonateOptions.find(o => o.label === impersonateSelect);
+                                if (opt) handleImpersonate(opt.empleadoId);
                                 else toast.error("Seleccione un empleado válido");
                             }}
                             disabled={!impersonateSelect || impersonatingId}

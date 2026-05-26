@@ -6,7 +6,7 @@ import { es } from "date-fns/locale";
 import { api } from "@/lib/api";
 import { Target, Lightbulb, Clock, History, AlertCircle } from "lucide-react";
 
-export default function VersionesTimelineDialog({ open, onOpenChange, year }) {
+export default function VersionesTimelineDialog({ open, onOpenChange, year, lineageRootId = null }) {
     const [plantillas, setPlantillas] = useState([]);
     const [loading, setLoading] = useState(false);
 
@@ -61,8 +61,13 @@ export default function VersionesTimelineDialog({ open, onOpenChange, year }) {
 
             chain.sort((a, b) => (a.version || 1) - (b.version || 1));
 
-            // Mostrar solo los historiales de plantillas que tengan >1 versión
-            if (chain.length > 1) {
+            // Si pediste un linaje puntual, mostrarlo aunque tenga sólo 1 versión
+            if (lineageRootId) {
+                if (String(root._id) === String(lineageRootId)) {
+                    result.push({ root, chain });
+                }
+            } else if (chain.length > 1) {
+                // Vista global: sólo linajes con >1 versión
                 result.push({ root, chain });
             }
         });
@@ -75,7 +80,7 @@ export default function VersionesTimelineDialog({ open, onOpenChange, year }) {
 
         return result;
 
-    }, [plantillas]);
+    }, [plantillas, lineageRootId]);
 
     const getStatusBadge = (p) => {
         if (p.activo && p.estadoAprobacion !== "pendiente") return <Badge className="bg-emerald-100/80 text-emerald-800 border-emerald-200 uppercase text-[9px] px-1.5 py-0">Activa</Badge>;
@@ -93,9 +98,13 @@ export default function VersionesTimelineDialog({ open, onOpenChange, year }) {
                             <History className="w-5 h-5" />
                         </div>
                         <div>
-                            <DialogTitle className="text-xl font-bold text-slate-800 tracking-tight">Línea de Versiones {year}</DialogTitle>
+                            <DialogTitle className="text-xl font-bold text-slate-800 tracking-tight">
+                                {lineageRootId ? "Historial de versiones" : `Línea de Versiones ${year}`}
+                            </DialogTitle>
                             <DialogDescription className="text-sm mt-0.5 text-slate-500">
-                                Cronograma histórico de objetivos que han sufrido modificaciones profundas durante el año.
+                                {lineageRootId
+                                    ? "Recorrido completo de cambios para esta plantilla."
+                                    : "Cronograma histórico de objetivos que han sufrido modificaciones profundas durante el año."}
                             </DialogDescription>
                         </div>
                     </div>
@@ -111,7 +120,11 @@ export default function VersionesTimelineDialog({ open, onOpenChange, year }) {
                         <div className="flex flex-col items-center justify-center py-16 text-center text-slate-500 border-2 border-dashed border-slate-200 rounded-xl bg-white bg-opacity-60">
                             <Target className="w-10 h-10 mb-4 opacity-30 text-slate-400" />
                             <h3 className="text-lg font-bold text-slate-700">Sin historial de reversiones</h3>
-                            <p className="max-w-md mt-2 text-sm text-slate-500">Aún no se han creado o modificado versiones para los objetivos de este año.</p>
+                            <p className="max-w-md mt-2 text-sm text-slate-500">
+                                {lineageRootId
+                                    ? "Esta plantilla aún no tiene versiones anteriores."
+                                    : "Aún no se han creado o modificado versiones para los objetivos de este año."}
+                            </p>
                         </div>
                     ) : (
                         lineages.map((lineage, idx) => (

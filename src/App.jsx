@@ -3,6 +3,7 @@ import { Suspense, lazy, useState, useCallback } from 'react';
 import RequireAuth from '@/components/RequireAuth';
 import Navbar from '@/components/Navbar';
 import BonoBot from "@/components/BonoBot/BonoBot";
+import Footer from "@/components/Footer";
 import { getToken } from '@/lib/api';
 import { Toaster } from "@/components/ui/sonner";
 import { Spinner } from '@/components/ui/spinner';
@@ -88,7 +89,7 @@ function App() {
   }
 
   return (
-    <>
+    <div className="min-h-screen flex flex-col">
       {isImpersonating && (
         <div className="bg-rose-600 text-white px-4 py-2 flex items-center justify-between sticky top-0 z-[100] shadow-lg animate-in slide-in-from-top duration-300">
           <div className="flex items-center gap-3">
@@ -96,7 +97,7 @@ function App() {
               <Clock className="w-4 h-4" />
             </div>
             <div className="text-sm font-bold">
-              MODO ENMASCARADO: <span className="opacity-80 font-normal">Viendo como</span> {user?.nombre || user?.apellido || 'Usuario'}
+              MODO ENMASCARADO: <span className="opacity-80 font-normal">Viendo como</span> {user?.fullName || user?.empleado?.nombre || user?.empleado?.apellido || user?.email || 'Usuario'}
             </div>
           </div>
           <button
@@ -113,7 +114,7 @@ function App() {
 
       {showNavbar && <Navbar />}
 
-      <main className="main-content">
+      <main className="main-content flex-1 pb-12">
         <Suspense fallback={<Spinner />}>
           <Routes>
             {/* Pública */}
@@ -331,9 +332,10 @@ function App() {
           </Routes>
         </Suspense>
       </main>
+      {showNavbar && <Footer />}
       <BonoBot />
       <Toaster richColors position="top-right" />
-    </>
+    </div>
   );
 }
 

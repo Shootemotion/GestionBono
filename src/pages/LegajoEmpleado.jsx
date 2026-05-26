@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { Home, Copy, Check, Trophy, FileText, Calendar, HelpCircle, Eye, EyeOff } from "lucide-react";
+import { Home, Copy, Check, Trophy, FileText, Calendar, HelpCircle, Eye, EyeOff, Save, AlertTriangle } from "lucide-react";
 import { api, API_ORIGIN } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
@@ -10,6 +10,14 @@ import CapacitacionesTable from "@/components/CapacitacionesTable.jsx";
 import IncidenciasTable from "@/components/IncidenciasTable.jsx";
 import { ReporteFinal } from "@/components/ReporteFinal";
 import { dashEmpleado } from "@/lib/dashboard";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+} from "@/components/ui/alert-dialog";
 
 function CertificateIcon(props) {
   return (
@@ -155,7 +163,11 @@ export default function LegajoEmpleado() {
   const [tab, setTab] = useState(initialTab);
 
   // Formularios
-  const [estadoLaboral, setEstadoLaboral] = useState("ACTIVO");
+  const [estadoLaboral, setEstadoLaboral] = useState("VINCULADO");
+  const [confirmDesvinculo, setConfirmDesvinculo] = useState(false);
+  const [savingEstado, setSavingEstado] = useState(false);
+  const todayISO = () => new Date().toISOString().slice(0, 10);
+  const [fechaDesvinculo, setFechaDesvinculo] = useState(todayISO);
   const cvInputRef = useRef(null);
   const [sueldo, setSueldo] = useState({
     monto: "",
@@ -217,7 +229,7 @@ export default function LegajoEmpleado() {
         setEmp(e);
         setAreas(a || []);
         setSectores(s || []);
-        setEstadoLaboral(e?.estadoLaboral || "ACTIVO");
+        setEstadoLaboral(e?.estadoLaboral || "VINCULADO");
 
         setSueldo({
           monto: e?.sueldoBase?.monto ?? "",
@@ -387,16 +399,38 @@ export default function LegajoEmpleado() {
     navigate("/");
   };
 
-  const onGuardarEstado = async () => {
+  const persistirEstado = async () => {
+    setSavingEstado(true);
     try {
-      const resp = await api(`/empleados/${id}`, { method: "PATCH", body: { estadoLaboral } });
+      const body = { estadoLaboral };
+      if (estadoLaboral === "DESVINCULADO" && fechaDesvinculo) {
+        body.fechaDesvinculacion = fechaDesvinculo;
+      }
+      const resp = await api(`/empleados/${id}`, { method: "PATCH", body });
       const upd = resp?.empleado || resp;
       setEmp(upd);
-      toast.success("Estado laboral actualizado.");
+      toast.success(
+        estadoLaboral === "DESVINCULADO"
+          ? `Empleado desvinculado al ${fechaDesvinculo}. Carrera vigente cerrada.`
+          : "Estado laboral actualizado."
+      );
+      setConfirmDesvinculo(false);
     } catch (e) {
       console.error(e);
       toast.error(e.message || "No se pudo actualizar el estado.");
+    } finally {
+      setSavingEstado(false);
     }
+  };
+
+  const onGuardarEstado = () => {
+    const yaDesvinculado = emp?.estadoLaboral === "DESVINCULADO";
+    if (estadoLaboral === "DESVINCULADO" && !yaDesvinculado) {
+      setFechaDesvinculo(todayISO());
+      setConfirmDesvinculo(true);
+      return;
+    }
+    persistirEstado();
   };
 
   const onGuardarBasica = async () => {
@@ -633,25 +667,36 @@ export default function LegajoEmpleado() {
 
               {/* Botones de Acción (Mantener lógica RRHH) */}
               <div className="flex items-center gap-3 pb-2">
-                {isRRHH && (
-                  <div className="flex items-center gap-2 bg-slate-50 rounded-xl p-1 border border-slate-100 shadow-sm">
-                    <select
-                      className="bg-transparent text-xs font-bold text-slate-600 px-3 py-1.5 outline-none cursor-pointer hover:text-slate-900 transition-colors"
-                      value={estadoLaboral}
-                      onChange={(e) => setEstadoLaboral(e.target.value)}
-                    >
-                      <option value="VINCULADO">VINCULADO</option>
-                      <option value="DESVINCULADO">DESVINCULADO</option>
-                    </select>
-                    <button
-                      onClick={onGuardarEstado}
-                      className="h-7 w-7 flex items-center justify-center bg-white rounded-lg text-slate-400 shadow-sm border border-slate-200 hover:text-emerald-600 hover:border-emerald-200 transition-all"
-                      title="Guardar estado"
-                    >
-                      <Check size={14} />
-                    </button>
-                  </div>
-                )}
+                {isRRHH && (() => {
+                  const dirty = estadoLaboral !== (emp?.estadoLaboral || "VINCULADO");
+                  return (
+                    <div className="flex items-center gap-2 bg-slate-50 rounded-xl p-1 pl-1 border border-slate-100 shadow-sm">
+                      <select
+                        className="bg-transparent text-xs font-bold text-slate-600 px-3 py-1.5 outline-none cursor-pointer hover:text-slate-900 transition-colors"
+                        value={estadoLaboral}
+                        onChange={(e) => setEstadoLaboral(e.target.value)}
+                        disabled={savingEstado}
+                      >
+                        <option value="VINCULADO">VINCULADO</option>
+                        <option value="DESVINCULADO">DESVINCULADO</option>
+                      </select>
+                      <button
+                        onClick={onGuardarEstado}
+                        disabled={!dirty || savingEstado}
+                        className={`h-7 px-3 flex items-center gap-1.5 rounded-lg text-xs font-bold shadow-sm border transition-all
+                          ${dirty
+                            ? estadoLaboral === "DESVINCULADO"
+                              ? "bg-rose-600 text-white border-rose-700 hover:bg-rose-700"
+                              : "bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
+                            : "bg-white text-slate-400 border-slate-200 cursor-not-allowed"}`}
+                        title={dirty ? "Guardar cambio de estado" : "Sin cambios"}
+                      >
+                        <Save size={12} />
+                        {savingEstado ? "Guardando..." : "Guardar"}
+                      </button>
+                    </div>
+                  );
+                })()}
                 <button
                   onClick={onBack}
                   className="h-10 px-5 rounded-xl bg-slate-900 text-white text-sm font-semibold shadow-md shadow-slate-900/10 hover:bg-slate-800 hover:shadow-lg transition-all flex items-center gap-2"
@@ -1513,6 +1558,63 @@ export default function LegajoEmpleado() {
         anio={selectedReportYear}
         evolutionData={selectedReportData?.evolutionData}
       />
+
+      {/* Modal de confirmación de desvinculación */}
+      <AlertDialog
+        open={confirmDesvinculo}
+        onOpenChange={(v) => { if (!savingEstado) setConfirmDesvinculo(v); }}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              <span className="flex items-center gap-2 text-rose-700">
+                <AlertTriangle size={18} className="text-rose-600" />
+                Desvincular a {emp?.nombre} {emp?.apellido}
+              </span>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción marca al empleado como <strong>DESVINCULADO</strong> y cierra automáticamente su puesto actual en la carrera laboral.
+              <br /><br />
+              Sus evaluaciones, capacitaciones e historial se mantienen intactos, pero dejará de aparecer en flujos activos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="px-5 pb-2">
+            <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">
+              Fecha de desvinculación
+            </label>
+            <input
+              type="date"
+              value={fechaDesvinculo}
+              onChange={(e) => setFechaDesvinculo(e.target.value)}
+              max={todayISO()}
+              disabled={savingEstado}
+              className="w-full max-w-[220px] px-3 py-2 text-sm font-semibold text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-300 focus:border-rose-400 disabled:opacity-60"
+            />
+            <p className="text-[10px] text-slate-500 mt-1">Por defecto se usa hoy. Podés ajustarla si la desvinculación fue en otra fecha.</p>
+          </div>
+          <AlertDialogFooter>
+            <button
+              onClick={() => {
+                if (savingEstado) return;
+                setConfirmDesvinculo(false);
+                setEstadoLaboral(emp?.estadoLaboral || "VINCULADO");
+              }}
+              disabled={savingEstado}
+              className="px-4 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={persistirEstado}
+              disabled={savingEstado}
+              className="px-4 py-2 text-sm font-bold text-white bg-rose-600 rounded-lg hover:bg-rose-700 disabled:opacity-60 flex items-center gap-2"
+            >
+              {savingEstado ? "Desvinculando..." : "Sí, desvincular"}
+            </button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

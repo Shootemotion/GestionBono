@@ -22,20 +22,21 @@ function EmpleadoCard({ empleado, onEditar /* onEliminar ya no se usa aquí */ }
   const area = empleado?.area?.nombre ?? empleado?.area?.toString?.() ?? "—";
   const sector = empleado?.sector?.nombre ?? empleado?.sector?.toString?.() ?? null;
   const email = empleado?.email ?? empleado?.correo ?? "";
-  const activo = empleado?.activo ?? true;
+  const desvinculado = empleado?.estadoLaboral === "DESVINCULADO";
+  const activo = !desvinculado && (empleado?.activo ?? true);
   const puesto = empleado?.puesto ?? "";
   const celular = empleado?.celular ?? empleado?.telefono ?? empleado?.movil ?? "";
   const img = useMemo(() => fotoSrc(empleado), [empleado?.fotoUrl]);
 
   return (
-    <div className="group relative bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-xl hover:border-slate-300 hover:-translate-y-1 transition-all duration-300 overflow-hidden flex flex-col h-full">
+    <div className={`group relative bg-white rounded-2xl shadow-sm border hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden flex flex-col h-full ${desvinculado ? "border-rose-200 hover:border-rose-300 opacity-90" : "border-slate-200 hover:border-slate-300"}`}>
       {/* 1. Foto Protagonista (Vertical) */}
       <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-100">
         {img ? (
           <img
             src={img}
             alt={`${empleado?.nombre ?? ""} ${empleado?.apellido ?? ""}`}
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+            className={`h-full w-full object-cover transition-transform duration-500 group-hover:scale-105 ${desvinculado ? "grayscale" : ""}`}
             loading="lazy"
             onError={(e) => { e.currentTarget.style.display = "none"; }}
           />
@@ -44,15 +45,29 @@ function EmpleadoCard({ empleado, onEditar /* onEliminar ya no se usa aquí */ }
             {initials(empleado)}
           </div>
         )}
+        {desvinculado && (
+          <span className="absolute top-2 left-2 inline-flex items-center text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-600 text-white shadow-md">
+            Desvinculado
+          </span>
+        )}
       </div>
 
       {/* 2. Datos del Empleado */}
       <div className="flex flex-col p-4 flex-1">
         <div className="flex items-start justify-between gap-2 mb-1">
-          <h3 className="font-bold text-lg text-slate-800 leading-tight" title={`${empleado?.nombre} ${empleado?.apellido}`}>
+          <h3 className={`font-bold text-lg leading-tight ${desvinculado ? "text-slate-500" : "text-slate-800"}`} title={`${empleado?.nombre} ${empleado?.apellido}`}>
             {empleado?.nombre} {empleado?.apellido}
           </h3>
-          <span className={`flex-shrink-0 h-2.5 w-2.5 rounded-full mt-1.5 ${activo ? "bg-emerald-500 ring-4 ring-emerald-500/20" : "bg-slate-300"}`} title={activo ? "Activo" : "Inactivo"} />
+          <span
+            className={`flex-shrink-0 h-2.5 w-2.5 rounded-full mt-1.5 ${
+              desvinculado
+                ? "bg-rose-500 ring-4 ring-rose-500/20"
+                : activo
+                  ? "bg-emerald-500 ring-4 ring-emerald-500/20"
+                  : "bg-slate-300"
+            }`}
+            title={desvinculado ? "Desvinculado" : activo ? "Activo" : "Inactivo"}
+          />
         </div>
 
         <p className="text-sm font-medium text-slate-600 mb-3 min-h-[1.25rem]">

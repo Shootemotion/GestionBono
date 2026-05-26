@@ -66,10 +66,16 @@ function EmpleadoRow({
 
   useOutsideClose(isOpen, () => onToggle(false), rowRef, popRef);
 
+  const desvinculado = empleado.estadoLaboral === "DESVINCULADO";
   return (
     <tr
       ref={rowRef}
-      className="odd:bg-background even:bg-muted/20 border-b border-border/60 hover:bg-muted/30 transition-colors cursor-pointer"
+      className={
+        "border-b border-border/60 hover:bg-muted/30 transition-colors cursor-pointer " +
+        (desvinculado
+          ? "bg-rose-50/40 text-slate-500"
+          : "odd:bg-background even:bg-muted/20")
+      }
       onClick={() => onToggle(!isOpen)}
     >
       {/* Nombre + ancla del popover */}
@@ -79,6 +85,11 @@ function EmpleadoRow({
           {(empleado.apodo || empleado.Apodo) && (
             <span className="ml-2 text-xs text-muted-foreground">
               ({empleado.apodo || empleado.Apodo})
+            </span>
+          )}
+          {desvinculado && (
+            <span className="ml-2 inline-flex items-center text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-200">
+              Desvinculado
             </span>
           )}
 
