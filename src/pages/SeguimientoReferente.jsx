@@ -11,7 +11,7 @@ import GanttView from "@/components/seguimiento/GanttView";
 
 
 import { Button } from "@/components/ui/button";
-import { BarChart3, Calendar, RefreshCw, Users } from "lucide-react";
+import { AlertTriangle, BarChart3, Calendar, RefreshCw, Users } from "lucide-react";
 
 /* ========= utils de agrupación/normalización ========= */
 
@@ -99,6 +99,20 @@ function flatItemsFromRow(row, tipoFiltro) {
 
   return out;
 }
+// Pestañas del Gantt -> qué clase de ítem muestra cada una. Cada pestaña
+// muestra UNA sola, para que los chips no mezclen objetivos con competencias.
+const TIPO_POR_TAB = {
+  objetivos: "objetivo",
+  competencias: "aptitud",
+  feedback: "feedback",
+};
+
+const TABS_GANTT = [
+  { id: "objetivos", label: "Objetivos", icono: "🎯", activo: "text-blue-700", iconoActivo: "text-blue-500" },
+  { id: "competencias", label: "Competencias", icono: "⭐", activo: "text-amber-700", iconoActivo: "text-amber-500" },
+  { id: "feedback", label: "Feedback", icono: "💬", activo: "text-purple-700", iconoActivo: "text-purple-500" },
+];
+
 // agrupa por clave dinámica y fusiona (sin duplicar) empleados/áreas/sectores/períodos
 function groupItems(items, mode = "item") {
   const keyOf = (x) => {
@@ -181,16 +195,28 @@ export default function SeguimientoReferente() {
   const sectorFiltro = searchParams.get("sector") || "todos";
   const empQuery = searchParams.get("q") || "";
 
-  const mainTab = searchParams.get("tab") || "objetivos"; // "objetivos" | "feedback"
+  const mainTab = searchParams.get("tab") || "objetivos"; // "objetivos" | "competencias" | "feedback"
   const ganttGrouping = searchParams.get("grouping") || "sector_estado";
-  const dueOnly = searchParams.get("dueOnly") === "true";
+  // Por defecto se entra viendo SOLO lo que requiere atención.
+  //
+  // Esta pantalla es para actuar, y arrancar con todo lo completado a la vista
+  // es ruido: en un sector de 14 personas eran ~170 píldoras de las cuales casi
+  // ninguna pedía nada. "Todo" sigue a un clic.
+  //
+  // Se lee invertido para que la URL mande cuando viene explícita: sin el
+  // parámetro arranca filtrado, y `?dueOnly=false` muestra todo.
+  const dueOnly = searchParams.get("dueOnly") !== "false";
 
   // Estado local solo para selecciones efímeras y datos
   const [rows, setRows] = useState([]);
+  /** Gente con resultados cargados en períodos anteriores a su ingreso. */
+  const [alertasPreviasIngreso, setAlertasPreviasIngreso] = useState([]);
   const [loading, setLoading] = useState(false);
   const [empSelectedId, setEmpSelectedId] = useState(null);
   const [showEmpHints, setShowEmpHints] = useState(false);
-  const [tipoFiltro, setTipoFiltro] = useState("todos"); // Este podría ir a URL si se desea
+  // El tipo mostrado ya no es estado propio: sale de la pestaña activa. Un tab
+  // desconocido en la URL cae en objetivos.
+  const tipoFiltro = TIPO_POR_TAB[mainTab] ?? TIPO_POR_TAB.objetivos;
   const [groupBy, setGroupBy] = useState("empleado");
 
   // Areas maestras cargadas desde backend para el selector de directivos
@@ -373,6 +399,23 @@ export default function SeguimientoReferente() {
         flatRows.push(...feedbackItems);
         setRows(flatRows);
 
+        // El `ciclo` viene por empleado desde el dashboard. Se junta acá para
+        // mostrarlo una sola vez arriba, en vez de repetirlo en cada fila del Gantt.
+        const alertas = new Map();
+        for (const r of flatRows) {
+          const n = r?.ciclo?.evaluacionesPreviasIngreso || 0;
+          if (!n || !r.empleado?._id) continue;
+          alertas.set(String(r.empleado._id), {
+            id: String(r.empleado._id),
+            nombre: `${r.empleado.apellido || ""} ${r.empleado.nombre || ""}`.trim(),
+            ingreso: r.empleado.fechaIngreso
+              ? new Date(r.empleado.fechaIngreso).toLocaleDateString("es-AR")
+              : "—",
+            cantidad: n,
+          });
+        }
+        setAlertasPreviasIngreso([...alertas.values()].sort((a, b) => b.cantidad - a.cantidad));
+
       } catch (e) {
         console.error(e);
         toast.error("Error al cargar datos.");
@@ -486,25 +529,15 @@ export default function SeguimientoReferente() {
     return data;
   }, [rows, areaFiltro, sectorFiltro, empSelectedId]);
 
-  // items planos (ya con tipoFiltro y mainTab)
+  // Items planos de la pestaña activa. `flatItemsFromRow` ya descarta por tipo,
+  // pero además filtramos acá porque esa función siempre agrega los feedbacks.
   const flatItems = useMemo(() => {
     const out = [];
     for (const r of filteredRows) {
-      out.push(...flatItemsFromRow(r, tipoFiltro)); // Pass filtered type directly
+      out.push(...flatItemsFromRow(r, tipoFiltro));
     }
-
-    // Filtrado por Pestaña Principal
-    if (mainTab === "feedback") {
-      return out.filter(i => i._tipo === "feedback");
-    } else {
-      // Pestaña Objetivos: mostrar objetivos/aptitudes según sub-filtro
-      return out.filter(i => {
-        if (i._tipo === "feedback") return false;
-        if (tipoFiltro === "todos") return true;
-        return i._tipo === tipoFiltro;
-      });
-    }
-  }, [filteredRows, tipoFiltro, mainTab]);
+    return out.filter((i) => i._tipo === tipoFiltro);
+  }, [filteredRows, tipoFiltro]);
 
   // agrupación seleccionada + orden
   const grouped = useMemo(() => {
@@ -638,6 +671,35 @@ export default function SeguimientoReferente() {
           </Button>
         </div>
 
+        {/* Resultados cargados en períodos anteriores al ingreso.
+            No es un matiz de criterio: es un imposible, y el referente es quien
+            puede corregirlo. Va arriba de todo porque si no, nadie lo busca. */}
+        {!loading && alertasPreviasIngreso.length > 0 && (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 flex items-start gap-3">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-rose-600" />
+            <div className="text-sm text-rose-900">
+              <p className="font-bold">
+                {alertasPreviasIngreso.length === 1
+                  ? "1 colaborador tiene resultados cargados antes de su fecha de ingreso"
+                  : `${alertasPreviasIngreso.length} colaboradores tienen resultados cargados antes de su fecha de ingreso`}
+              </p>
+              <p className="text-xs opacity-80 mt-1">
+                Se evaluaron períodos en los que la persona todavía no estaba en la empresa.
+                Esos resultados cuentan para su nota.
+              </p>
+              <ul className="mt-2 space-y-0.5 text-xs">
+                {alertasPreviasIngreso.map((a) => (
+                  <li key={a.id}>
+                    <span className="font-bold">{a.nombre}</span>
+                    {" — "}ingresó el {a.ingreso}, {a.cantidad}{" "}
+                    {a.cantidad === 1 ? "resultado previo" : "resultados previos"}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
         {/* Loading Overlay */}
         {loading && (
           <div className="fixed inset-0 bg-white/50 backdrop-blur-sm z-50 flex items-center justify-center">
@@ -670,29 +732,28 @@ export default function SeguimientoReferente() {
               </div>
             </div>
 
-            {/* CENTRO: Toggle Objetivos / Feedback */}
+            {/* CENTRO: Toggle Objetivos / Competencias / Feedback */}
             <div className="flex-1 flex justify-center">
               <div className="inline-flex bg-slate-100/80 p-1 rounded-lg border border-slate-200/60 shadow-inner">
-                <button
-                  onClick={() => setMainTab("objetivos")}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all duration-200 ${mainTab === "objetivos"
-                    ? "bg-white text-blue-700 shadow-sm ring-1 ring-black/5"
-                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
-                    }`}
-                >
-                  <span className={mainTab === "objetivos" ? "text-blue-500" : "text-slate-400"}>🎯</span>
-                  Objetivos
-                </button>
-                <button
-                  onClick={() => setMainTab("feedback")}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all duration-200 ${mainTab === "feedback"
-                    ? "bg-white text-purple-700 shadow-sm ring-1 ring-black/5"
-                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
-                    }`}
-                >
-                  <span className={mainTab === "feedback" ? "text-purple-500" : "text-slate-400"}>💬</span>
-                  Feedback
-                </button>
+                {TABS_GANTT.map(({ id, label, icono, activo, iconoActivo }) => {
+                  const on = mainTab === id;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => setMainTab(id)}
+                      aria-pressed={on}
+                      title={`Ver ${label.toLowerCase()} en el cronograma`}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all duration-200 ${
+                        on
+                          ? `bg-white ${activo} shadow-sm ring-1 ring-black/5`
+                          : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
+                      }`}
+                    >
+                      <span className={on ? iconoActivo : "text-slate-400"}>{icono}</span>
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
             {/* DERECHA: Leyenda + Loading */}

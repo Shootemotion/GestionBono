@@ -3,6 +3,7 @@ import { Suspense, lazy, useState, useCallback } from 'react';
 import RequireAuth from '@/components/RequireAuth';
 import Navbar from '@/components/Navbar';
 import BonoBot from "@/components/BonoBot/BonoBot";
+// import ChatWidget from "@/components/Chat/ChatWidget"; // Chat interno oculto temporalmente
 import Footer from "@/components/Footer";
 import { getToken } from '@/lib/api';
 import { Toaster } from "@/components/ui/sonner";
@@ -21,6 +22,7 @@ const Login = lazy(() => import('@/pages/Login'));
 const Forbidden = lazy(() => import('@/pages/Forbidden'));
 const DashboardDesempeno = lazy(() => import('@/pages/SeguimientoReferente'));
 const MiDesempeno = lazy(() => import('@/pages/MiDesempeno'));
+const MiDesempenoBeta = lazy(() => import('@/pages/MiDesempenoBeta'));
 const Home = lazy(() => import('@/pages/Home'));
 const Nomina = lazy(() => import('@/pages/Nomina'));
 const GestionPlantillas = lazy(() => import('@/pages/GestionPlantillas'));
@@ -38,6 +40,9 @@ const Sistemas = lazy(() => import('@/pages/Sistemas'));
 const GestionISO = lazy(() => import('@/pages/GestionISO'));
 const AnalisisISO = lazy(() => import('@/pages/AnalisisISO'));
 const GestionMejoras = lazy(() => import('@/pages/GestionMejoras'));
+const ValidacionCalculos = lazy(() => import('@/pages/ValidacionCalculos'));
+const SimuladorMotor = lazy(() => import('@/pages/SimuladorMotor'));
+const PesosAsignados = lazy(() => import('@/pages/PesosAsignados'));
 
 
 function App() {
@@ -172,6 +177,15 @@ function App() {
                 </RequireAuth>
               }
             />
+            {/* Versión BETA en paralelo (no reemplaza la actual) */}
+            <Route
+              path="/mi-desempeno-beta"
+              element={
+                <RequireAuth>
+                  <MiDesempenoBeta />
+                </RequireAuth>
+              }
+            />
             {/* Página dedicada de evaluación (reemplaza el modal) */}
             <Route
               path="/evaluacion/:plantillaId/:periodo/:empleadoId?"
@@ -278,6 +292,31 @@ function App() {
               }
             />
 
+            <Route
+              path="/validacion-calculos"
+              element={
+                <RequireAuth allow={['superadmin']}>
+                  <ValidacionCalculos />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/simulador-motor"
+              element={
+                <RequireAuth allow={['superadmin', 'directivo', 'rrhh']} allowReferente={true}>
+                  <SimuladorMotor />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/pesos-asignados"
+              element={
+                <RequireAuth allow={['superadmin', 'directivo', 'rrhh']} allowReferente={true}>
+                  <PesosAsignados />
+                </RequireAuth>
+              }
+            />
+
             <Route path="/complete-invite" element={<CompleteInvite />} />
 
             <Route
@@ -334,6 +373,7 @@ function App() {
       </main>
       {showNavbar && <Footer />}
       <BonoBot />
+      {/* {showNavbar && <ChatWidget />} */}{/* Chat interno oculto temporalmente */}
       <Toaster richColors position="top-right" />
     </div>
   );

@@ -42,6 +42,7 @@ import {
 } from "recharts";
 
 // Helpers
+import SelectorAnioFiscal from "@/components/SelectorAnioFiscal";
 import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
 const nf = new Intl.NumberFormat("es-AR");
 const money = (n) =>
@@ -125,20 +126,15 @@ export default function SeguimientoEjecutivo() {
               </p>
             </div>
 
-            <div className="flex items-center gap-2 bg-white/10 rounded-2xl p-1.5 backdrop-blur-md shadow-inner border border-white/5">
-              <button
-                onClick={() => setAnio(anio - 1)}
-                className="p-3 hover:bg-white/10 rounded-xl transition-colors text-slate-300 hover:text-white"
-              >
-                <ChevronDown className="rotate-90 w-5 h-5" />
-              </button>
-              <span className="text-2xl font-bold font-mono px-4 text-white tracking-widest">{anio}</span>
-              <button
-                onClick={() => setAnio(anio + 1)}
-                className="p-3 hover:bg-white/10 rounded-xl transition-colors text-slate-300 hover:text-white"
-              >
-                <ChevronDown className="-rotate-90 w-5 h-5" />
-              </button>
+            <div className="flex items-center bg-white/10 rounded-2xl p-1.5 backdrop-blur-md shadow-inner border border-white/5">
+              <SelectorAnioFiscal
+                value={anio}
+                onChange={setAnio}
+                variant="stepper"
+                size="lg"
+                tone="dark"
+                showCaption
+              />
             </div>
           </div>
 

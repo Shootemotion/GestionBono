@@ -1,5 +1,14 @@
 import { useMemo, useState } from "react";
-import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
+import {
+  getCurrentFiscalYear,
+  parseFiscalPeriod,
+  fiscalPeriodStatus,
+} from "@/lib/fiscalYear";
+import { mesesEnCiclo, esPeriodoAnteriorAlIngreso } from "../../../backend/src/lib/tiempoEfectivo.js";
+
+// Cuántas personas se muestran por celda antes de plegar el resto.
+// Cuatro entra cómodo en los 120 px de ancho de columna sin apilar de más.
+const MAX_POR_CELDA = 4;
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
@@ -67,22 +76,51 @@ const STATUS_CONFIG = {
     color: "text-emerald-800 bg-emerald-100 border-emerald-300",
     pill: "bg-emerald-600",
     order: 6, // Same as completado?
+  },
+  // Período anterior al ingreso de la persona, sin cargar. No es un pendiente:
+  // no corresponde. Gris y al final, para que no compita con lo que sí hay que
+  // hacer.
+  no_aplica: {
+    id: "no_aplica",
+    label: "No aplica (previo al ingreso)",
+    color: "text-slate-400 bg-slate-50 border-slate-200",
+    pill: "bg-slate-300",
+    order: 9,
+  },
+  // Período anterior al ingreso PERO con un resultado cargado. Es un error de
+  // carga: se evaluó un mes en el que la persona no estaba.
+  fuera_de_rango: {
+    id: "fuera_de_rango",
+    label: "Cargado antes del ingreso",
+    color: "text-rose-700 bg-rose-100 border-rose-300",
+    pill: "bg-rose-600",
+    order: 0,
   }
 };
 
-function parsePeriodoToDate(periodoStr) {
-  if (!periodoStr) return null;
-  const mMatch = periodoStr.match(/^(\d{4})M(\d{1,2})$/i);
-  if (mMatch) return new Date(Number(mMatch[1]), Number(mMatch[2]) - 1, 28);
-  const qMatch = periodoStr.match(/^(\d{4})Q([1-4])$/i);
-  if (qMatch) return new Date(Number(qMatch[1]), (Number(qMatch[2]) - 1) * 3 + 2, 28);
-  const yMatch = periodoStr.match(/^(\d{4})$/);
-  if (yMatch) return new Date(Number(yMatch[1]), 11, 31);
-  const d = new Date(periodoStr);
-  return Number.isNaN(d.getTime()) ? null : d;
+/**
+ * Estado de un hito que cae antes del ingreso de la persona.
+ *
+ * Son dos cosas distintas y conviene no mezclarlas:
+ *
+ *   · Sin dato  → "no_aplica". Hoy caía en "vencido" y se pintaba ROJO: el
+ *     Gantt le reclamaba al referente una carga de un mes en el que la persona
+ *     ni siquiera estaba en la empresa.
+ *   · Con dato  → "fuera_de_rango". Hoy caía en "completado" y se pintaba
+ *     VERDE, que es peor: un valor imposible pasaba por trabajo bien hecho.
+ *
+ * Devuelve null si el período sí le corresponde.
+ */
+function estadoPorIngreso(hito, emp, anioPlantilla) {
+  if (!emp?.fechaIngreso || anioPlantilla === undefined || anioPlantilla === null) return null;
+  const meses = mesesEnCiclo(emp.fechaIngreso, Number(anioPlantilla));
+  if (!esPeriodoAnteriorAlIngreso(hito?.periodo, meses)) return null;
+
+  const conDato = hito?.actual !== null && hito?.actual !== undefined;
+  return conDato ? "fuera_de_rango" : "no_aplica";
 }
 
-function getHybridStatus(hito, fechaRef, itemType) {
+function getHybridStatus(hito, fechaRef, itemType, rango) {
   // Lógica específica para Feedback
   if (itemType === "feedback") {
     if (hito?.estado === "SENT") return "enviado_empleado";
@@ -110,7 +148,17 @@ function getHybridStatus(hito, fechaRef, itemType) {
     return "completado";
   }
 
-  // 3. Si no tiene fecha ref, asumimos futuro
+  // 3. Calendario fiscal: abierto desde que arranca el período hasta el plazo
+  //    de carga (día 10 del mes siguiente al cierre). Antes se comparaba contra
+  //    la fecha de INICIO, así que un trimestre se daba por vencido el día
+  //    después de abrirse.
+  if (rango) {
+    const estado = fiscalPeriodStatus(rango);
+    if (estado === "por_vencer" && hito?.estado === "MANAGER_DRAFT") return "borrador";
+    return estado;
+  }
+
+  // 4. Sin período reconocible: ventana de 7 días sobre la fecha disponible
   if (!fechaRef) return "futuro";
 
   const hoy = new Date();
@@ -118,20 +166,11 @@ function getHybridStatus(hito, fechaRef, itemType) {
   const ref = new Date(fechaRef);
   ref.setHours(23, 59, 59, 999);
 
-  const diffMs = ref - hoy;
-  const diffDays = Math.ceil(diffMs / MS_PER_DAY);
+  const diffDays = Math.ceil((ref - hoy) / MS_PER_DAY);
 
-  // 4. Vencido
   if (diffDays < 0) return "vencido";
-
-  // 5. Por vencer (próximos 7 días)
   if (diffDays <= 7) return "por_vencer";
-
-  // 6. Borrador (si existe el hito pero no está completo)
-  // Ignoramos MANAGER_DRAFT como estado de flujo, lo tratamos como borrador/en curso
   if (hito?.estado === "MANAGER_DRAFT") return "borrador";
-
-  // 7. Futuro
   return "futuro";
 }
 
@@ -164,6 +203,17 @@ export default function GanttView({
   const currentYear = anio || getCurrentFiscalYear();
   const columns = useMemo(() => buildColumns(currentYear), [currentYear]);
 
+  // Filas desplegadas a mano. El resto muestra las primeras personas y esconde
+  // el resto detrás de un "+N más".
+  const [filasAbiertas, setFilasAbiertas] = useState(() => new Set());
+  const alternarFila = (clave) =>
+    setFilasAbiertas((prev) => {
+      const next = new Set(prev);
+      if (next.has(clave)) next.delete(clave);
+      else next.add(clave);
+      return next;
+    });
+
   const processedRows = useMemo(() => {
     const groupsMap = new Map();
     const seenIds = new Set();
@@ -185,73 +235,34 @@ export default function GanttView({
           if (seenIds.has(uniqueKey)) return;
           seenIds.add(uniqueKey);
 
-          let fechaRef;
-          let periodKey = hito.periodo;
+          // El `periodo` del hito es el dato inequívoco (2026Q1, 2026M09…);
+          // `hito.fecha` es solo el INICIO del período, no su vencimiento, así
+          // que no sirve ni para ubicar la columna ni para decidir el estado.
+          const rango = parseFiscalPeriod(hito.periodo, currentYear);
 
-          // Special handling for Feedback items (Shift to next month)
-          if (item._tipo === "feedback") {
-            let y = 0;
-            let q = 0;
-            let isFinal = false;
+          let fechaRef = rango?.vencimiento ?? null;
+          let periodKey = rango?.columna ?? null;
 
-            const qMatch = hito.periodo.match(/^(\d{4})Q([1-4])$/i);
-            const fMatch = hito.periodo.match(/^(\d{4})FINAL$/i);
-            const simpleQMatch = hito.periodo.match(/^Q([1-4])$/i);
-            const simpleFMatch = hito.periodo.match(/^FINAL$/i);
-
-            if (qMatch) {
-              y = parseInt(qMatch[1]);
-              q = parseInt(qMatch[2]);
-            } else if (fMatch) {
-              y = parseInt(fMatch[1]);
-              isFinal = true;
-            } else if (simpleQMatch) {
-              y = currentYear;
-              q = parseInt(simpleQMatch[1]);
-            } else if (simpleFMatch) {
-              y = currentYear;
-              isFinal = true;
-            }
-
-            if (q > 0) {
-              // Q1 (Nov) -> Dec of SAME year (y)
-              if (q === 1) {
-                fechaRef = new Date(y, 11, 10); // Dec 10, Year y
-                periodKey = `${y}M12`;
-              } else if (q === 2) {
-                // Q2 (Feb) -> Mar of NEXT year (y+1)
-                fechaRef = new Date(y + 1, 2, 10); // Mar 10
-                periodKey = `${y + 1}M03`;
-              } else if (q === 3) {
-                // Q3 (May) -> Jun of NEXT year (y+1)
-                fechaRef = new Date(y + 1, 5, 10); // Jun 10
-                periodKey = `${y + 1}M06`;
-              }
-            } else if (isFinal) {
-              // Final (Aug) -> Sep of NEXT year (y+1)
-              fechaRef = new Date(y + 1, 8, 10); // Sep 10
-              periodKey = `${y + 1}M09`;
+          if (!periodKey) {
+            // Período no reconocido: caemos a la fecha cruda para no perder el hito.
+            const d = hito.fecha ? new Date(hito.fecha) : null;
+            if (d && !Number.isNaN(d.getTime())) {
+              fechaRef = fechaRef ?? d;
+              periodKey = `${d.getUTCFullYear()}M${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+            } else {
+              periodKey = hito.periodo;
             }
           }
 
-          if (!fechaRef) {
-            fechaRef = hito.fecha
-              ? new Date(hito.fecha)
-              : parsePeriodoToDate(hito.periodo);
-          }
+          // Antes que nada: ¿este período es anterior a su ingreso? Si lo es,
+          // ni "vencido" ni "completado" dicen la verdad.
+          const statusKey =
+            estadoPorIngreso(hito, emp, item.year ?? item.anio ?? currentYear)
+            ?? getHybridStatus(hito, fechaRef, item._tipo, rango);
 
-          if (!periodKey || (item._tipo !== "feedback" && hito.fecha)) {
-            if (hito.fecha) {
-              const d = new Date(hito.fecha);
-              const y = d.getUTCFullYear();
-              const m = d.getUTCMonth() + 1;
-              periodKey = `${y}M${String(m).padStart(2, "0")}`;
-            }
-          }
-
-          const statusKey = getHybridStatus(hito, fechaRef, item._tipo);
-
-          if (dueOnly && statusKey !== "vencido" && statusKey !== "por_vencer") return;
+          // El filtro de "pendientes" muestra también los cargados fuera de rango:
+          // son los que de verdad hay que ir a corregir.
+          if (dueOnly && !["vencido", "por_vencer", "fuera_de_rango"].includes(statusKey)) return;
 
           // Determine group key based on ganttGrouping
           let groupKey;
@@ -310,7 +321,7 @@ export default function GanttView({
     });
 
     return rows;
-  }, [grouped, selectedEmpleadoId, dueOnly, ganttGrouping]);
+  }, [grouped, selectedEmpleadoId, dueOnly, ganttGrouping, currentYear]);
 
   const [hoverData, setHoverData] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
@@ -383,12 +394,19 @@ export default function GanttView({
             const statusConfig =
               STATUS_CONFIG[row.statusKey] || STATUS_CONFIG.pendiente;
 
+            const claveFila = row.key ?? index;
+            const filaAbierta = filasAbiertas.has(claveFila);
+
             let maxItemsInCell = 0;
             Object.values(row.itemsByPeriod).forEach((arr) => {
               const uniqueEmps = new Set(arr.map((x) => x.empleado._id));
               maxItemsInCell = Math.max(maxItemsInCell, uniqueEmps.size);
             });
-            const rowHeight = Math.max(50, maxItemsInCell * 24 + 16);
+            // Plegada, la fila mide lo que ocupan las visibles más el "+N".
+            const visiblesEnFila = filaAbierta
+              ? maxItemsInCell
+              : Math.min(maxItemsInCell, MAX_POR_CELDA) + (maxItemsInCell > MAX_POR_CELDA ? 1 : 0);
+            const rowHeight = Math.max(50, visiblesEnFila * 24 + 16);
 
             // Visual Grouping Logic (Rowspan simulation)
             const prevRow = index > 0 ? processedRows[index - 1] : null;
@@ -504,13 +522,19 @@ export default function GanttView({
                       empsInCell.get(ri.empleado._id).items.push(ri);
                     });
                     const cellEmployees = Array.from(empsInCell.values());
+                    // Se muestran las primeras y el resto detrás de un "+N".
+                    // Un sector de 14 personas dibujaba 14 píldoras en cada una
+                    // de las 12 columnas —168 para mostrar 14 nombres— y la fila
+                    // medía 352 px de alto.
+                    const visibles = filaAbierta ? cellEmployees : cellEmployees.slice(0, MAX_POR_CELDA);
+                    const ocultos = cellEmployees.length - visibles.length;
 
                     return (
                       <div
                         key={col.key}
                         className="w-[120px] flex-none border-l border-slate-100 p-1 flex flex-col gap-1"
                       >
-                        {cellEmployees.map((cellEmp, idx) => (
+                        {visibles.map((cellEmp, idx) => (
                           <div
                             key={idx}
                             className={`flex items-center gap-1.5 px-1.5 py-1 rounded border shadow-sm cursor-pointer bg-white hover:bg-slate-50 transition-all ${statusConfig.color}`}
@@ -549,6 +573,16 @@ export default function GanttView({
                             )}
                           </div>
                         ))}
+
+                        {ocultos > 0 && (
+                          <button
+                            onClick={() => alternarFila(row.key ?? index)}
+                            className="px-1.5 py-1 rounded border border-dashed border-slate-300 bg-slate-50 text-[10px] font-bold text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+                            title={`Ver las ${cellEmployees.length} personas de esta fila`}
+                          >
+                            +{ocultos} más
+                          </button>
+                        )}
                       </div>
                     );
                   })}
