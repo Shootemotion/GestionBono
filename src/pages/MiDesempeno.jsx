@@ -1,4 +1,5 @@
 import { useMemo, useRef } from "react";
+import { Link } from "react-router-dom";
 
 
 import { useTour } from "@/hooks/useTour";
@@ -67,7 +68,9 @@ import {
   Zap,
   CircleCheck,
   CircleAlert,
-  Cpu
+  Cpu,
+  ArrowRight,
+  ListTree,
 } from "lucide-react";
 import { ReporteFinal } from "@/components/ReporteFinal";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine, Legend, AreaChart, Area } from "recharts";
@@ -85,7 +88,10 @@ import {
 
 import { FeedbackStatusPanel } from "./MiDesempeno/components/FeedbackStatusPanel";
 import { DetailView } from "./MiDesempeno/components/DetailView";
-import { useDesempenoData } from "./MiDesempeno/hooks/useDesempenoData";
+import { ResumenCalculo } from "./MiDesempeno/components/ResumenCalculo";
+import { useDesempenoData, ID_RESUMEN } from "./MiDesempeno/hooks/useDesempenoData";
+import SelectorAnioFiscal from "@/components/SelectorAnioFiscal";
+import { fiscalYearLabel } from "@/lib/fiscalYear";
 
 // === UI helpers ===
 const StatusBadge = ({ status }) => {
@@ -148,6 +154,13 @@ export default function MiDesempeno() {
   const sectionFeedbackRef = useRef(null);
   const sectionDetailsRef = useRef(null);
   const sectionValidationRef = useRef(null);
+  // Lleva al resumen de composición, en el panel de detalle de abajo, que es
+  // donde hay ancho para leerlo. En la tarjeta chica no entra.
+  const irAlResumen = () => {
+    setActiveTab("obj");
+    setSelectedItemId(ID_RESUMEN);
+    sectionDetailsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   const tourSteps = useMemo(() => [
     { element: '#tour-kpi-summary', popover: { title: 'Resumen de Resultados', description: 'Aquí podés ver rápidamente tu puntaje general, desglosado por Objetivos (70%) y Competencias (30%).' } },
@@ -226,11 +239,11 @@ export default function MiDesempeno() {
   return (
     <div className="min-h-screen bg-slate-50 pb-12">
       {/* Header Negro */}
-      <div className="bg-slate-900 text-white pt-12 pb-24 px-4 md:px-8 relative overflow-hidden">
+      <div className="bg-slate-900 text-white pt-12 pb-24 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-96 h-96 bg-blue-600 rounded-full blur-3xl opacity-20 translate-x-1/2 -translate-y-1/2"></div>
         <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-600 rounded-full blur-3xl opacity-20 -translate-x-1/2 translate-y-1/2"></div>
 
-        <div className="max-w-[80%] mx-auto relative z-10">
+        <div className="max-w-[1600px] mx-auto px-4 md:px-6 relative z-10">
           <div className="flex flex-col lg:flex-row justify-between items-end gap-6 mb-6">
             <div className="flex flex-col md:flex-row items-start md:items-center gap-5">
               {/* Avatar with Gradient Ring */}
@@ -257,6 +270,15 @@ export default function MiDesempeno() {
                   <Button variant="outline" size="sm" onClick={startTour} className="gap-2 bg-slate-800 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700 rounded-full h-8 px-4 text-xs">
                     <HelpCircle className="w-3.5 h-3.5" /> Tutorial
                   </Button>
+                  {(user?.isSuper || user?.isRRHH) && (
+                    <Link
+                      to="/mi-desempeno-beta"
+                      className="inline-flex items-center gap-1.5 rounded-full h-8 px-4 text-xs font-medium bg-indigo-500/20 border border-indigo-400/40 text-indigo-200 hover:bg-indigo-500/30 hover:text-white transition-colors"
+                      title="Previsualizar el nuevo diseño (solo visible para admin/RRHH)"
+                    >
+                      <Zap className="w-3.5 h-3.5" /> Ver versión Beta
+                    </Link>
+                  )}
                 </div>
                 <p className="text-slate-400 text-lg">Seguimiento de evaluaciones y feedback continuo</p>
               </div>
@@ -280,25 +302,15 @@ export default function MiDesempeno() {
               )}
 
               {/* Year Selector */}
-              <div className="flex items-center justify-end gap-3 text-white mb-2">
-                <button
-                  onClick={() => setSelectedYear(y => y - 1)}
-                  className="p-1 hover:bg-white/10 rounded-full transition-colors"
-                  title="Año anterior"
-                >
-                  <ChevronLeft className="w-6 h-6" />
-                </button>
-                <div className="flex flex-col items-center">
-                  <div className="text-3xl font-black leading-none">{selectedYear}</div>
-                  <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Año Fiscal</div>
-                </div>
-                <button
-                  onClick={() => setSelectedYear(y => y + 1)}
-                  className="p-1 hover:bg-white/10 rounded-full transition-colors"
-                  title="Siguiente año"
-                >
-                  <ChevronRight className="w-6 h-6" />
-                </button>
+              <div className="flex items-center justify-end mb-2">
+                <SelectorAnioFiscal
+                  value={selectedYear}
+                  onChange={setSelectedYear}
+                  variant="stepper"
+                  size="lg"
+                  tone="dark"
+                  showCaption
+                />
               </div>
 
               {/* Glass Metrics Cards */}
@@ -337,7 +349,9 @@ export default function MiDesempeno() {
         </div>
       </div>
 
-      <div className="max-w-[80%] mx-auto px-4 md:px-8 -mt-16 relative z-20">
+      {/* Mismo ancho que el header de arriba: si se cambia uno, cambiar el otro
+          o el contenido queda desalineado con el encabezado. */}
+      <div className="max-w-[1600px] mx-auto px-4 md:px-6 -mt-16 relative z-20">
         {!loading && (!data || (!data.objetivos?.length && !data.aptitudes?.length)) ? (
           <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-12 text-center flex flex-col items-center justify-center min-h-[400px]">
             <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-6">
@@ -345,11 +359,11 @@ export default function MiDesempeno() {
             </div>
             <h2 className="text-xl font-bold text-slate-800 mb-2">No hay Evaluaciones generadas para este Periodo</h2>
             <p className="text-slate-500 max-w-md mx-auto">
-              No se encontraron objetivos ni competencias asignadas para el año fiscal seleccionado ({selectedYear}).
+              No se encontraron objetivos ni competencias asignadas para el año fiscal seleccionado ({fiscalYearLabel(selectedYear)}).
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr_300px] gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-[200px_1fr_260px] gap-6">
 
             {/* LEFT SIDEBAR: Navigation Only */}
             <div className="hidden lg:block space-y-2 sticky top-24 h-fit">
@@ -545,6 +559,53 @@ export default function MiDesempeno() {
 
                           return (
                             <>
+                              {/* Ciclo incompleto: por qué sus metas piden menos.
+                                  Sin esto, alguien que entró en marzo ve una meta
+                                  de 7 períodos donde su compañero tiene 12 y no
+                                  sabe si es un error. */}
+                              {/* Los resultados cargados antes del ingreso NO se le
+                                  muestran a la persona: es un problema de calidad de
+                                  dato que resuelven RRHH y su referente, y decírselo
+                                  acá solo le haría dudar de su nota sin poder hacer
+                                  nada. El aviso vive en Seguimiento y en Cierre de
+                                  Evaluaciones, que es donde se corrige. */}
+                              {data?.ciclo?.incompleto && (
+                                <div className={`col-span-full rounded-xl border px-4 py-3 text-sm flex items-start gap-3 ${data.ciclo.parcial
+                                  ? "bg-slate-50 border-slate-200 text-slate-700"
+                                  : "bg-sky-50 border-sky-200 text-sky-900"}`}>
+                                  <Calendar className="w-4 h-4 mt-0.5 shrink-0 opacity-70" />
+                                  <div>
+                                    <p className="font-bold">
+                                      {data.ciclo.parcial
+                                        ? `Ciclo parcial: trabajaste ${data.ciclo.meses} de los 12 meses`
+                                        : `Ingresaste durante el ciclo: ${data.ciclo.meses} de 12 meses`}
+                                    </p>
+                                    <p className="text-xs opacity-80 mt-0.5 space-y-0.5">
+                                      {/* Lo primero que se pregunta quien ve menos
+                                          trimestres que su compañero. */}
+                                      {data.ciclo.periodosAplicables?.length > 0 && (
+                                        <span className="block">
+                                          Te corresponden {data.ciclo.periodosAplicables.length} de 4 períodos
+                                          {" "}({data.ciclo.periodosAplicables.join(", ")}): los anteriores a tu ingreso no se evalúan.
+                                        </span>
+                                      )}
+                                      {data.ciclo.prorrateado && data.ciclo.metasAjustadas > 0 && (
+                                        <span className="block">
+                                          Se ajustaron automáticamente {data.ciclo.metasAjustadas}{" "}
+                                          {data.ciclo.metasAjustadas === 1 ? "meta" : "metas"} para que pidan lo proporcional al tiempo que estuviste.
+                                        </span>
+                                      )}
+                                      {data.ciclo.parcial && (
+                                        <span className="block">
+                                          Tu evaluación es válida, pero al haber estado menos de 6 meses tu nota no se compara
+                                          con la de quienes hicieron el año completo.
+                                        </span>
+                                      )}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+
                               {/* Objectives Tile (Modern Violet) */}
                               <div className="relative bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-col justify-between overflow-visible group hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
                                 {/* Custom Tooltip */}
@@ -580,25 +641,45 @@ export default function MiDesempeno() {
                                         <span className="flex items-center gap-1 relative group/tip">
                                           Esperado {selectedFeedback.periodo}: <span className="text-slate-600">{Number(periodResults.expectedScores?.obj ?? 0).toFixed(1)}%</span>
                                           <HelpCircle className="w-3 h-3 text-slate-300 hover:text-slate-400 cursor-help" />
-                                          {/* Custom tooltip */}
-                                          <div className="absolute bottom-full left-0 mb-2 w-56 bg-slate-800 text-white text-[10px] rounded-lg p-2.5 shadow-xl opacity-0 pointer-events-none group-hover/tip:opacity-100 transition-opacity z-50 leading-relaxed">
-                                            <p className="font-bold text-slate-200 mb-1">Composición de Objetivos</p>
-                                            <p>📌 {maintenanceCount} de Mantenimiento → exigen 100% todo el año</p>
-                                            {cumulativeCount > 0 && <p>📈 {cumulativeCount} Acumulativo → crece con el avance anual</p>}
-                                            <p className="text-slate-400 mt-1">Total: {totalObjs} objetivos activos</p>
+                                          <div className="absolute bottom-full left-0 mb-2 w-72 bg-slate-800 text-white text-[10px] rounded-lg p-2.5 shadow-xl opacity-0 pointer-events-none group-hover/tip:opacity-100 transition-opacity z-50 leading-relaxed">
+                                            <p className="font-bold text-slate-200 mb-1">Qué es este número</p>
+                                            <p className="text-slate-300">
+                                              No es una nota que se te exige: es cuánto de tu año
+                                              ya se puede medir a {selectedFeedback.periodo}.
+                                            </p>
+                                            <p className="mt-1.5 font-bold text-slate-200">Tu composición</p>
+                                            <p>📌 {maintenanceCount} de mantenimiento → se sostienen todo el año, cuentan con todo su peso desde el día uno</p>
+                                            {cumulativeCount > 0 && <p>📈 {cumulativeCount} acumulativo{cumulativeCount === 1 ? "" : "s"} → se van sumando, hoy cuentan la parte del año transcurrida</p>}
+                                            <p className="text-slate-400 mt-1.5">
+                                              Por eso dos personas pueden ver escalas distintas sin
+                                              que a una se le exija más. Abrí “Cómo se llega a
+                                              estos puntos” para ver el detalle.
+                                            </p>
                                             <div className="absolute top-full left-4 w-2 h-2 bg-slate-800 rotate-45 -translate-y-1"></div>
                                           </div>
                                         </span>
                                       </div>
                                     );
                                   })()}
-                                  {/* Progress Bar: Score relative to Max */}
+                                  {/* Barra sobre la MISMA escala que muestra la etiqueta.
+                                      En ciclos ya cerrados sigue usando maxScores, igual que antes. */}
                                   <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                                     <div
                                       className="h-full bg-violet-500 rounded-full transition-all duration-1000 ease-out"
-                                      style={{ width: `${Math.min(((periodResults.scores.obj || 0) / (periodResults.maxScores?.obj || 1)) * 100, 100)}%` }}
+                                      style={{ width: `${Math.min(((periodResults.scores.obj || 0) / (periodResults.escala?.techoObj || periodResults.maxScores?.obj || 1)) * 100, 100)}%` }}
                                     ></div>
                                   </div>
+
+                                  {periodResults.desglose?.length > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={irAlResumen}
+                                      className="mt-2.5 inline-flex items-center gap-1 text-[10px] font-semibold text-violet-600 hover:text-violet-800 hover:underline transition-colors"
+                                    >
+                                      Cómo se llega a estos {Number(periodResults.scores.obj || 0).toFixed(1)} puntos
+                                      <ArrowRight className="w-3 h-3" />
+                                    </button>
+                                  )}
                                 </div>
                               </div>
 
@@ -665,7 +746,11 @@ export default function MiDesempeno() {
                                     </div>
                                     <div>
                                       <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wide">Global</h3>
-                                      <span className="text-[10px] text-slate-500 font-medium">Final</span>
+                                      {/* De dónde sale el número: si el feedback ya está,
+                                          es SU nota guardada, no un cálculo en vivo. */}
+                                      <span className="text-[10px] text-slate-500 font-medium">
+                                        {periodResults.notaDelFeedback ? "Nota de tu feedback" : "Avance a hoy"}
+                                      </span>
                                     </div>
                                   </div>
                                   <div className="text-right">
@@ -761,6 +846,23 @@ export default function MiDesempeno() {
 
                       {/* LIST ITEMS (Refined V3) */}
                       <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-zinc-50/50">
+                        {activeTab === 'obj' && periodResults.desglose?.length > 0 && (
+                          <button
+                            onClick={() => setSelectedItemId(ID_RESUMEN)}
+                            className={`w-full text-left rounded-lg border p-3 transition-all ${selectedItemId === ID_RESUMEN
+                              ? 'bg-zinc-800 border-zinc-800 shadow-md ring-1 ring-zinc-800 relative z-10'
+                              : 'bg-white border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-sm'
+                              }`}
+                          >
+                            <div className={`flex items-center gap-2 text-sm font-semibold ${selectedItemId === ID_RESUMEN ? 'text-white' : 'text-zinc-700'}`}>
+                              <ListTree className="w-4 h-4 shrink-0" />
+                              Resumen del cálculo
+                            </div>
+                            <div className={`mt-0.5 text-[11px] ${selectedItemId === ID_RESUMEN ? 'text-zinc-300' : 'text-zinc-400'}`}>
+                              Cómo se llega a los {Number(periodResults.scores.obj || 0).toFixed(1)} puntos
+                            </div>
+                          </button>
+                        )}
                         {activeTab === 'obj' ? (
                           periodResults.objetivos.length > 0 ? (
                             periodResults.objetivos.map(obj => (
@@ -831,18 +933,30 @@ export default function MiDesempeno() {
 
                     {/* RIGHT COLUMN: DETAILS */}
                     <div className="w-full lg:w-2/3 bg-white rounded-2xl border border-zinc-200 shadow-sm p-6 overflow-y-auto">
-                      
-                      <DetailView
-                        item={activeTab === 'obj'
-                          ? periodResults.objetivos.find(o => o._id === selectedItemId)
-                          : periodResults.aptitudes.find(a => a._id === selectedItemId)}
-                        activeTab={activeTab}
-                        viewPeriod={viewPeriod}
-                        selectedFeedback={selectedFeedback}
-                        feedbacks={feedbacks}
-                        getPeriodMonth={getPeriodMonth}
-                        setViewPeriod={setViewPeriod}
-                      />
+
+                      {selectedItemId === ID_RESUMEN ? (
+                        <ResumenCalculo
+                          desglose={periodResults.desglose}
+                          escala={periodResults.escala}
+                          periodo={selectedFeedback.periodo}
+                          scoreObj={periodResults.scores.obj}
+                          scoreComp={periodResults.scores.comp}
+                          scoreGlobal={periodResults.scores.global}
+                          onVerObjetivo={(id) => setSelectedItemId(id)}
+                        />
+                      ) : (
+                        <DetailView
+                          item={activeTab === 'obj'
+                            ? periodResults.objetivos.find(o => o._id === selectedItemId)
+                            : periodResults.aptitudes.find(a => a._id === selectedItemId)}
+                          activeTab={activeTab}
+                          viewPeriod={viewPeriod}
+                          selectedFeedback={selectedFeedback}
+                          feedbacks={feedbacks}
+                          getPeriodMonth={getPeriodMonth}
+                          setViewPeriod={setViewPeriod}
+                        />
+                      )}
 
                     </div>
                   </div>

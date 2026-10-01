@@ -17,6 +17,7 @@ import {
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/context/AuthContext";
+import useCan from "@/hooks/useCan";
 import { api, API_ORIGIN } from "@/lib/api";
 import { evaluarCumple, calcularResultadoGlobal } from "@/lib/evaluarCumple";
 import { dashEmpleado } from "@/lib/dashboard";
@@ -523,6 +524,17 @@ export default function EvaluacionFlujo() {
   const esReferente = Boolean((Array.isArray(user?.referenteAreas) && user.referenteAreas.length > 0) || (Array.isArray(user?.referenteSectors) && user.referenteSectors.length > 0));
   const esDirector = user?.rol === "directivo" || user?.isRRHH === true;
   const esSuperAdmin = user?.rol === "superadmin";
+
+  // Quién ve el "Modo Admin".
+  //
+  // Antes era `esDirector`, clavado a rol === "directivo" || isRRHH: el
+  // superadmin quedaba afuera y no había forma de arreglarlo desde Roles.
+  //
+  // Ahora depende de una capacidad, que es lo que el Modo Admin realmente
+  // habilita: saltear los límites de fecha y BORRAR evaluaciones y feedbacks.
+  // `useCan` ya da por válido al superadmin y al directivo; al resto se les
+  // concede o se les quita agregando `objetivos:eliminar` desde Roles.
+  const { ok: puedeModoAdmin } = useCan("objetivos:eliminar");
   const esVisor = user?.rol === "visor";
   const puedeVer = esReferente || esDirector || esSuperAdmin || esVisor;
 
@@ -1235,8 +1247,8 @@ export default function EvaluacionFlujo() {
               {/* HELP GUIDE */}
               <ReferenceRulesDialog />
 
-              {/* TESTING MODE TOGGLE (Only Directors) */}
-              {esDirector && (
+              {/* TESTING MODE TOGGLE — se concede con `objetivos:eliminar` desde Roles */}
+              {puedeModoAdmin && (
                 <div className="flex items-center gap-2">
                   <label className={`flex items-center gap-2 cursor-pointer border px-3 py-1.5 rounded-lg transition-colors ${isTestingMode
                     ? "bg-white border-indigo-200 shadow-sm"
@@ -1270,18 +1282,31 @@ export default function EvaluacionFlujo() {
                 : "border-slate-200"
                 }`}>
                 {/* Objectives (Pale Blue) */}
-                <div className={`flex flex-col justify-center px-6 py-2 ${isTestingMode ? "bg-indigo-50/50" : "bg-blue-50/50"}`}>
+                {/* El número grande es el PUNTAJE del bloque (lo mismo que suma la
+                    columna Pond. de la lista y lo que muestra el simulador). Abajo,
+                    en chico, cuánto de ese puntaje entra al global tras pesarlo 70/30.
+                    Antes el número grande era el aporte, y se leía como si fuera el
+                    puntaje: un 70 de objetivos aparecía como 49. */}
+                <div className={`flex flex-col justify-center px-6 py-2 ${isTestingMode ? "bg-indigo-50/50" : "bg-blue-50/50"}`}
+                  title="Puntaje de objetivos. Pesa 70% en el global.">
                   <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 text-right">Obj.</div>
                   <div className={`text-sm font-bold leading-none text-right ${isTestingMode ? "text-indigo-700" : "text-blue-700"}`}>
-                    {resumenEmpleado?.objetivos?.score !== undefined ? Math.round(resumenEmpleado.objetivos.score) : "-"}%
+                    {resumenEmpleado?.objetivos?.rawScore !== undefined ? Math.round(resumenEmpleado.objetivos.rawScore) : "-"}%
+                  </div>
+                  <div className="text-[9px] text-slate-400 leading-none text-right mt-1">
+                    aporta {resumenEmpleado?.objetivos?.score !== undefined ? resumenEmpleado.objetivos.score.toFixed(1) : "-"}
                   </div>
                 </div>
 
                 {/* Competencies (Pale Slate/Purple) */}
-                <div className="flex flex-col justify-center px-6 py-2 bg-slate-50/80">
+                <div className="flex flex-col justify-center px-6 py-2 bg-slate-50/80"
+                  title="Puntaje de competencias. Pesa 30% en el global.">
                   <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 text-right">Comp.</div>
                   <div className="text-sm font-bold text-slate-700 leading-none text-right">
-                    {resumenEmpleado?.aptitudes?.score !== undefined ? Math.round(resumenEmpleado.aptitudes.score) : "-"}%
+                    {resumenEmpleado?.aptitudes?.rawScore !== undefined ? Math.round(resumenEmpleado.aptitudes.rawScore) : "-"}%
+                  </div>
+                  <div className="text-[9px] text-slate-400 leading-none text-right mt-1">
+                    aporta {resumenEmpleado?.aptitudes?.score !== undefined ? resumenEmpleado.aptitudes.score.toFixed(1) : "-"}
                   </div>
                 </div>
 
@@ -1293,6 +1318,9 @@ export default function EvaluacionFlujo() {
                   <div className={`text-[10px] font-bold uppercase tracking-widest mb-0.5 text-right ${isTestingMode ? "text-indigo-500" : "text-emerald-600"}`}>Global</div>
                   <div className={`text-2xl font-black leading-none tracking-tight text-right ${isTestingMode ? "text-indigo-700" : "text-emerald-700"}`}>
                     {resumenEmpleado?.global !== undefined ? Math.round(resumenEmpleado.global) : "-"}%
+                  </div>
+                  <div className="text-[9px] text-slate-400 leading-none text-right mt-1">
+                    70% obj + 30% comp
                   </div>
                 </div>
               </div>
@@ -1494,37 +1522,39 @@ export default function EvaluacionFlujo() {
                                     let hitoDisplay = h.actual;
 
                                     if (isObj && h.actual !== null) {
-                                      const isUmbral = item.metas?.some(m => m.reglaCierre === 'umbral_periodos');
+                                      // Todos los caminos pasan por el motor único (scoringCore),
+                                      // el mismo que produce el score con el que se califica.
+                                      //
+                                      // getPeriodMonth ordena bien mensuales, trimestrales y
+                                      // semestrales. El mapa que había antes solo cubría meses y
+                                      // devolvía 0 para cualquier trimestre, con lo cual todos los
+                                      // chips trimestrales de una meta por umbral mostraban el
+                                      // mismo valor.
+                                      const hastaAqui = getPeriodMonth(h.periodo);
+                                      const hitosUpTo = item.hitos?.filter(
+                                        (hh) => hh.periodo && getPeriodMonth(hh.periodo) <= hastaAqui
+                                      ) || [];
 
-                                      if (isUmbral) {
-                                        // For umbral: recalculate progress with binary-per-period logic
-                                        // using only hitos up to and including this hito's period
-                                        const hitoOrder = (hPeriodo) => {
-                                          if (!hPeriodo) return 0;
-                                          const monthMap = { 'M09': 1, 'M10': 2, 'M11': 3, 'M12': 4, 'M01': 5, 'M02': 6, 'M03': 7, 'M04': 8, 'M05': 9, 'M06': 10, 'M07': 11, 'M08': 12 };
-                                          const suffix = hPeriodo.replace(/^\d{4}/, '');
-                                          return monthMap[suffix] || 0;
-                                        };
-                                        const maxOrder = hitoOrder(h.periodo);
-                                        const hitosUpTo = item.hitos?.filter(hh => hh.periodo && hitoOrder(hh.periodo) <= maxOrder) || [];
+                                      const esUmbral = item.metas?.some((m) => m.reglaCierre === "umbral_periodos");
+                                      const esAcumulativa = item.metas?.some(
+                                        (m) => m.modoAcumulacion === "acumulativo" || m.acumulativa
+                                      );
+
+                                      if (esUmbral || esAcumulativa) {
+                                        // Progresivas: lo que se muestra es el avance hasta acá.
+                                        //
+                                        // La rama acumulativa hacía su propia regla de tres
+                                        // (acumulado / esperado): ignoraba permiteOver y
+                                        // reconoceEsfuerzo, así que mostraba 300% donde el motor
+                                        // decía 100, y en metas de "menos es mejor" (< o <=) daba
+                                        // el resultado invertido.
                                         hitoDisplay = hitosUpTo.length > 0
                                           ? calculateObjectiveProgress(item, hitosUpTo)
                                           : null;
                                       } else {
-                                        // Non-umbral: existing acum logic
-                                        const acumMeta = item.metas?.find(m => m.modoAcumulacion === "acumulativo" || m.acumulativa);
-                                        if (acumMeta) {
-                                          const metaId = acumMeta.metaId || acumMeta._id;
-                                          const hitoResult = h.metas?.find(m => String(m.metaId || m._id) === String(metaId))?.resultado;
-                                          const acumVal = getAccumulatedValue(item, metaId, h.periodo, hitoResult);
-                                          const target = Number(acumMeta.esperado || 0);
-                                          if (target > 0) {
-                                            hitoDisplay = Math.round((acumVal / target) * 100);
-                                          }
-                                        } else {
-                                          // Use live recalculation to retroactively fix older periods evaluated during the < bug
-                                          hitoDisplay = calculateObjectiveProgress(item, [h]);
-                                        }
+                                        // Por período: el chip muestra cómo le fue en ESE período,
+                                        // no un acumulado. Se deja como estaba.
+                                        hitoDisplay = calculateObjectiveProgress(item, [h]);
                                       }
                                     }
 

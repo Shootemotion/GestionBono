@@ -1,19 +1,8 @@
 import { calculateObjectiveProgress, calculateCompetencyProgress } from "@/utils/calculos";
 
-// Helper para convertir el string del periodo a un índice de mes comparable (1-12) basado en el Año Fiscal (Sep-Ago)
-export const getCurrentFiscalYear = (date = new Date()) => {
-    // Fiscal Year starts in September (Month index 8)
-    // If we are in Jan (0) - Aug (7), we are in the fiscal year of (CurrentYear - 1)
-    // If we are in Sep (8) - Dec (11), we are in the fiscal year of (CurrentYear)
-    const month = date.getMonth(); // 0-11
-    const year = date.getFullYear();
-
-    if (month >= 8) { // Sep onwards
-        return year;
-    } else {
-        return year - 1;
-    }
-};
+// La lógica del año fiscal vive en @/lib/fiscalYear. Se re-exporta acá para no
+// romper los imports existentes que la traían desde este módulo.
+export { getCurrentFiscalYear } from "@/lib/fiscalYear";
 
 
 export const getPeriodMonth = (periodStr) => {

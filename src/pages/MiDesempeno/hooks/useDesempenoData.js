@@ -5,7 +5,12 @@ import { toast } from 'sonner';
 import { dashEmpleado } from '@/lib/dashboard';
 import { getCurrentFiscalYear } from '@/lib/scoreHelpers';
 // import { fotoSrc } from '@/utils/fotoSrc';
-import { calculateObjectiveProgress, calculateWeightedScore, calculateCompetencyProgress } from '@/utils/calculos';
+import { computePeriodResults, getPeriodMonth } from '@/utils/periodResults';
+import { AF_REGLAS_CORREGIDAS } from '@/utils/calculos';
+
+// Selección especial de la lista de detalle: en vez de un objetivo puntual,
+// muestra el resumen de cómo se compone el puntaje.
+export const ID_RESUMEN = "__resumen__";
 
 export function useDesempenoData() {
   const { user } = useAuth();
@@ -100,159 +105,55 @@ export function useDesempenoData() {
     }
   }, [selectedFeedback]);
 
-  const getPeriodMonth = useCallback((periodStr) => {
-    if (!periodStr) return 0;
-    if (periodStr === "Q1") return 3;
-    if (periodStr === "Q2") return 6;
-    if (periodStr === "Q3") return 9;
-    if (periodStr === "FINAL") return 12;
+  const periodResults = useMemo(
+    () => {
+      // El año decide si aplica el techo unificado: los ciclos ya cerrados se
+      // calculan exactamente como antes (ver AF_TECHO_UNIFICADO).
+      const vivo = computePeriodResults(data, selectedFeedback?.periodo, selectedYear);
+      if (!vivo) return vivo;
 
-    let suffix = periodStr;
-    if (periodStr.length > 4 && !isNaN(periodStr.slice(0, 4))) {
-      suffix = periodStr.slice(4);
-    }
+      // Si el feedback YA tiene su nota guardada, esa es la nota.
+      //
+      // Es la que el jefe evaluó, la que se le comunicó a la persona y la que
+      // queda en su legajo. Recalcularla en vivo hacía que la pantalla dijera
+      // un número y el feedback otro: a Guido Barretto la pantalla le mostraba
+      // 88,9 mientras su feedback decía 76,1.
+      //
+      // RIGE DESDE EL AF2026, igual que las correcciones del motor.
+      // En el AF2025 el cálculo en vivo de un trimestre usa todos los datos
+      // cargados después, mientras que la nota guardada es la foto del día que
+      // se cerró. Aplicarlo hacia atrás le cambiaba el número en pantalla a 204
+      // de 274 feedbacks —182 para abajo, algunos 32 puntos— en un año que se
+      // está entregando. La nota oficial de esos ya está en el feedback; la
+      // pantalla no se toca.
+      //
+      // El desglose por objetivo se sigue calculando en vivo: es el detalle que
+      // explica la nota, no la nota.
+      if (Number(selectedYear) < AF_REGLAS_CORREGIDAS) return vivo;
 
-    if (suffix.startsWith("M")) {
-      const m = parseInt(suffix.slice(1));
-      return m >= 9 ? m - 8 : m + 4;
-    }
-    if (suffix.startsWith("Q")) {
-      const q = parseInt(suffix.slice(1));
-      return q * 3;
-    }
-    if (suffix.startsWith("S")) {
-      const s = parseInt(suffix.slice(1));
-      return s * 6;
-    }
-    if (suffix === "FINAL" || suffix.endsWith("FINAL")) return 12;
-    return 12;
-  }, []);
+      const guardada = selectedFeedback?.scores;
+      const tieneNota = guardada && guardada.global !== null && guardada.global !== undefined;
+      if (!tieneNota) return vivo;
 
-  const periodResults = useMemo(() => {
-    if (!data || !selectedFeedback) return { objetivos: [], aptitudes: [], scores: { obj: 0, comp: 0, global: 0 } };
-    const p = selectedFeedback.periodo;
-
-    const feedbackLimit = getPeriodMonth(p);
-
-    let totalObjScore = 0;
-    let totalObjWeight = 0;
-    let maxActiveObjWeight = 0;
-    const timeFraction = Math.min(feedbackLimit / 12, 1);
-    const objetivos = [];
-
-    data.objetivos?.forEach(obj => {
-      const relevantHitos = obj.hitos?.filter(h => getPeriodMonth(h.periodo) <= feedbackLimit) || [];
-      let score = 0;
-
-      const hitoPeriodo = obj.hitos?.find(h => {
-        if (!h.periodo) return false;
-        if (h.periodo === p) return true;
-        if (h.periodo.endsWith(p)) return true;
-        if (p === "FINAL" && (h.periodo.endsWith("Q4") || h.periodo.endsWith("A1"))) return true;
-        return false;
-      });
-
-      if (relevantHitos.length > 0) {
-        score = calculateObjectiveProgress(obj, relevantHitos);
-        maxActiveObjWeight += (obj.peso || 0);
-      }
-
-      const effectiveScore = score;
-      totalObjScore += effectiveScore * (obj.peso || 0);
-      totalObjWeight += (obj.peso || 0);
-
-      objetivos.push({
-        ...obj,
-        hitoActual: hitoPeriodo,
-        scorePeriodo: effectiveScore,
-        rawScore: score
-      });
-    });
-
-    const scoreObjRaw = totalObjWeight > 0 ? (totalObjScore / totalObjWeight) : 0;
-    const scoreObj = scoreObjRaw * 0.7;
-
-    const aptitudes = [];
-    data.aptitudes?.forEach(apt => {
-        const relevantHitos = apt.hitos?.filter(h => getPeriodMonth(h.periodo) <= feedbackLimit) || [];
-        let score = 0;
-        const puntuaciones = relevantHitos.map(h => h.actual).filter(val => val !== null && val !== undefined);
-        if (puntuaciones.length > 0) {
-            score = Math.round(puntuaciones.reduce((a, b) => a + b, 0) / puntuaciones.length);
-        }
-        const hitoPeriodo = apt.hitos?.find(h => h.periodo === p);
-        aptitudes.push({ ...apt, hitoActual: hitoPeriodo, scorePeriodo: score });
-    });
-
-    const scoreCompRaw = calculateCompetencyProgress(data.aptitudes, getPeriodMonth, feedbackLimit);
-    const scoreComp = scoreCompRaw * 0.3;
-
-    const global = scoreObj + scoreComp;
-
-    const displayObj = scoreObj;
-    const displayComp = scoreComp;
-    const displayGlobal = global;
-
-    const maxObj = (maxActiveObjWeight / 100) * 70;
-    const maxComp = aptitudes.length > 0 ? 30 : 0;
-
-    let expectedObjScore = 0;
-    data.objetivos?.forEach(obj => {
-      const isCumulative = obj.metas?.some(m => m.acumulativa || m.modoAcumulacion === 'acumulativo');
-      const factor = isCumulative ? timeFraction : 1;
-      expectedObjScore += (obj.peso || 0) * factor;
-    });
-
-    const expectedObjDisplay = (expectedObjScore / 100) * 70;
-    const expectedCompDisplay = aptitudes.length > 0 ? 30 : 0;
-
-    return {
-      objetivos,
-      aptitudes,
-      scores: {
-        obj: displayObj,
-        comp: displayComp,
-        global: displayGlobal
-      },
-      maxScores: {
-        obj: maxObj,
-        comp: maxComp,
-        global: maxObj + maxComp
-      },
-      expectedScores: {
-        obj: expectedObjDisplay,
-        comp: expectedCompDisplay,
-        global: expectedObjDisplay + expectedCompDisplay
-      },
-      sparklineData: (() => {
-        const timeline = ["Q1", "Q2", "Q3", "FINAL"];
-        return timeline.map(tPeriod => {
-          const relevantLimit = getPeriodMonth(tPeriod);
-
-          let tObjScore = 0;
-          data.objetivos?.forEach(o => {
-            const rh = o.hitos?.filter(h => getPeriodMonth(h.periodo) <= relevantLimit) || [];
-            if (rh.length > 0) {
-              const prog = calculateObjectiveProgress(o, rh);
-              tObjScore += calculateWeightedScore(prog, o.peso || 0);
-            }
-          });
-
-          const rawComp = calculateCompetencyProgress(data.aptitudes, getPeriodMonth, relevantLimit);
-
-          return {
-            name: tPeriod === "FINAL" ? "Fin" : tPeriod,
-            obj: tObjScore * 0.7,
-            comp: rawComp * 0.3,
-            global: (tObjScore * 0.7) + (rawComp * 0.3)
-          };
-        });
-      })()
-    };
-  }, [data, selectedFeedback, getPeriodMonth]);
+      return {
+        ...vivo,
+        scores: {
+          obj: Number(guardada.obj ?? vivo.scores.obj),
+          comp: Number(guardada.comp ?? vivo.scores.comp),
+          global: Number(guardada.global),
+        },
+        // Para que la pantalla pueda decir de dónde sale el número.
+        notaDelFeedback: true,
+        scoresEnVivo: vivo.scores,
+      };
+    },
+    [data, selectedFeedback, selectedYear]
+  );
 
   useEffect(() => {
     if (periodResults) {
+      // El resumen es una selección válida aunque no sea un item de la lista.
+      if (selectedItemId === ID_RESUMEN) return;
       if (activeTab === "obj" && periodResults.objetivos.length > 0) {
         if (!selectedItemId || !periodResults.objetivos.find(o => o._id === selectedItemId)) {
           setSelectedItemId(periodResults.objetivos[0]._id);
