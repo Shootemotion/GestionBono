@@ -173,9 +173,37 @@ const plantillaSchema = new mongoose.Schema(
     comentarioVersion: { type: String },
 
     metadata: { type: mongoose.Schema.Types.Mixed },
+
+    /* --- BORRADO LÓGICO ---
+       El borrado dejó de ser físico: se marca la fecha y se filtra en las
+       consultas. Recuperar una plantilla pasa a ser poner deletedAt en null.  */
+    deletedAt: { type: Date, default: null, index: true },
+    deletedBy: {
+      usuarioId: { type: mongoose.Schema.Types.ObjectId, ref: "Usuario", default: null },
+      email: { type: String, default: null },
+    },
   },
   { timestamps: true }
 );
+
+/* ---------------------------------------------------------
+   Filtro por defecto: las borradas no existen para nadie.
+   Cualquier consulta ya escrita en el sistema queda cubierta sin tocarla.
+   Para verlas explícitamente: .setOptions({ incluirEliminadas: true })
+--------------------------------------------------------- */
+function excluirEliminadas(next) {
+  if (this.getOptions?.().incluirEliminadas) return next();
+  const q = this.getQuery();
+  if (!("deletedAt" in q)) this.where({ deletedAt: null });
+  next();
+}
+plantillaSchema.pre(/^find/, excluirEliminadas);
+plantillaSchema.pre(/^count/, excluirEliminadas);
+plantillaSchema.pre("aggregate", function (next) {
+  if (this.options?.incluirEliminadas) return next();
+  this.pipeline().unshift({ $match: { deletedAt: null } });
+  next();
+});
 
 // Index for efficient scope filtering (e.g. find all templates for a specific Area)
 plantillaSchema.index({ scopeType: 1, scopeId: 1 });

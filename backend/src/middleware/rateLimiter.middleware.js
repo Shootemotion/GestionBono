@@ -15,9 +15,9 @@ export const loginLimiter = rateLimit({
     status: 429,
     message: 'Demasiados intentos de inicio de sesión. Intentá nuevamente en 15 minutos.',
   },
-  // Clave por IP. En producción detrás de un proxy, asegurate de configurar
-  // app.set('trust proxy', 1) si usás Nginx / Railway / Render.
-  keyGenerator: (req) => req.ip,
+  // Clave por IP (default de express-rate-limit, con soporte IPv6 correcto).
+  // Detrás de un proxy (IIS/ARR) hay que configurar app.set('trust proxy', ...) en server.js
+  // para que req.ip sea la IP real del cliente y no la del proxy (loopback).
 
   // No contabiliza intentos exitosos (status 2xx/3xx)
   skipSuccessfulRequests: true,

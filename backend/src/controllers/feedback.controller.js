@@ -1,6 +1,10 @@
 import Feedback from "../models/Feedback.model.js";
 import { computeForEmployees } from "./dashboard.controller.js";
-import { calculateObjectiveProgress } from "../lib/scoreEngineUnified.js";
+import {
+    calcularScoresEnBackend,
+    motivosFueraDeRango,
+    TOLERANCIA_DIVERGENCIA,
+} from "../lib/feedbackScores.js";
 
 // Helper to auto-close overdue feedbacks
 const checkAutoCloseFeedbacks = async (empleadoId = null) => {
@@ -104,6 +108,47 @@ export const saveFeedback = async (req, res) => {
             return res.status(400).json({ message: "Faltan datos obligatorios" });
         }
 
+        // ── 1. RANGO ────────────────────────────────────────────────────
+        // La nota tiene una escala: objetivos hasta 70, competencias hasta 30,
+        // global hasta 100. Esto no dependía de nada y no se revisaba, y por
+        // eso hay dos feedbacks CERRADOS con global 112 y 116,8 adentro.
+        const problemas = motivosFueraDeRango(scores);
+        if (problemas.length > 0) {
+            return res.status(400).json({
+                message: problemas[0],
+                motivo: "score_fuera_de_rango",
+                problemas,
+                recibido: scores,
+            });
+        }
+
+        // ── 2. SEGUNDA OPINIÓN DEL BACKEND ──────────────────────────────
+        // Se calcula lo mismo del lado del servidor y se guarda AL LADO, no
+        // encima. Todavía manda el navegador: los resultados finales del
+        // AF2025 se están entregando ahora y cambiarle el número a quien está
+        // comunicando una nota sería peor que el problema que arregla.
+        //
+        // Nunca hace fallar el guardado: si el recálculo rompe, se pierde una
+        // medición, no el trabajo de quien estaba evaluando.
+        let scoresBackend = null;
+        if (scores) {
+            try {
+                const calculado = await calcularScoresEnBackend(empleado, year, periodo);
+                if (calculado) {
+                    const divergencia = +(Number(calculado.global) - Number(scores.global ?? 0)).toFixed(2);
+                    scoresBackend = { ...calculado, calculadoEl: new Date(), divergencia };
+                    if (Math.abs(divergencia) > TOLERANCIA_DIVERGENCIA) {
+                        console.warn(
+                            `[Feedback] Divergencia de ${divergencia} puntos — empleado ${empleado}, ` +
+                            `AF${year} ${periodo}: navegador ${scores.global}, backend ${calculado.global}`
+                        );
+                    }
+                }
+            } catch (e) {
+                console.error("[Feedback] No se pudo recalcular del lado del servidor:", e.message);
+            }
+        }
+
         // Check existing
         let existing = await Feedback.findOne({ empleado, year, periodo });
         let correctionCount = existing?.correctionCount || 0;
@@ -122,6 +167,7 @@ export const saveFeedback = async (req, res) => {
             scores,
             motivoDesacuerdo,
         };
+        if (scoresBackend) data.scoresBackend = scoresBackend;
 
         // Determine if this is a "Manager Action" (creating/updating feedback content)
 
@@ -360,67 +406,12 @@ function getPeriodMonth(p) {
     return 12;
 }
 
-function calcularScoresParaPeriodo(metrics, period) {
-    const feedbackLimit = getPeriodMonth(period);
-
-    // OBJETIVOS 
-    const objetivos = metrics.objetivos?.items || metrics.objetivos || [];
-    let totalObjScore = 0;
-    const breakdownObj = [];
-
-    objetivos.forEach(obj => {
-        const hitosRelevantes = (obj.hitos || []).filter(
-            h => getPeriodMonth(h.periodo) <= feedbackLimit
-        );
-        if (hitosRelevantes.length === 0) return;
-
-        // Use Unified Engine logic (same as Frontend)
-        const isFinalPeriod = feedbackLimit === 12;
-        const progreso = calculateObjectiveProgress(obj, hitosRelevantes, isFinalPeriod);
-        console.log(`[AUDIT] Obj: ${obj.nombre}, Metas: ${obj.metas?.length || 0}, Progreso: ${progreso}%`);        
-        totalObjScore  += (progreso * (obj.peso || 0));
-        breakdownObj.push({
-            nombre: obj.nombre,
-            peso: obj.peso,
-            progreso,
-            contribucion: (progreso * (obj.peso || 0)) / 100 * 0.7
-        });
-    });
-
-    // Normalización: Dividimos por 100 siempre, NO por la suma de pesos evaluados.
-    // Esto asegura escala absoluta (ej: 10 pts de 100) y no infla scores parciales.
-    const scoreObjRaw = totalObjScore / 100;
-    const scoreObjWeighted = scoreObjRaw * 0.7;
-
-    // COMPETENCIAS 
-    const aptitudes = metrics.aptitudes?.items || metrics.aptitudes || [];
-    let totalCompScore = 0, compCount = 0;
-
-    aptitudes.forEach(apt => {
-        const hitosRelevantes = (apt.hitos || []).filter(
-            h => h.actual !== null && h.actual !== undefined
-              && getPeriodMonth(h.periodo) <= feedbackLimit
-        );
-        if (hitosRelevantes.length === 0) return;
-
-        const avg = Math.round(hitosRelevantes.reduce((s, h) => s + Number(h.actual ?? 0), 0) / hitosRelevantes.length);
-        totalCompScore += avg;
-        compCount++;
-    });
-
-    const scoreCompRaw     = compCount > 0 ? totalCompScore / compCount : 0;
-    const scoreCompWeighted = scoreCompRaw * 0.3;
-
-    console.log(`[AUDIT] Periodo: ${period}, ObjScoreRaw: ${scoreObjRaw.toFixed(2)}, FinalObj: ${scoreObjWeighted.toFixed(2)}`);
-
-    return {
-        version: "v2.0-unified",
-        obj:    +(scoreObjWeighted.toFixed(4)),
-        comp:   +(scoreCompWeighted.toFixed(4)),
-        global: +((scoreObjWeighted + scoreCompWeighted).toFixed(4)),
-        breakdownObj
-    };
-}
+// NOTA: acá vivía `calcularScoresParaPeriodo`, que usaba `scoreEngineUnified.js`.
+// Nada la llamaba: era código muerto desde que el cálculo del feedback pasó al
+// navegador. Ese motor era una copia vieja de `scoringCore.js` a la que le
+// faltaban el arreglo del operador "==" y el manejo de metas binarias, así que
+// daba distinto que el resto del sistema en 15 casos reales. El cálculo del
+// servidor ahora vive en `src/lib/feedbackScores.js`, sobre `scoringCore`.
 
 export const auditScores = async (req, res) => {
     try {
@@ -484,6 +475,19 @@ export const fixScores = async (req, res) => {
 
         if (!feedbackId || !scores) {
             return res.status(400).json({ message: "Faltan parametros: feedbackId y scores son requeridos" });
+        }
+
+        // Misma barrera que en `saveFeedback`: este endpoint escribe la nota
+        // directamente sobre un feedback ya existente, así que es la otra
+        // puerta por la que podía entrar un 116,8.
+        const problemas = motivosFueraDeRango(scores);
+        if (problemas.length > 0) {
+            return res.status(400).json({
+                message: problemas[0],
+                motivo: "score_fuera_de_rango",
+                problemas,
+                recibido: scores,
+            });
         }
 
         const obj = Number(scores.obj ?? 0);

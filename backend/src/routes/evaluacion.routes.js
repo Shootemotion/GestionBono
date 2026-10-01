@@ -19,6 +19,8 @@ import {
   reopenEvaluacion,              // POST /evaluaciones/:id/reopen
   createEvaluacion,              // POST /evaluaciones
   listPendingHR,                 // GET  /evaluaciones/hr/pending
+  listarPreviasAlIngreso,        // GET    /evaluaciones/previas-ingreso
+  borrarPreviasAlIngreso,        // DELETE /evaluaciones/previas-ingreso/:empleadoId
   closeBulk,                     // POST /evaluaciones/hr/close-bulk
   getScoringAnualEmpleado,
   recalculateEvaluaciones,       // POST /evaluaciones/recalculate
@@ -51,6 +53,36 @@ router.get(
   requireCap("nomina:ver"),
   listEvaluaciones
 );
+
+// Resultados cargados en períodos anteriores al ingreso de la persona.
+// Es solo lectura: señala, no toca nada.
+router.get(
+  "/previas-ingreso",
+  authenticateJWT,
+  requireCap("rrhh:evaluaciones:ver"),
+  listarPreviasAlIngreso
+);
+
+// Vista previa: qué se borraría de esta persona. No toca nada.
+//
+// Va como GET y no como DELETE sin confirmar, porque el auditor registra toda
+// escritura: con el método DELETE, cada vez que alguien abría la vista previa
+// quedaba una línea "ELIMINAR" en la auditoría por un borrado que no ocurrió.
+router.get(
+  "/previas-ingreso/:empleadoId",
+  authenticateJWT,
+  requireCap("objetivos:eliminar"),
+  borrarPreviasAlIngreso
+);
+
+// 🔒 El borrado de verdad. Cada evaluación queda auditada con su contenido.
+router.delete(
+  "/previas-ingreso/:empleadoId",
+  authenticateJWT,
+  requireCap("objetivos:eliminar"),
+  borrarPreviasAlIngreso
+);
+
 
 // *** RRHH: ver pendientes y cerrar en lote ***
 router.get(
@@ -142,6 +174,8 @@ router.get(
 
 // testing
 import { deleteEvaluacion } from "../controllers/evaluacion.controller.js";
-router.delete("/:id", authenticateJWT, deleteEvaluacion);
+// 🔒 Borrar una evaluación destruye un resultado cargado y puede mover una nota
+//    ya comunicada. Antes lo podía hacer cualquiera con sesión iniciada.
+router.delete("/:id", authenticateJWT, requireCap("objetivos:eliminar"), deleteEvaluacion);
 
 export default router;

@@ -436,6 +436,14 @@ export const getResults = async (req, res, next) => {
                     total: globalScore
                 },
                 condiciones,
+                // Cuánto del ciclo estuvo, y si eso ajustó sus metas.
+                //
+                // El bono ya prorrateaba por antigüedad; esto expone el MISMO
+                // dato del lado de la evaluación, para que en Resultados se lea
+                // junto: por qué cobra proporcional y por qué sus metas pedían
+                // menos. Sale del dashboard (`computeForEmployees`), que es
+                // quien aplica el ajuste.
+                ciclo: m.ciclo || null,
                 feedbacks: m.feedbacks?.map(f => ({
                     periodo: f.periodo,
                     estado: f.estado,

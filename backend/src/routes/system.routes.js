@@ -1,8 +1,9 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { runBackup } from '../../scripts/backup.js';
+import { runBackup, listarBackups, ultimoBackupValido } from '../../scripts/backup.js';
 import { runRestore, getBackupPreview } from '../../scripts/restore.js';
+import { requireRole } from '../auth/auth.middleware.js';
 import mongoose from 'mongoose';
 import Empleado from '../models/Empleado.model.js';
 import Evaluacion from '../models/Evaluacion.model.js';
@@ -21,28 +22,53 @@ const ensureDir = (dir) => {
 };
 
 // GET /api/system/backups - List all backups
+//
+// Antes esto era solo `fs.statSync`: nombre, tamaño y fecha. Con eso, el
+// backup truncado del 25/09/2026 aparecía en la lista igual que los sanos, y
+// la única pista era el tamaño —195 KB contra 719 KB— que nadie mira a ojo.
+// Ahora cada archivo se abre antes de listarlo y viene con `valido`.
+//
+// Sigue devolviendo un array: el front hace `Array.isArray(res)` y cambiar la
+// forma acá le vaciaría la tabla en silencio.
 router.get('/backups', (req, res) => {
     try {
         ensureDir(BACKUPS_DIR);
-        const files = fs.readdirSync(BACKUPS_DIR).filter(file => file.endsWith('.zip'));
-
-        const backups = files.map(file => {
-            const filePath = path.join(BACKUPS_DIR, file);
-            const stats = fs.statSync(filePath);
-            return {
-                name: file,
-                size: stats.size,
-                createdAt: stats.birthtime // or mtime
-            };
-        });
-
-        // Sort by newest first
-        backups.sort((a, b) => b.createdAt - a.createdAt);
-
-        res.json(backups);
+        res.json(listarBackups());
     } catch (error) {
         console.error('Error listing backups:', error);
         res.status(500).json({ message: 'Error listing backups' });
+    }
+});
+
+// GET /api/system/backups/estado - Resumen para el cartel de la página
+//
+// Va antes que las rutas con `:filename` por claridad, aunque no colisionan:
+// aquéllas tienen un segmento más.
+router.get('/backups/estado', (req, res) => {
+    try {
+        ensureDir(BACKUPS_DIR);
+        const lista = listarBackups();
+        const ultimo = ultimoBackupValido();
+        const horas = ultimo ? (Date.now() - new Date(ultimo.createdAt).getTime()) / 36e5 : null;
+
+        res.json({
+            ok: horas !== null && horas <= 24,
+            total: lista.length,
+            validos: lista.filter((b) => b.valido).length,
+            corruptos: lista.filter((b) => !b.valido).length,
+            ultimoValido: ultimo ? ultimo.name : null,
+            horas: horas === null ? null : Number(horas.toFixed(1)),
+            colecciones: ultimo ? ultimo.colecciones : 0,
+            mensaje:
+                horas === null
+                    ? 'No hay ningún backup que se pueda abrir. Corré uno ahora.'
+                    : horas <= 24
+                        ? `Último backup válido hace ${horas.toFixed(1)} h.`
+                        : `El último backup válido es de hace ${Math.floor(horas / 24)} día(s). Algo no está corriendo.`,
+        });
+    } catch (error) {
+        console.error('estadoBackups error:', error);
+        res.status(500).json({ message: 'Error leyendo el estado de los backups' });
     }
 });
 
@@ -77,7 +103,11 @@ router.get('/backups/:filename/download', (req, res) => {
 });
 
 // POST /api/system/backups/:filename/restore - Restore from backup
-router.post('/backups/:filename/restore', async (req, res) => {
+//
+// 🔒 Pisar la base entera con la de un zip es la operación más destructiva
+//    del sistema y no tenía ninguna restricción: la podía disparar cualquiera
+//    con sesión iniciada, visor incluido. No es una tarea de RRHH.
+router.post('/backups/:filename/restore', requireRole('superadmin'), async (req, res) => {
     const { filename } = req.params;
     const { collections } = req.body; // Array of collection names or null for all
 
@@ -87,6 +117,17 @@ router.post('/backups/:filename/restore', async (req, res) => {
     }
 
     try {
+        // Restaurar desde un zip roto deja la base a medio pisar. Se verifica
+        // antes de tocar nada, no después.
+        const info = listarBackups().find((b) => b.name === filename);
+        if (!info) return res.status(404).json({ message: 'Backup not found' });
+        if (!info.valido) {
+            return res.status(422).json({
+                message: `Ese backup no se puede usar: ${info.motivo}. Elegí otro.`,
+                motivo: 'backup_corrupto',
+            });
+        }
+
         await runRestore(filename, collections);
         res.json({ success: true, message: 'System restored successfully' });
     } catch (error) {
