@@ -7,7 +7,7 @@
 /* global __APP_BUILD_DATE__ */
 
 export const APP_NAME = "Plataforma de Desempeño";
-export const APP_VERSION = "5.2";
+export const APP_VERSION = "5.0.0";
 export const BUILD_DATE = __APP_BUILD_DATE__;
 export const APP_OWNER = "Diagnos S.A.";
 

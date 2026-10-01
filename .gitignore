@@ -31,11 +31,16 @@ backend/uploads/iso-evidencias/
 # Scripts de depuración
 debug_*.js
 backend/debug_*.js
+backend/debug_archive/
 backend/list_*.js
 backend/recalculate_*.js
 backend/reset_*.js
 
 # Snapshots con datos reales de empleados (no subir al repo)
 backend/snapshot_*.json
+
+# PDFs generados desde docs/ (regenerables con docs/build-pdf.ps1)
+docs/dist/
+docs/_tmp/
 
 git status

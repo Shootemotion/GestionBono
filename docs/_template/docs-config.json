@@ -1,0 +1,20 @@
+{
+  "documents": [
+    {
+      "source": "AUDITORIA.md",
+      "docType": "Auditoría Técnica",
+      "title": "Plataforma de Desempeño",
+      "version": "v5.0.0",
+      "dateText": "Mayo de 2026",
+      "output": "AUDITORIA-v5.0.0.pdf"
+    },
+    {
+      "source": "GUIA_USO.md",
+      "docType": "Guía de Uso",
+      "title": "Plataforma de Desempeño",
+      "version": "v5.0.0",
+      "dateText": "Mayo de 2026",
+      "output": "GUIA_USO-v5.0.0.pdf"
+    }
+  ]
+}

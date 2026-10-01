@@ -22,6 +22,11 @@ export default defineConfig({
     alias: { '@': path.resolve(__dirname, './src') },
   },
   server: {
+    // Puerto fijo del servidor de desarrollo. `strictPort` hace que falle en
+    // vez de buscarse otro puerto solo: si está ocupado conviene enterarse,
+    // no terminar con dos instancias en puertos distintos sin darse cuenta.
+    port: 5180,
+    strictPort: true,
     proxy: {
       "/api": {
         target: "http://localhost:5007", // 👈 puerto backend original

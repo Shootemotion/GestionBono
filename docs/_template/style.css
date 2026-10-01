@@ -1,0 +1,288 @@
+/* ============================================================
+   Estilos para generación de PDFs de documentación interna
+   Plataforma de Desempeño — Diagnos S.A.
+   ============================================================ */
+
+@page {
+  margin: 25mm 18mm 20mm 18mm;
+}
+
+body {
+  font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  color: #0f172a;
+  line-height: 1.55;
+  font-size: 11pt;
+}
+
+/* ---------- COVER PAGE ---------- */
+.cover-page {
+  page-break-after: always;
+  height: 245mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  position: relative;
+}
+
+.cover-logo-block {
+  margin-bottom: 80px;
+}
+
+.cover-brand {
+  font-size: 42pt;
+  font-weight: 900;
+  color: #2563eb;
+  letter-spacing: 4px;
+  margin-bottom: 8px;
+}
+
+.cover-subtitle {
+  font-size: 11pt;
+  color: #64748b;
+  letter-spacing: 8px;
+  text-transform: uppercase;
+}
+
+.cover-title-block {
+  border-top: 4px solid #2563eb;
+  border-bottom: 4px solid #2563eb;
+  padding: 32px 48px;
+  margin-bottom: 60px;
+}
+
+.cover-doc-type {
+  font-size: 10pt;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  margin-bottom: 12px;
+}
+
+.cover-title {
+  font-size: 30pt;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+  line-height: 1.1;
+  border: none;
+  padding: 0;
+}
+
+.cover-meta {
+  font-size: 12pt;
+  color: #475569;
+  line-height: 2;
+}
+
+.cover-confidential {
+  position: absolute;
+  bottom: 20mm;
+  padding: 8px 24px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  font-size: 10pt;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  border-radius: 4px;
+}
+
+/* ---------- TOC ---------- */
+#TOC {
+  page-break-after: always;
+}
+
+#TOC ul {
+  list-style: none;
+  padding-left: 12px;
+}
+
+#TOC > ul {
+  padding-left: 0;
+}
+
+#TOC a {
+  color: #0f172a;
+  text-decoration: none;
+}
+
+#TOC li {
+  margin: 4px 0;
+  font-size: 11pt;
+}
+
+/* ---------- HEADINGS ---------- */
+h1 {
+  color: #0f172a;
+  font-size: 20pt;
+  border-bottom: 3px solid #2563eb;
+  padding-bottom: 8px;
+  margin-top: 24pt;
+  page-break-before: always;
+}
+
+h1:first-of-type {
+  page-break-before: avoid;
+}
+
+h2 {
+  color: #1e40af;
+  font-size: 15pt;
+  margin-top: 18pt;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 4px;
+}
+
+h3 {
+  color: #334155;
+  font-size: 12pt;
+  margin-top: 14pt;
+}
+
+h4 {
+  color: #475569;
+  font-size: 11pt;
+  margin-top: 10pt;
+}
+
+/* No dejar headings huérfanos al fin de página: el heading siempre se queda
+   con el contenido que lo sigue (si no entra, se va junto a la nueva página). */
+h1, h2, h3, h4, h5, h6 {
+  page-break-after: avoid;
+  break-after: avoid-page;
+  page-break-inside: avoid;
+}
+
+/* Asegurar que al menos el primer parrafo despues del heading no se separe. */
+h2 + p,
+h3 + p,
+h4 + p,
+h2 + ul,
+h3 + ul,
+h4 + ul,
+h2 + ol,
+h3 + ol,
+h4 + ol,
+h2 + table,
+h3 + table,
+h4 + table,
+h2 + blockquote,
+h3 + blockquote,
+h4 + blockquote {
+  page-break-before: avoid;
+  break-before: avoid-page;
+}
+
+/* ---------- BODY TEXT ---------- */
+p, li {
+  font-size: 10.5pt;
+  orphans: 3;
+  widows: 3;
+}
+
+strong {
+  color: #0f172a;
+}
+
+/* ---------- CODE ---------- */
+code {
+  background: #f1f5f9;
+  color: #be185d;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 9.5pt;
+}
+
+pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: 9pt;
+  overflow-x: auto;
+  page-break-inside: avoid;
+  line-height: 1.4;
+}
+
+pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+/* ---------- TABLES ---------- */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12pt 0;
+  font-size: 9.5pt;
+  page-break-inside: auto;
+}
+
+th {
+  background: #2563eb;
+  color: white;
+  padding: 6px 10px;
+  text-align: left;
+  font-weight: 700;
+  font-size: 9.5pt;
+}
+
+td {
+  border: 1px solid #e2e8f0;
+  padding: 6px 10px;
+  vertical-align: top;
+}
+
+tr:nth-child(even) td {
+  background: #f8fafc;
+}
+
+/* ---------- BLOCKQUOTES ---------- */
+blockquote {
+  border-left: 4px solid #2563eb;
+  background: #eff6ff;
+  margin: 12pt 0;
+  padding: 8px 16px;
+  color: #1e40af;
+  font-style: italic;
+  page-break-inside: avoid;
+}
+
+blockquote p {
+  margin: 0;
+}
+
+/* ---------- LINKS ---------- */
+a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+/* ---------- LISTS ---------- */
+ul, ol {
+  margin: 6pt 0;
+  padding-left: 24px;
+}
+
+li {
+  margin: 3pt 0;
+}
+
+/* ---------- HORIZONTAL RULE ---------- */
+hr {
+  border: 0;
+  border-top: 1px solid #cbd5e1;
+  margin: 16pt 0;
+}
+
+/* ---------- IMG ---------- */
+img {
+  max-width: 100%;
+  height: auto;
+}
