@@ -3,7 +3,13 @@ import Empleado from '../models/Empleado.model.js';
 import Carrera from '../models/Carrera.model.js';
 import OverrideObjetivo from '../models/OverrideObjetivo.model.js';
 import Plantilla from '../models/Plantilla.model.js';
+import Evaluacion from '../models/Evaluacion.model.js';
+import Feedback from '../models/Feedback.model.js';
 import mongoose from "mongoose";
+import { matchCap } from '../auth/auth.middleware.js';
+import { redactSueldoEmpleado } from '../utils/salaryVisibility.js';
+import { filtroAlcanceEmpleados, puedeVerEmpleado } from '../utils/alcanceEmpleados.js';
+import { anioFiscalActual } from '../lib/fiscalYear.js';
 
 export const getEmpleados = async (req, res, next) => {
   try {
@@ -16,9 +22,14 @@ export const getEmpleados = async (req, res, next) => {
       page = 1,
       limit = 25,
       sort = "apellido,nombre", // "campo" o "-campo"
+      incluirDesvinculados,
     } = req.query;
 
     const filter = {};
+    // Por defecto excluimos desvinculados. Para verlos: ?incluirDesvinculados=true
+    if (incluirDesvinculados !== "true" && incluirDesvinculados !== "1") {
+      filter.estadoLaboral = { $ne: "DESVINCULADO" };
+    }
     if (area && mongoose.isValidObjectId(area)) filter.area = area;
     if (sector && mongoose.isValidObjectId(sector)) filter.sector = sector;
     if (q) {
@@ -32,6 +43,11 @@ export const getEmpleados = async (req, res, next) => {
         { cuil: rx },
       ];
     }
+
+    // 🔒 Recorte por alcance: un jefe solo ve su gente. Va en $and para no
+    // pisar el $or del buscador de arriba.
+    const alcance = filtroAlcanceEmpleados(req.user);
+    if (alcance) filter.$and = [...(filter.$and || []), alcance];
 
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const pageSize = Math.max(1, Math.min(100, parseInt(limit, 10) || 25));
@@ -47,7 +63,7 @@ export const getEmpleados = async (req, res, next) => {
 
     const [items, total] = await Promise.all([
       Empleado.find(filter)
-        .select("nombre apellido email dni cuil puesto categoria area sector sueldoBase fotoUrl createdAt updatedAt celular apodo fechaIngreso domicilio genero")
+        .select("nombre apellido email dni cuil puesto categoria area sector sueldoBase fotoUrl createdAt updatedAt celular apodo fechaIngreso domicilio genero estadoLaboral")
         .populate("area", "nombre")
         .populate("sector", "nombre")
         .sort(sortObj)
@@ -58,7 +74,7 @@ export const getEmpleados = async (req, res, next) => {
     ]);
 
     res.json({
-      items,
+      items: items.map((e) => redactSueldoEmpleado(e, req.user)),
       page: pageNum,
       limit: pageSize,
       total,
@@ -148,27 +164,50 @@ export const updateEmpleado = async (req, res, next) => {
     const { id } = req.params;
     let updates = req.body;
 
+    // Lo que la limpieza por cambio de sector se lleve, para poder decírselo
+    // a quien hizo el cambio en vez de que lo descubra semanas después.
+    let overridesEliminados = [];
+
     // Restricción para empleados editando su propio perfil
     const u = req.user;
-    const isRRHH = u.isSuper || u.isRRHH || u.permisos?.includes("nomina:editar");
+    const isRRHH = u.isSuper || u.isRRHH || matchCap(u.permisos, "nomina:editar");
 
     if (!isRRHH) {
-      // Si no es RRHH, solo permitimos editar email, celular y apodo
-      const allowed = ["email", "celular", "apodo"];
-      const filtered = {};
-      Object.keys(updates).forEach(k => {
-        if (allowed.includes(k)) filtered[k] = updates[k];
-      });
-      updates = filtered;
+      // Si no es RRHH, solo permitimos editar email, celular y apodo.
+      // Si se intentaron tocar otros campos, fallamos explícitamente para no dar
+      // falsos "guardado OK" al frontend cuando en realidad no se persiste nada.
+      const allowed = new Set(["email", "celular", "apodo"]);
+      const intentados = Object.keys(updates);
+      const noPermitidos = intentados.filter((k) => !allowed.has(k));
+      if (noPermitidos.length > 0) {
+        return res.status(403).json({
+          message: `No autorizado a modificar: ${noPermitidos.join(", ")}`,
+          fields: noPermitidos,
+        });
+      }
     }
 
     // ---------------------------------------------------------
     // AUTO-CIERRE DE CARRERA SI SE DESVINCULA
     // ---------------------------------------------------------
+    // `fechaDesvinculacion` viene del modal del legajo; no es campo del modelo
+    // Empleado, así que lo extraemos del payload antes de findByIdAndUpdate.
+    const fechaDesvinculacionRaw = updates.fechaDesvinculacion;
+    if ("fechaDesvinculacion" in updates) delete updates.fechaDesvinculacion;
+
     if (updates.estadoLaboral === "DESVINCULADO") {
+      // Parseamos a mediodía local para evitar corrimientos por timezone cuando
+      // el cliente manda "YYYY-MM-DD".
+      let fechaCierre = new Date();
+      if (fechaDesvinculacionRaw) {
+        const parsed = /^\d{4}-\d{2}-\d{2}$/.test(fechaDesvinculacionRaw)
+          ? new Date(`${fechaDesvinculacionRaw}T12:00:00`)
+          : new Date(fechaDesvinculacionRaw);
+        if (!isNaN(parsed.getTime())) fechaCierre = parsed;
+      }
       const puestoActual = await Carrera.findOne({ empleado: id, hasta: null });
       if (puestoActual) {
-        puestoActual.hasta = new Date();
+        puestoActual.hasta = fechaCierre;
         await puestoActual.save();
       }
     }
@@ -192,17 +231,38 @@ export const updateEmpleado = async (req, res, next) => {
 
         if (plantillasViejo.length > 0) {
           const tplIds = plantillasViejo.map(p => p._id);
-          // Borrar SOLO los overrides de inclusión (excluido=false) de esas plantillas
-          // Los overrides con excluido=true (exclusiones deliberadas) se mantienen
-          const resultado = await OverrideObjetivo.deleteMany({
+
+          // ⚠️ SOLO EL AÑO EN CURSO Y LOS SIGUIENTES.
+          //
+          // Esta limpieza no filtraba por año, y por eso el 22/09/2026 —al
+          // mover 13 personas de sector en seis minutos— se llevó puestos 29
+          // pesos del AF2025, un ejercicio ya cerrado con notas comunicadas.
+          // Hubo que recuperarlos del backup del 18/09, uno por uno.
+          //
+          // Dónde trabaja alguien hoy no cambia qué objetivos tuvo el año
+          // pasado. Un año cerrado es historia: se lee, no se reescribe.
+          const desdeAnio = anioFiscalActual();
+
+          // Se leen antes de borrar: el `deleteMany` no deja rastro de qué se
+          // llevó, y la auditoría de esta ruta guarda el empleado, no sus
+          // overrides. Sin esto el borrado es irrecuperable salvo por backup.
+          const aBorrar = await OverrideObjetivo.find({
             empleado: id,
             template: { $in: tplIds },
             excluido: false,  // ← solo inclusiones, nunca exclusiones
-          });
-          if (resultado.deletedCount > 0) {
-            console.log(
+            year: { $gte: desdeAnio },
+          }).lean();
+
+          if (aBorrar.length > 0) {
+            await OverrideObjetivo.deleteMany({ _id: { $in: aBorrar.map(o => o._id) } });
+
+            // Queda en la respuesta para que el front pueda avisarlo, y en el
+            // log con el contenido completo para poder rehacerlo a mano.
+            overridesEliminados = aBorrar;
+            console.warn(
               `[SectorChange] Empleado ${id}: sector ${oldSectorId} → ${newSectorId}. ` +
-              `Overrides de inclusión eliminados: ${resultado.deletedCount}`
+              `Overrides de inclusión eliminados (AF${desdeAnio}+): ${aBorrar.length}. ` +
+              `Contenido: ${JSON.stringify(aBorrar.map(o => ({ year: o.year, template: String(o.template), peso: o.peso })))}`
             );
           }
         }
@@ -223,21 +283,81 @@ export const updateEmpleado = async (req, res, next) => {
       return res.status(404).json({ message: 'Empleado no encontrado' });
     }
 
+    // El cambio de sector le saca pesos asignados: se avisa en la respuesta,
+    // sin romper la forma que ya espera el front (sigue siendo el empleado).
+    if (overridesEliminados.length > 0) {
+      return res.json({
+        ...empleado.toObject(),
+        _avisoOverrides: {
+          eliminados: overridesEliminados.length,
+          detalle: overridesEliminados.map((o) => ({
+            year: o.year,
+            template: String(o.template),
+            peso: o.peso,
+          })),
+          mensaje:
+            `Al cambiar de sector se quitaron ${overridesEliminados.length} pesos asignados ` +
+            `de objetivos del sector anterior (solo del AF${anioFiscalActual()} en adelante). ` +
+            `Revisá que los pesos del empleado vuelvan a sumar 100%.`,
+        },
+      });
+    }
+
     res.json(empleado);
   } catch (err) {
     next(err);
   }
 };
 
+/**
+ * Borra un empleado, solo si no tiene nada colgando.
+ *
+ * Antes era un `findByIdAndDelete` pelado. Empleado no tiene borrado lógico,
+ * así que la fila desaparecía de verdad y dejaba huérfanas sus evaluaciones,
+ * sus overrides, sus feedbacks y su carrera: registros que apuntan a un
+ * `_id` que ya no existe, imposibles de leer y de recuperar.
+ *
+ * Hoy las 84 personas de la nómina tienen algo cargado, así que en la
+ * práctica esto solo deja borrar un alta recién hecha por error. Para el
+ * resto existe DESVINCULADO, que es lo que el negocio realmente quiere
+ * decir: la persona se fue, su historial queda.
+ */
 export const deleteEmpleado = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    const empleado = await Empleado.findByIdAndDelete(id);
+    const empleado = await Empleado.findById(id);
     if (!empleado) {
       return res.status(404).json({ message: 'Empleado no encontrado' });
     }
 
+    const [evaluaciones, overrides, feedbacks, carreras] = await Promise.all([
+      Evaluacion.countDocuments({ empleado: id }),
+      OverrideObjetivo.countDocuments({ empleado: id }),
+      Feedback.countDocuments({ empleado: id }),
+      Carrera.countDocuments({ empleado: id }),
+    ]);
+
+    const colgando = evaluaciones + overrides + feedbacks + carreras;
+    if (colgando > 0) {
+      const partes = [];
+      if (evaluaciones) partes.push(`${evaluaciones} evaluaciones`);
+      if (overrides) partes.push(`${overrides} pesos asignados`);
+      if (feedbacks) partes.push(`${feedbacks} feedbacks`);
+      if (carreras) partes.push(`${carreras} registros de carrera`);
+
+      return res.status(409).json({
+        message:
+          `No se puede eliminar a ${empleado.apellido}, ${empleado.nombre}: tiene ${partes.join(', ')}. ` +
+          `Borrarlo dejaría esos registros huérfanos y sin vuelta atrás. ` +
+          `Si la persona se fue de la empresa, marcala como DESVINCULADO: su historial se conserva ` +
+          `y deja de aparecer en las pantallas de evaluación.`,
+        motivo: 'tiene_datos',
+        detalle: { evaluaciones, overrides, feedbacks, carreras },
+      });
+    }
+
+    await Empleado.findByIdAndDelete(id);
     res.sendStatus(204);
   } catch (err) {
     next(err);

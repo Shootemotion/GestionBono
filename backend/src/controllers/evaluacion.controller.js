@@ -2,6 +2,10 @@
 import mongoose from "mongoose";
 import Evaluacion from "../models/Evaluacion.model.js";
 import Plantilla from "../models/Plantilla.model.js";
+import Empleado from "../models/Empleado.model.js";
+import Area from "../models/Area.model.js";
+import { mesesEnCiclo, esPeriodoAnteriorAlIngreso } from "../lib/tiempoEfectivo.js";
+import Auditoria from "../models/Auditoria.model.js";
 import {
   normalizarConfigMeta,
   calcularScorePeriodoMeta,
@@ -91,6 +95,36 @@ export const updateHito = async (req, res) => {
     }
     if (!periodo) {
       return res.status(400).json({ message: "El periodo es obligatorio" });
+    }
+
+    // No se carga un resultado de un período en el que la persona no estaba.
+    //
+    // No es un error de criterio, es un imposible. Hoy hay 56 evaluaciones así
+    // en la base, y una llegó a convertirse en un feedback cerrado con nota
+    // comunicada: a Huenuleff Barbara, que ingresó el 02/01, le cerraron un Q1
+    // (sep-nov) con 47,5.
+    //
+    // Se permite forzarlo con `confirmarFueraDeRango` para los casos legítimos
+    // —una recontratación, una fecha de ingreso mal cargada— pero deja de pasar
+    // en silencio.
+    if (!applyToAll && empleadoId && !req.body.confirmarFueraDeRango) {
+      const emp = await Empleado.findById(empleadoId).select("nombre apellido fechaIngreso").lean();
+      const tpl = await Plantilla.findById(plantillaId).select("year").lean();
+      if (emp?.fechaIngreso && tpl?.year !== undefined) {
+        const meses = mesesEnCiclo(emp.fechaIngreso, Number(tpl.year));
+        if (esPeriodoAnteriorAlIngreso(periodo, meses)) {
+          return res.status(409).json({
+            motivo: "periodo_anterior_al_ingreso",
+            message:
+              `${emp.apellido}, ${emp.nombre} ingresó el ` +
+              `${new Date(emp.fechaIngreso).toLocaleDateString("es-AR")} y el período ${periodo} ` +
+              `terminó antes de esa fecha. Cargar un resultado ahí le suma una evaluación de un ` +
+              `tiempo en el que no estaba en la empresa.`,
+            fechaIngreso: emp.fechaIngreso,
+            periodo,
+          });
+        }
+      }
     }
 
     // Calcular acumulados de períodos anteriores (solo si es para un empleado específico)
@@ -862,3 +896,204 @@ export async function deleteEvaluacion(req, res) {
     res.status(500).json({ message: e.message || "Error al eliminar evaluación" });
   }
 }
+
+/**
+ * GET /api/evaluaciones/previas-ingreso
+ *
+ * Resultados cargados en períodos anteriores a la fecha de ingreso de la
+ * persona. No es un error de criterio: es un imposible, porque en esos meses
+ * no estaba en la empresa, y esos valores igual cuentan para su nota.
+ *
+ * Solo cuenta los hitos CON DATO. Un hito vacío en un período previo es puro
+ * calendario —lo genera la plantilla— y no molesta a nadie.
+ */
+export const listarPreviasAlIngreso = async (req, res) => {
+  try {
+    const empleados = await Empleado.find(
+      { fechaIngreso: { $ne: null } },
+      "nombre apellido fechaIngreso area sector"
+    ).populate("area", "nombre").lean();
+
+    const plantillas = await Plantilla.find({}, "year nombre").lean();
+    const anioDe = new Map(plantillas.map((p) => [String(p._id), p.year]));
+    const nombreDe = new Map(plantillas.map((p) => [String(p._id), p.nombre]));
+
+    // Solo puede tener hallazgos quien NO estuvo el ciclo completo. Filtrar
+    // antes de traer evaluaciones evita cargar las 4400 de toda la nómina para
+    // terminar mirando las de 8 personas: la consulta pasaba de 850 ms a unos
+    // pocos, y esto se pide en cada entrada a Cierre de Evaluaciones.
+    const anios = [...new Set(plantillas.map((p) => p.year).filter((y) => y !== undefined))];
+    const candidatos = empleados.filter((e) =>
+      anios.some((a) => mesesEnCiclo(e.fechaIngreso, a) < 12)
+    );
+
+    if (candidatos.length === 0) return res.json({ total: 0, empleados: [] });
+
+    const evaluaciones = await Evaluacion.find(
+      { empleado: { $in: candidatos.map((e) => e._id) } },
+      "empleado plantillaId periodo metasResultados actual"
+    ).lean();
+
+    const porEmpleado = new Map();
+    for (const e of candidatos) porEmpleado.set(String(e._id), { emp: e, hallazgos: [] });
+
+    for (const ev of evaluaciones) {
+      const reg = porEmpleado.get(String(ev.empleado));
+      if (!reg) continue;
+
+      const anio = anioDe.get(String(ev.plantillaId));
+      if (anio === undefined) continue;
+
+      const meses = mesesEnCiclo(reg.emp.fechaIngreso, Number(anio));
+      if (!esPeriodoAnteriorAlIngreso(ev.periodo, meses)) continue;
+
+      const conDato =
+        (ev.metasResultados || []).some(
+          (m) => m.resultado !== null && m.resultado !== undefined && m.resultado !== ""
+        ) || (ev.actual !== null && ev.actual !== undefined);
+      if (!conDato) continue;
+
+      reg.hallazgos.push({
+        periodo: ev.periodo,
+        year: anio,
+        objetivo: nombreDe.get(String(ev.plantillaId)) || "(objetivo eliminado)",
+      });
+    }
+
+    const resultado = [...porEmpleado.values()]
+      .filter((r) => r.hallazgos.length > 0)
+      .map((r) => ({
+        empleadoId: String(r.emp._id),
+        nombre: `${r.emp.apellido || ""}, ${r.emp.nombre || ""}`.trim(),
+        area: r.emp.area?.nombre || null,
+        fechaIngreso: r.emp.fechaIngreso,
+        cantidad: r.hallazgos.length,
+        periodos: [...new Set(r.hallazgos.map((h) => `AF${h.year} ${h.periodo}`))].sort(),
+        objetivos: [...new Set(r.hallazgos.map((h) => h.objetivo))],
+      }))
+      .sort((a, b) => b.cantidad - a.cantidad);
+
+    res.json({ total: resultado.reduce((a, r) => a + r.cantidad, 0), empleados: resultado });
+  } catch (err) {
+    console.error("listarPreviasAlIngreso error:", err);
+    res.status(500).json({ message: "Error buscando evaluaciones previas al ingreso" });
+  }
+};
+
+/**
+ * DELETE /api/evaluaciones/previas-ingreso/:empleadoId
+ *
+ * Borra los resultados cargados en períodos anteriores al ingreso de UNA
+ * persona. De a uno y con confirmación explícita, por dos razones:
+ *
+ *   · Borrar un resultado puede mover una nota. El feedback cerrado guarda su
+ *     propio número, así que lo que la persona recibió no cambia — pero si
+ *     alguien reabre ese feedback, se recalcula sobre lo que quede.
+ *   · Un botón de "borrar todos" es exactamente lo que no queremos después de
+ *     lo que pasó en septiembre.
+ *
+ * Sin `?confirmar=true` es una vista previa: dice qué se borraría y no toca
+ * nada. Cada borrado pasa por `findByIdAndDelete`, que la auditoría registra
+ * con el documento completo, así que se puede reconstruir qué decía.
+ */
+export const borrarPreviasAlIngreso = async (req, res) => {
+  try {
+    const { empleadoId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(empleadoId)) {
+      return res.status(400).json({ message: "empleadoId inválido" });
+    }
+
+    const emp = await Empleado.findById(empleadoId, "nombre apellido fechaIngreso").lean();
+    if (!emp) return res.status(404).json({ message: "Empleado no encontrado" });
+    if (!emp.fechaIngreso) {
+      return res.status(409).json({ message: "El empleado no tiene fecha de ingreso cargada." });
+    }
+
+    const plantillas = await Plantilla.find({}, "year nombre tipo").lean();
+    const metaTpl = new Map(plantillas.map((p) => [String(p._id), p]));
+
+    const evaluaciones = await Evaluacion.find({ empleado: empleadoId }).lean();
+    const objetivo = [];
+
+    for (const ev of evaluaciones) {
+      const tpl = metaTpl.get(String(ev.plantillaId));
+      if (!tpl) continue;
+
+      const meses = mesesEnCiclo(emp.fechaIngreso, Number(tpl.year));
+      if (!esPeriodoAnteriorAlIngreso(ev.periodo, meses)) continue;
+
+      const conDato =
+        (ev.metasResultados || []).some(
+          (m) => m.resultado !== null && m.resultado !== undefined && m.resultado !== ""
+        ) || (ev.actual !== null && ev.actual !== undefined);
+      if (!conDato) continue;
+
+      objetivo.push({
+        _id: ev._id,
+        periodo: ev.periodo,
+        year: tpl.year,
+        tipo: tpl.tipo,
+        objetivo: tpl.nombre || "(sin nombre)",
+        valores: (ev.metasResultados || []).map((m) => m.resultado),
+        actual: ev.actual ?? null,
+        doc: ev,   // el documento entero, para poder reconstruirlo si hace falta
+      });
+    }
+
+    objetivo.sort((a, b) => String(a.periodo).localeCompare(String(b.periodo)));
+
+    // Un GET nunca borra, pase lo que pase en la query. El DELETE además
+    // necesita `confirmar=true`: dos puertas, no una.
+    if (req.method === "GET" || String(req.query.confirmar) !== "true") {
+      return res.json({
+        empleado: `${emp.apellido}, ${emp.nombre}`,
+        fechaIngreso: emp.fechaIngreso,
+        aBorrar: objetivo,
+        total: objetivo.length,
+        aplicado: false,
+      });
+    }
+
+    // Se audita CADA borrado con el documento entero ANTES de borrarlo.
+    //
+    // El middleware genérico no puede hacerlo acá: busca el id en la URL, y en
+    // esta ruta el id es el del EMPLEADO, no el de la evaluación. Por eso los
+    // primeros 31 borrados quedaron registrados sin contenido y solo se
+    // pudieron reconstruir del log del servidor, que es frágil: rota, se trunca
+    // y nadie lo mira.
+    for (const o of objetivo) {
+      await Auditoria.create({
+        usuarioId: req.user?._id || null,
+        email: req.user?.email || "(sin usuario)",
+        rol: req.user?.rolEfectivo || req.user?.rol || null,
+        accion: "ELIMINAR",
+        entidad: "evaluacion",
+        documentoId: o._id,
+        resumen: `previa al ingreso de ${emp.apellido}, ${emp.nombre}: ${o.periodo} - ${o.objetivo}`,
+        antes: o.doc,
+        cambios: null,
+        metodo: "DELETE",
+        ruta: req.originalUrl,
+        statusCode: 200,
+      }).catch((e) => console.error("[PreviasIngreso] no se pudo auditar:", e.message));
+
+      await Evaluacion.findByIdAndDelete(o._id);
+    }
+
+    console.warn(
+      `[PreviasIngreso] ${req.user?.email || "?"} borró ${objetivo.length} evaluaciones ` +
+      `anteriores al ingreso de ${emp.apellido}, ${emp.nombre}: ` +
+      JSON.stringify(objetivo.map((o) => ({ periodo: o.periodo, valores: o.valores, actual: o.actual })))
+    );
+
+    res.json({
+      empleado: `${emp.apellido}, ${emp.nombre}`,
+      borradas: objetivo.length,
+      detalle: objetivo,
+      aplicado: true,
+    });
+  } catch (err) {
+    console.error("borrarPreviasAlIngreso error:", err);
+    res.status(500).json({ message: "Error borrando las evaluaciones previas al ingreso" });
+  }
+};

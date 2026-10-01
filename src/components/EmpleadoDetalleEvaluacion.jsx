@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import GanttEvaluaciones from "@/components/GanttEvaluaciones";
+import { getCurrentFiscalYear } from "@/lib/fiscalYear";
 
 export default function EmpleadoDetalleEvaluacion({ empleado, onClose }) {
   const [saving, setSaving] = useState(false);
@@ -13,7 +14,7 @@ export default function EmpleadoDetalleEvaluacion({ empleado, onClose }) {
       await api(`/evaluaciones/${empleado.empleado._id}/${plantillaId}`, {
         method: "PUT",
         body: {
-          year: new Date().getFullYear(),
+          year: getCurrentFiscalYear(), // año FISCAL: de ene a ago difiere del calendario
           actual: payload.actual,
           escala: payload.escala,
           comentario: payload.comentario,

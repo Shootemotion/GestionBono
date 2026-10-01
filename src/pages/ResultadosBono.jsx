@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { getCurrentFiscalYear } from "@/lib/fiscalYear";
+import SelectorAnioFiscal from "@/components/SelectorAnioFiscal";
 import { ChevronDown, ChevronRight, Search, Download, DollarSign, UserCircle2, MessageSquare, TrendingUp, Award, Wallet, CheckCircle2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
@@ -46,7 +48,7 @@ const CircularScore = ({ score, size = 80, strokeWidth = 8, color = "text-emeral
 };
 
 export default function ResultadosBono() {
-    const [year, setYear] = useState(2025);
+    const [year, setYear] = useState(getCurrentFiscalYear());
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
@@ -113,13 +115,7 @@ export default function ResultadosBono() {
                             <h1 className="text-3xl font-black text-slate-800 tracking-tight">Resultados de Bonos</h1>
                             <p className="text-slate-500 mt-1 text-lg">Gestión de performance y compensaciones.</p>
                         </div>
-                        <select
-                            value={year}
-                            onChange={(e) => setYear(Number(e.target.value))}
-                            className="bg-white border border-slate-200 rounded-xl px-3 py-2 font-bold text-slate-700 shadow-sm focus:ring-2 focus:ring-blue-500/20 outline-none text-lg"
-                        >
-                            {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
-                        </select>
+                        <SelectorAnioFiscal value={year} onChange={setYear} variant="select" className="text-lg" />
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3">
@@ -348,6 +344,32 @@ export default function ResultadosBono() {
                                                                     <div className="w-full lg:w-[240px] p-3 flex flex-col justify-center border-b lg:border-b-0 lg:border-r border-slate-50/80">
                                                                         <span className="text-[9px] font-bold uppercase text-slate-400 tracking-wider mb-2 truncate">Condiciones</span>
                                                                         <div className="space-y-1">
+                                                                            {/* Ciclo incompleto: por qué sus metas pedían menos.
+                                                                                Va junto a las condiciones del bono para que se lea
+                                                                                de corrido — son el mismo hecho visto de dos lados. */}
+                                                                            {/* Error de carga, no un matiz: va en rojo, como
+                                                                                las condiciones que anulan el bono. */}
+                                                                            {emp.ciclo?.evaluacionesPreviasIngreso > 0 && (
+                                                                                <div className="text-[9px] px-1.5 py-1 rounded border flex items-start gap-1 p-1 bg-rose-50 border-rose-100/60 text-rose-700">
+                                                                                    <OctagonAlertIcon className="w-2.5 h-2.5 shrink-0 mt-0.5" />
+                                                                                    <span className="leading-tight">
+                                                                                        {emp.ciclo.evaluacionesPreviasIngreso} resultados cargados antes de su ingreso
+                                                                                    </span>
+                                                                                </div>
+                                                                            )}
+                                                                            {emp.ciclo?.incompleto && (
+                                                                                <div className={`text-[9px] px-1.5 py-1 rounded border flex items-start gap-1 p-1 ${emp.ciclo.parcial ? "bg-slate-100 border-slate-200 text-slate-600" : "bg-sky-50 border-sky-100 text-sky-700"}`}>
+                                                                                    <CalendarIcon className="w-2.5 h-2.5 shrink-0 mt-0.5" />
+                                                                                    <span className="leading-tight">
+                                                                                        {emp.ciclo.parcial ? "Ciclo parcial" : "Ingreso durante el ciclo"}
+                                                                                        {": "}{emp.ciclo.meses} de 12 meses
+                                                                                        {emp.ciclo.periodosAplicables?.length > 0 &&
+                                                                                            ` · ${emp.ciclo.periodosAplicables.length} de 4 períodos (${emp.ciclo.periodosAplicables.join(", ")})`}
+                                                                                        {emp.ciclo.prorrateado && emp.ciclo.metasAjustadas > 0 &&
+                                                                                            ` · ${emp.ciclo.metasAjustadas} ${emp.ciclo.metasAjustadas === 1 ? "meta ajustada" : "metas ajustadas"}`}
+                                                                                    </span>
+                                                                                </div>
+                                                                            )}
                                                                             {emp.condiciones && emp.condiciones.length > 0 ? (
                                                                                 <div className="max-h-[80px] overflow-y-auto custom-scrollbar pr-1 space-y-1">
                                                                                     {emp.condiciones.map((c, i) => (
@@ -453,6 +475,9 @@ const StarIcon = (props) => (
 )
 const TrendingDownIcon = (props) => (
     <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6" /><polyline points="17 18 23 18 23 12" /></svg>
+)
+const CalendarIcon = (props) => (
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
 )
 const OctagonAlertIcon = (props) => (
     <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>

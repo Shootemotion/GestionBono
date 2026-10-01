@@ -1,4 +1,6 @@
 import { Calendar, Building, Store, User, Search, CheckCircle2 } from "lucide-react";
+import { fiscalYearRange } from "@/lib/fiscalYear";
+import SelectorAnioFiscal from "@/components/SelectorAnioFiscal";
 
 export default function FilterBar({
   anio, setAnio,
@@ -14,21 +16,24 @@ export default function FilterBar({
 
       {/* 2. FILTROS GRID - Diseño "Input Group" con Iconos */}
       <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-12 items-end">
-
-        {/* Año */}
-        <div className="lg:col-span-2">
-          <label className="text-[11px] uppercase font-bold text-slate-400 tracking-wider mb-1.5 block">Año</label>
-          <div className="relative group">
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors">
-              <Calendar className="w-4 h-4" />
-            </div>
-            <input
-              type="number"
-              className="w-full pl-10 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 font-medium outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition-all hover:bg-white"
+        {/* Año fiscal */}
+        <div className="lg:col-span-2 relative">
+          <label className="text-[11px] uppercase font-bold text-slate-400 tracking-wider mb-1.5 block">Año fiscal</label>
+          <div className="flex items-center gap-2 pl-3 pr-2 py-2 bg-slate-50 border border-slate-200 rounded-lg transition-all hover:bg-white">
+            <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+            <SelectorAnioFiscal
               value={anio}
-              onChange={(e) => setAnio(Number(e.target.value))}
+              onChange={setAnio}
+              variant="stepper"
+              size="sm"
+              className="flex-1"
             />
           </div>
+          {/* Fuera del flujo: si ocupara alto propio, esta celda quedaría más
+              alta que el resto y el grid (items-end) desalinearía los combos. */}
+          <span className="absolute left-0 top-full mt-1 text-[10px] text-slate-400 whitespace-nowrap">
+            {fiscalYearRange(anio)}
+          </span>
         </div>
 
         {/* Área */}

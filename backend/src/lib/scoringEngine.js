@@ -1,5 +1,5 @@
-import { calcularResultadoMeta } from "./calculoMetas.js";
-import { calcularScoreObjetivoDesdeMetas } from "./scoringGlobal.js";
+// 🔗 Motor unificado: front y back usan las MISMAS funciones de scoringCore.
+import { calculateMetaScore, calculateObjectiveProgress } from "./scoringCore.js";
 
 /**
  * Calculates the progress of a set of goals (Metas) for an Objective based on a list of periodical records (Hitos).
@@ -21,31 +21,14 @@ export function calculateAnnualObjectiveProgress(metasDefinition, hitos) {
         return { metasAnuales: [], progreso };
     }
 
-    const metasAnuales = metasDefinition.map(metaDef => {
-        // Extract relevant values from hitos for this specific meta
-        const registros = hitos.map(h => {
-            // Find the result for this meta within the hito
-            const mRes = h.metas?.find(m =>
-                (m._id && String(m._id) === String(metaDef._id)) ||
-                m.nombre === metaDef.nombre
-            );
-            return {
-                periodo: h.periodo,
-                valor: mRes ? mRes.resultado : null
-            };
-        }).filter(r => r.valor !== null && r.valor !== undefined && r.valor !== "");
+    // Score por meta con el motor unificado (mismo que el frontend)
+    const metasAnuales = metasDefinition.map(metaDef => ({
+        ...metaDef,
+        scoreMeta: calculateMetaScore(metaDef, hitos, true),
+    }));
 
-        // Calculate the Annual Score for this Meta (using standard logic)
-        const { scoreMeta } = calcularResultadoMeta(metaDef, registros);
-
-        return {
-            ...metaDef,
-            scoreMeta
-        };
-    });
-
-    // Aggregate Meta Scores into Objective Score (weighted)
-    const progreso = calcularScoreObjetivoDesdeMetas(metasAnuales);
+    // Agregación del objetivo con el motor unificado (pondera por pesoMeta igual que el frontend)
+    const progreso = calculateObjectiveProgress({ metas: metasDefinition }, hitos, true);
 
     return { metasAnuales, progreso };
 }

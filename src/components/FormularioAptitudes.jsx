@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import { getCurrentFiscalYear, fiscalYearEnd, fiscalYearLabel, fiscalYearRange } from "@/lib/fiscalYear";
 
 /**
  * Util: normaliza mensajes de error (fetch/axios/custom)
@@ -125,7 +126,7 @@ export default function FormularioAptitudes({
 }) {
   const data = initialData ?? datosIniciales ?? null;
   const isEdit = !!(data && data._id) || !!templateId;
-  const currentYear = new Date().getFullYear();
+  const currentYear = getCurrentFiscalYear(); // año FISCAL, no calendario
 
   // Carga/remota
   const [loading, setLoading] = useState(!!templateId && !data);
@@ -496,7 +497,7 @@ export default function FormularioAptitudes({
                   checked={usarFechaCierreCustom}
                   onChange={(e) => setUsarFechaCierreCustom(e.target.checked)}
                 />
-                Fecha de cierre diferente al 31/08 del año fiscal
+                Fecha de cierre distinta al cierre del año fiscal ({fiscalYearEnd(year).toLocaleDateString("es-AR")})
               </label>
 
               {usarFechaCierreCustom && (
@@ -705,7 +706,7 @@ export default function FormularioAptitudes({
             )}
 
             <div>
-              <label className="text-xs">Año
+              <label className="text-xs">Año fiscal
                 {isEdit && <span className="ml-2 text-[10px] text-amber-600 font-semibold">(🔒 No modificable en edición)</span>}
               </label>
               <input
@@ -719,6 +720,7 @@ export default function FormularioAptitudes({
                 aria-invalid={!!fieldErrors.year}
               />
               <FieldError name="year" />
+              <p className="mt-1 text-xs text-muted-foreground">{fiscalYearLabel(year)} · {fiscalYearRange(year)}</p>
             </div>
           </div>
         </div>

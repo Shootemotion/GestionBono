@@ -35,7 +35,7 @@ export async function getById(req, res) {
 
 export async function create(req, res) {
     try {
-        const { codigo, nombre, descripcion, year, activo, representante, procesos, progreso, meta, desarrollo } = req.body;
+        const { codigo, nombre, descripcion, year, activo, representante, procesos, progreso, meta, unidadMeta, comentarioMeta, operador, desarrollo } = req.body;
         if (!nombre?.trim()) return res.status(400).json({ message: "El nombre es obligatorio." });
         if (!year) return res.status(400).json({ message: "El año fiscal es obligatorio." });
 
@@ -48,6 +48,9 @@ export async function create(req, res) {
             representante: representante || null,
             progreso: progreso !== undefined ? Number(progreso) : 0,
             meta: meta !== undefined ? Number(meta) : 80,
+            unidadMeta: unidadMeta || "",
+            comentarioMeta: comentarioMeta?.trim() || "",
+            operador: operador || ">",
             desarrollo: desarrollo?.trim() || "",
             seguimientoMensual: Array.isArray(req.body.seguimientoMensual) ? req.body.seguimientoMensual : []
         });
@@ -67,7 +70,7 @@ export async function create(req, res) {
 
 export async function update(req, res) {
     try {
-        const { codigo, nombre, descripcion, year, activo, representante, procesos, progreso, meta, desarrollo } = req.body;
+        const { codigo, nombre, descripcion, year, activo, representante, procesos, progreso, meta, unidadMeta, comentarioMeta, operador, desarrollo } = req.body;
         if (nombre !== undefined && !nombre?.trim())
             return res.status(400).json({ message: "El nombre es obligatorio." });
 
@@ -82,6 +85,9 @@ export async function update(req, res) {
                 ...(representante !== undefined && { representante: representante || null }),
                 ...(progreso !== undefined && { progreso: Number(progreso) }),
                 ...(meta !== undefined && { meta: Number(meta) }),
+                ...(unidadMeta !== undefined && { unidadMeta }),
+                ...(comentarioMeta !== undefined && { comentarioMeta: comentarioMeta }),
+                ...(operador !== undefined && { operador }),
                 ...(desarrollo !== undefined && { desarrollo: desarrollo.trim() }),
                 ...(req.body.seguimientoMensual !== undefined && { seguimientoMensual: req.body.seguimientoMensual }),
             },

@@ -2,6 +2,7 @@
 import Modal from "@/components/Modal.jsx";
 import { Button } from "@/components/ui/button";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { getCurrentFiscalYear } from "@/lib/fiscalYear";
 
 export default function CloneModal({
   isOpen,
@@ -13,10 +14,23 @@ export default function CloneModal({
   onClone,
 }) {
   // Estado base
-  const currentYear = new Date().getFullYear();
-  const [newYear, setNewYear] = useState(template?.year || currentYear);
+  const currentYear = getCurrentFiscalYear(); // año FISCAL, no calendario
+
+  // El default es el año EN CURSO, nunca el del objetivo origen.
+  //
+  // Antes proponía `template.year`. Clonar es casi siempre "traerme lo del año
+  // pasado para este año", así que el default correcto era justamente el que
+  // no estaba: al clonar los objetivos del AF2025 para armar el AF2026, el
+  // combo ya venía en 2025 y nadie lo miró. Los clones cayeron dentro de un
+  // ejercicio cerrado y ensuciaron notas que ya estaban firmes.
+  const [newYear, setNewYear] = useState(currentYear);
   const [newScopeType, setNewScopeType] = useState(template?.scopeType || "sector"); // "sector" | "area" | "empleado"
   const [newScopeId, setNewScopeId] = useState("");
+
+  // Un solo envío por clic: sin esto, dos clics seguidos creaban dos objetivos
+  // idénticos. (El servidor igual rechaza el duplicado; esto evita el ida y
+  // vuelta y el mensaje de error innecesario.)
+  const [enviando, setEnviando] = useState(false);
 
   // 🔎 Typeahead empleado
   const [empQuery, setEmpQuery] = useState("");
@@ -54,16 +68,22 @@ export default function CloneModal({
   // Reset al abrir/cambiar template
   useEffect(() => {
     if (!isOpen) return;
-    setNewYear(template?.year || currentYear);
+    setNewYear(currentYear);
     setNewScopeType(template?.scopeType || "sector");
     setNewScopeId("");
     setEmpQuery("");
     setEmpOpen(false);
+    setEnviando(false);
   }, [isOpen, template, currentYear]);
 
   if (!template) return null;
 
-  const canSubmit = !!newScopeId && Number(newYear) >= currentYear - 5 && Number(newYear) <= currentYear + 5;
+  const anioCerrado = Number(newYear) < currentYear;
+  const canSubmit =
+    !!newScopeId &&
+    !enviando &&
+    Number(newYear) >= currentYear - 5 &&
+    Number(newYear) <= currentYear + 1;
   const inputCls =
     "w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -78,10 +98,17 @@ export default function CloneModal({
               type="number"
               value={newYear}
               min={currentYear - 5}
-              max={currentYear + 5}
+              max={currentYear + 1}
               onChange={(e) => setNewYear(Number(e.target.value || currentYear))}
-              className={inputCls}
+              className={
+                anioCerrado
+                  ? inputCls + " border-amber-500 bg-amber-50 text-amber-900"
+                  : inputCls
+              }
             />
+            <p className="mt-1 text-xs text-muted-foreground">
+              En curso: AF {currentYear}/{String(currentYear + 1).slice(-2)}
+            </p>
           </div>
 
           {/* Alcance */}
@@ -213,17 +240,32 @@ export default function CloneModal({
           </div>
         </div>
 
+        {anioCerrado && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <strong>Estás clonando hacia un año fiscal ya cerrado.</strong>{" "}
+            El AF {newYear}/{String(newYear + 1).slice(-2)} terminó el 31/08/
+            {newYear + 1}: sus notas ya están firmes. Un objetivo nuevo ahí
+            cambia resultados que ya se comunicaron. Si querés armar el año en
+            curso, poné {currentYear}.
+          </div>
+        )}
+
         <div className="flex justify-end gap-2 pt-3 border-t border-border">
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} disabled={enviando}>
             Cancelar
           </Button>
           <Button
-            onClick={() =>
-              onClone({ year: newYear, scopeType: newScopeType, scopeId: newScopeId })
-            }
+            onClick={async () => {
+              setEnviando(true);
+              try {
+                await onClone({ year: newYear, scopeType: newScopeType, scopeId: newScopeId });
+              } finally {
+                setEnviando(false);
+              }
+            }}
             disabled={!canSubmit}
           >
-            Clonar
+            {enviando ? "Clonando…" : "Clonar"}
           </Button>
         </div>
       </div>

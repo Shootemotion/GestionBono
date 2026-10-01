@@ -12,7 +12,10 @@ import {
   XCircle,
   Calendar,
   Globe,
-  Check
+  Check,
+  History,
+  Award,
+  Clock
 } from "lucide-react";
 
 export default function PlantillasList({
@@ -22,6 +25,7 @@ export default function PlantillasList({
   onDelete,
   onToggleActive,
   onAprobarVersion,
+  onHistorial,
   permisos,
   areas = [],
   sectores = [],
@@ -70,6 +74,16 @@ export default function PlantillasList({
           p.__hasOverride ||
           (!!p.__override && !p.__override.excluido && (hasPesoOverride || p.__override?.meta));
 
+        // Linaje: si la representante del linaje tiene >1 versión
+        const lineageCount = p.__lineageCount || 1;
+        const tieneHistorial = lineageCount > 1;
+        const pendienteLinaje = p.__lineagePendiente || null;
+
+        // Objetivos de Mejora de Calidad asociados (poblados desde backend)
+        const objetivosCalidad = Array.isArray(p.objetivosCalidad)
+          ? p.objetivosCalidad.filter((o) => o && typeof o === "object")
+          : [];
+
         // Format Scope (Alcance)
         const getScopeLabel = () => {
           if (p.scopeType === "empleado") {
@@ -89,14 +103,20 @@ export default function PlantillasList({
         const scopeLabel = getScopeLabel();
 
         // Theme Colors
-        const borderColor = isObj ? "border-indigo-500" : "border-amber-500";
+        const borderColor = isObj ? "border-l-indigo-500" : "border-l-amber-500";
         const iconColor = isObj ? "text-indigo-600" : "text-amber-600";
         const bgColor = isObj ? "bg-indigo-50/50" : "bg-amber-50/50";
+        const cardTintBg = isObj
+          ? "bg-gradient-to-br from-white via-white to-indigo-50/40"
+          : "bg-gradient-to-br from-white via-white to-amber-50/40";
+        const cardShadow = isObj
+          ? "shadow-[0_2px_10px_-2px_rgba(79,70,229,0.10)] hover:shadow-[0_10px_24px_-6px_rgba(79,70,229,0.18)]"
+          : "shadow-[0_2px_10px_-2px_rgba(217,119,6,0.10)] hover:shadow-[0_10px_24px_-6px_rgba(217,119,6,0.18)]";
 
         return (
           <li
             key={p._id}
-            className={`group relative flex flex-col bg-gradient-to-br from-white to-slate-50/50 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-all duration-300 overflow-hidden border-l-[6px] ${borderColor}`}
+            className={`group relative flex flex-col ${cardTintBg} rounded-xl ${cardShadow} ring-1 ring-slate-200/70 hover:ring-slate-300 transition-all duration-300 overflow-hidden border-l-[6px] ${borderColor}`}
             style={{ paddingBottom: '3.5rem' }}
           >
 
@@ -120,6 +140,18 @@ export default function PlantillasList({
                       </span>
                     )}
 
+                    {tieneHistorial && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onHistorial?.(p); }}
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200 transition"
+                        title={`Ver historial completo (${lineageCount} versiones)`}
+                      >
+                        <History className="w-3 h-3" />
+                        {lineageCount - 1} versión{lineageCount - 1 === 1 ? "" : "es"} previa{lineageCount - 1 === 1 ? "" : "s"}
+                      </button>
+                    )}
+
                     {hasOverride && (
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200/60">
                         OVERRIDE
@@ -131,6 +163,18 @@ export default function PlantillasList({
                         VERSIÓN PENDIENTE APROBACIÓN
                       </span>
                     )}
+
+                    {pendienteLinaje && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onEdit?.(pendienteLinaje); }}
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition"
+                        title={`Hay una v${pendienteLinaje.version || "?"} pendiente de aprobación. Click para abrirla.`}
+                      >
+                        <Clock className="w-3 h-3" />
+                        v{pendienteLinaje.version || "?"} pendiente
+                      </button>
+                    )}
                   </div>
 
 
@@ -139,6 +183,23 @@ export default function PlantillasList({
                   <h3 className="text-sm font-medium text-slate-700 leading-snug break-words tracking-tight group-hover:text-blue-700 transition-colors">
                     {p.nombre}
                   </h3>
+
+                  {/* Objetivos de Mejora de Calidad asociados */}
+                  {objetivosCalidad.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {objetivosCalidad.map((obj) => (
+                        <span
+                          key={obj._id}
+                          className="inline-flex items-center gap-1 text-[10px] bg-teal-50 text-teal-700 border border-teal-100 px-1.5 py-0.5 rounded-full"
+                          title={obj.nombre}
+                        >
+                          <Award className="w-3 h-3" />
+                          {obj.codigo ? <span className="font-bold">{obj.codigo}</span> : null}
+                          <span className="truncate max-w-[140px]">{obj.nombre}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
 
                 </div>
 
@@ -168,9 +229,9 @@ export default function PlantillasList({
                 </div>
               </div>
 
-              {/* BODY: Tech Grid (Transparent, no white box) */}
+              {/* BODY: Tech Grid */}
               <div className="px-4 py-3 pb-6">
-                <div className="grid grid-cols-3 gap-2 px-1 py-2 border-t border-slate-100/80">
+                <div className="grid grid-cols-3 gap-2 px-3 py-2.5 rounded-lg bg-white/70 ring-1 ring-slate-200/60 backdrop-blur-[1px]">
 
                   {/* Col 1: Alcance (Scope) */}
                   <div className="flex flex-col">
@@ -232,6 +293,16 @@ export default function PlantillasList({
               >
                 <Copy className="w-3.5 h-3.5" /> Clonar
               </button>
+
+              {tieneHistorial && (
+                <button
+                  className="flex-1 py-3 text-xs font-medium text-slate-500 hover:text-indigo-600 hover:bg-indigo-50/50 transition-colors uppercase tracking-wide flex items-center justify-center gap-2"
+                  onClick={() => onHistorial?.(p)}
+                  title={`${lineageCount} versiones en este linaje`}
+                >
+                  <History className="w-3.5 h-3.5" /> Historial
+                </button>
+              )}
 
               {p.estadoAprobacion === "pendiente" && (isRealRRHH || hasRoleDirectivo) && (
                 <button

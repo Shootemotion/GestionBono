@@ -30,12 +30,15 @@ import overridesRoutes from './src/routes/overrides.routes.js';
 import usuariosRoutes from './src/routes/usuarios.routes.js';
 import evaluacionRoutes from './src/routes/evaluacion.routes.js';
 import simulacionRoutes from './src/routes/simulacion.routes.js';
+import reportesRoutes from './src/routes/reportes.routes.js';
+import comparadorRoutes from './src/routes/comparador.routes.js';
 
 import feedbackRoutes from './src/routes/feedback.routes.js';
 import bonoRoutes from './src/routes/bono.routes.js';
 import systemRoutes from './src/routes/system.routes.js';
+import auditoriaRoutes from './src/routes/auditoria.routes.js';
 import cron from 'node-cron';
-import { runBackup } from './scripts/backup.js';
+import { runBackup, backupSiHaceFalta } from './scripts/backup.js';
 import { seedRoles } from './seedRoles.js';
 import rolesRouter from './src/routes/roles.routes.js';
 
@@ -46,7 +49,16 @@ import procesosISORoutes from './src/routes/procesosISO.routes.js';
 import analyticsRoutes from './src/analytics/analytics.routes.js';
 import appFeedbackRoutes from './src/routes/appFeedback.routes.js';
 import botRoutes from './src/routes/bot.routes.js';
+import chatRoutes from './src/routes/chat.routes.js';
 import Empleado from './src/models/Empleado.model.js';
+import Plantilla from './src/models/Plantilla.model.js';
+import Evaluacion from './src/models/Evaluacion.model.js';
+import Usuario from './src/models/Usuario.model.js';
+import Role from './src/models/Role.model.js';
+import Area from './src/models/Area.model.js';
+import Sector from './src/models/Sector.model.js';
+import OverrideObjetivo from './src/models/OverrideObjetivo.model.js';
+import { auditarEscrituras } from './src/middleware/auditoria.middleware.js';
 import { botLimiter } from './src/middleware/rateLimiter.middleware.js';
 
 // --- CRON JOBS ---
@@ -61,7 +73,27 @@ cron.schedule('0 3 * * *', async () => {
   }
 });
 
+// Recuperación de corridas perdidas.
+//
+// `cron.schedule` solo dispara si el proceso está vivo a las 03:00 en punto y
+// no recupera lo que se perdió. Entre el 25 y el 28/09/2026 la máquina estuvo
+// apagada a esa hora: tres noches sin backup, sin error y sin nada que lo
+// dijera. Esto corre al arrancar y tapa ese hueco.
+//
+// Va con 30 s de demora para no pelear con el arranque del servidor, y nunca
+// tumba el proceso: quedarse sin backup es malo, no levantar es peor.
+setTimeout(() => {
+  backupSiHaceFalta(24).catch((e) =>
+    console.error('❌ [Backup] La recuperación al arranque falló:', e.message)
+  );
+}, 30_000).unref();
+
 const app = express();
+
+// Detrás de IIS/ARR (reverse proxy en la misma máquina): confiar en el proxy loopback
+// para que req.ip sea la IP real del cliente (vía X-Forwarded-For) y el rate limiter
+// keyee por cliente y no por la IP del proxy.
+app.set('trust proxy', 'loopback');
 
 // --- MIDDLEWARES GLOBALES ---
 const whitelist = (process.env.CORS_ORIGIN || "").split(",").map(o => o.trim()).filter(Boolean);
@@ -175,9 +207,26 @@ app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(null, {
 // Analytics API — autenticación propia por token (no requiere JWT)
 // Power BI conecta aquí usando el header X-Analytics-Token
 app.use('/api/analytics', analyticsRoutes);
-
 // 2) A partir de acá, TODAS las rutas requieren JWT (o mock interno)
 app.use(authenticateJWT);
+
+// 2b) Registro de cambios. Va acá —después de identificar al usuario y antes
+//     de los routers— para que ninguna ruta de escritura quede sin auditar por
+//     olvido. Solo registra métodos que escriben y respuestas 2xx.
+app.use(auditarEscrituras({
+  '/api/templates':   { entidad: 'plantilla',  modelo: Plantilla },
+  '/api/empleados':   { entidad: 'empleado',   modelo: Empleado },
+  '/api/usuarios':    { entidad: 'usuario',    modelo: Usuario },
+  '/api/roles':       { entidad: 'rol',        modelo: Role },
+  '/api/areas':       { entidad: 'area',       modelo: Area },
+  '/api/sectores':    { entidad: 'sector',     modelo: Sector },
+  '/api/overrides':   { entidad: 'override',   modelo: OverrideObjetivo },
+  // Con el modelo puesto, la auditoría guarda el documento ANTES de borrarlo.
+  // Sin eso registraba que alguien borró una evaluación pero no qué decía, y
+  // el borrado era irreversible: no se podía reconstruir el valor perdido.
+  '/api/evaluaciones':{ entidad: 'evaluacion', modelo: Evaluacion },
+  '/api/feedbacks':   { entidad: 'feedback',   modelo: null },
+}));
 
 // 3) Rutas protegidas por capacidades
 app.use('/api/areas', areasRouter);
@@ -193,13 +242,17 @@ app.use('/api/assignments', assignmentsRoutes);
 app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/evaluaciones', evaluacionRoutes);
 app.use('/api/simulacion', simulacionRoutes);
+app.use('/api/reportes', reportesRoutes);
+app.use('/api/comparador', comparadorRoutes);
 app.use('/api/feedbacks', feedbackRoutes);
 app.get('/api/test-me', (req, res) => res.json({ message: "I AM THE ONE" }));
 app.use('/api/avisos', globalAvisoRoutes);
 app.use('/api/system', systemRoutes);
+app.use('/api/auditoria', auditoriaRoutes);
 app.use('/api/roles', rolesRouter);
 app.use('/api/objetivos-iso', objetivosISORoutes);
 app.use('/api/procesos-iso', procesosISORoutes);
+app.use('/api/chat', chatRoutes);
 
 // Alias útil para debug del usuario autenticado
 app.get('/api/_whoami', whoami);
@@ -261,7 +314,9 @@ app.use(errorHandler);
 
 // --- CONEXIÓN A DB y ARRANQUE DEL SERVIDOR ---
 const MONGO_URI = process.env.MONGO_URI;
-const PORT = 5007; // Volviendo al puerto original solicitado por el usuario
+// Respeta PORT del entorno (útil para levantar una segunda instancia en otro
+// puerto sin tocar la que ya está corriendo). Si no viene, 5007 como siempre.
+const PORT = Number(process.env.PORT) || 5007;
 
 mongoose
   .connect(MONGO_URI)
@@ -278,3 +333,4 @@ mongoose
 // Hot reload trigger
 // Hot reload trigger for feedback fix - v2.0
 // Force nodemon to pick up new engine files
+// chat routes mounted at /api/chat

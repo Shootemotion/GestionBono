@@ -1,4 +1,5 @@
 // src/lib/calculoMetas.js
+import { calculateMetaScore } from "./scoringCore.js";
 
 // Normaliza 0..100 y opcionalmente permite over hasta max
 export const clamp = (v, max = 100) =>
@@ -163,113 +164,39 @@ export function calcularResultadoMeta(metaConfig = {}, registros = []) {
     const cfg = normalizarConfigMeta(metaConfig);
 
     if (!Array.isArray(registros) || registros.length === 0) {
-        return {
-            scoreMeta: 0,
-            cumpleGlobal: false,
-            periodos: [],
-        };
+        return { scoreMeta: 0, cumpleGlobal: false, periodos: [] };
     }
 
+    // 🔗 UNIFICACIÓN: el scoreMeta lo calcula el MOTOR ÚNICO (scoringCore),
+    // el mismo que usa el frontend. Así front y back no pueden divergir.
+    const META_KEY = "m";
+    const metaDef = { ...metaConfig, _id: META_KEY, metaId: META_KEY };
+    const hitos = registros.map((r) => ({
+        periodo: r.periodo,
+        metas: [{ _id: META_KEY, metaId: META_KEY, resultado: r.valor }],
+    }));
+    const scoreMeta = calculateMetaScore(metaDef, hitos, true);
+
+    // Detalle por período (SOLO para display / trazabilidad; no altera el scoreMeta).
     const sorted = [...registros].sort((a, b) =>
-        String(a.periodo).localeCompare(String(b.periodo), undefined, { numeric: true, sensitivity: 'base' })
+        String(a.periodo).localeCompare(String(b.periodo), undefined, { numeric: true, sensitivity: "base" })
     );
-
     let acumuladoValor = 0;
-
-    const periodosCalc = sorted.map((reg) => {
-        const valorCrudo = reg.valor;
+    const periodos = sorted.map((reg) => {
         let valorEvaluado;
-
         if (cfg.modoAcumulacion === "acumulativo") {
-            if (cfg.tipoUnidad === "binario") {
-                acumuladoValor += valorCrudo ? 1 : 0;
-            } else {
-                acumuladoValor += Number(valorCrudo) || 0;
-            }
+            acumuladoValor += cfg.tipoUnidad === "binario" ? (reg.valor ? 1 : 0) : (Number(reg.valor) || 0);
             valorEvaluado = acumuladoValor;
         } else {
-            // "periodo"
-            if (cfg.tipoUnidad === "binario") {
-                valorEvaluado = !!valorCrudo;
-            } else {
-                valorEvaluado = Number(valorCrudo) || 0;
-            }
+            valorEvaluado = cfg.tipoUnidad === "binario" ? !!reg.valor : (Number(reg.valor) || 0);
         }
-
         const { score, cumple } = calcularScorePeriodoMeta(cfg, valorEvaluado);
-
-        return {
-            periodo: reg.periodo,
-            valor: valorCrudo,
-            valorEvaluado,
-            score,
-            cumple,
-        };
+        return { periodo: reg.periodo, valor: reg.valor, valorEvaluado, score, cumple };
     });
 
-    // Regla de cierre
-    let scoreMeta = 0;
-    let cumpleGlobal = false;
-
-    if (cfg.reglaCierre === "umbral_periodos") {
-        const total = periodosCalc.length;
-        const cumplidos = periodosCalc.filter((p) => p.cumple).length;
-        const umbralNecesario = cfg.umbralPeriodos || 0;
-
-        cumpleGlobal = cumplidos >= umbralNecesario;
-
-        if (cumpleGlobal) {
-            if (cfg.permiteOver && umbralNecesario > 0 && total > umbralNecesario) {
-                // Interpolación lineal:
-                // Umbral -> 100%
-                // Total -> MaxOver (ej. 120%)
-                const extra = cumplidos - umbralNecesario;
-                const gap = total - umbralNecesario;
-                const maxOverVal = cfg.maxOver || 120;
-
-                // Score = 100 + (% de avance en el gap) * (diferencia de score)
-                scoreMeta = 100 + (extra / gap) * (maxOverVal - 100);
-            } else {
-                scoreMeta = 100;
-            }
-        } else {
-            // Si no cumple el umbral, vemos si reconoce esfuerzo
-            if (cfg.reconoceEsfuerzo) {
-                // Return proportional credit based on required threshold
-                scoreMeta = umbralNecesario > 0 ? (cumplidos / umbralNecesario) * 100 : 0;
-            } else {
-                // Return 0 if it doesn't recognize effort and haven't met threshold
-                scoreMeta = 0;
-            }
-        }
-
-        // Aplicar cap de maxOver (por si dio > 100 o > 120)
-        scoreMeta = clamp(scoreMeta, cfg.maxOver);
-    } else {
-        // "promedio" o "cierre_unico"
-        // Calculamos un valor representativo (promedio de valores o último valor)
-        // y evaluamos el score SOBRE ese valor final.
-        let valorRepresentativo = 0;
-
-        if (cfg.reglaCierre === "cierre_unico") {
-            const last = periodosCalc[periodosCalc.length - 1];
-            valorRepresentativo = last?.valorEvaluado ?? 0;
-        } else {
-            // "promedio" (default)
-            const totalValor = periodosCalc.reduce((acc, p) => acc + p.valorEvaluado, 0);
-            valorRepresentativo = periodosCalc.length
-                ? totalValor / periodosCalc.length
-                : 0;
-        }
-
-        const res = calcularScorePeriodoMeta(cfg, valorRepresentativo);
-        scoreMeta = res.score;
-        cumpleGlobal = res.cumple;
-    }
-
     return {
-        scoreMeta: +scoreMeta.toFixed(2),
-        cumpleGlobal,
-        periodos: periodosCalc,
+        scoreMeta: +Number(scoreMeta).toFixed(2),
+        cumpleGlobal: scoreMeta >= 100,
+        periodos,
     };
 }

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { api } from "@/lib/api";
 import { dashEmpleado } from "@/lib/dashboard";
 import { calculatePeriodScores, getCurrentFiscalYear } from "@/lib/scoreHelpers";
+import { mesesEnCiclo, periodosAplicables } from "../../backend/src/lib/tiempoEfectivo.js";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +29,8 @@ export default function RRHHFeedbackClosing() {
     const [areas, setAreas] = useState([]);
     const [sectors, setSectors] = useState([]);
     const [evaluations, setEvaluations] = useState([]); // To show scores
+    /** Gente con resultados cargados en períodos anteriores a su ingreso. */
+    const [previasIngreso, setPreviasIngreso] = useState([]);
     const [loading, setLoading] = useState(false);
     const [search, setSearch] = useState("");
     const [selectedIds, setSelectedIds] = useState(new Set());
@@ -49,13 +52,17 @@ export default function RRHHFeedbackClosing() {
     const loadData = async () => {
         setLoading(true);
         try {
-            const [resFeedbacks, resEmployees, resAreas, resSectors, resEvaluations] = await Promise.all([
+            const [resFeedbacks, resEmployees, resAreas, resSectors, resEvaluations, resPrevias] = await Promise.all([
                 api("/feedbacks/hr/pending"),
                 api("/empleados?limit=1000"),
                 api("/areas"),
                 api("/sectores"),
-                api("/evaluaciones/hr/pending") // Fetch evaluations to get scores
+                api("/evaluaciones/hr/pending"), // Fetch evaluations to get scores
+                // Resultados cargados en períodos anteriores al ingreso. Si falla,
+                // la pantalla sigue andando sin el aviso: es información, no un bloqueo.
+                api("/evaluaciones/previas-ingreso").catch(() => null),
             ]);
+            setPreviasIngreso(resPrevias?.empleados || []);
 
             // Filter Quarterly Feedbacks
             const quarterly = (Array.isArray(resFeedbacks) ? resFeedbacks : []).filter(f =>
@@ -96,7 +103,7 @@ export default function RRHHFeedbackClosing() {
             if (!structure[areaName]) {
                 structure[areaName] = {
                     id: areaName,
-                    stats: { total: 0, ack: 0, contest: 0, system: 0, pending: 0, closed: 0 },
+                    stats: { total: 0, ack: 0, contest: 0, system: 0, pending: 0, closed: 0, sinEnviar: 0, enviados: 0, respondidos: 0, esperados: 0 },
                     managers: {}
                 };
             }
@@ -107,7 +114,7 @@ export default function RRHHFeedbackClosing() {
                 structure[areaName].managers[managerKey] = {
                     id: managerKey,
                     name: managerName,
-                    stats: { total: 0, ack: 0, contest: 0, system: 0, pending: 0, closed: 0 },
+                    stats: { total: 0, ack: 0, contest: 0, system: 0, pending: 0, closed: 0, sinEnviar: 0, enviados: 0, respondidos: 0, esperados: 0 },
                     employees: {}
                 };
             }
@@ -116,7 +123,7 @@ export default function RRHHFeedbackClosing() {
                     id: empId,
                     data: empData,
                     items: {}, // Map by period for easy access
-                    stats: { total: 0, ack: 0, contest: 0, system: 0, pending: 0, closed: 0 }
+                    stats: { total: 0, ack: 0, contest: 0, system: 0, pending: 0, closed: 0, sinEnviar: 0, enviados: 0, respondidos: 0, esperados: 0 }
                 };
             }
             return structure[areaName].managers[managerKey].employees[empId];
@@ -201,10 +208,34 @@ export default function RRHHFeedbackClosing() {
 
             const empNode = initPath(areaName, managerName, emp._id, emp);
 
+            // Períodos que le correspondían según cuándo ingresó. Se usa la
+            // misma función que el backend, no una copia: si la regla cambia,
+            // cambia en los dos lados a la vez.
+            // El año sale de sus propios feedbacks: esta pantalla trae los
+            // pendientes de todos los ciclos, no tiene selector de año.
+            const anioCiclo = Number(
+                empFeedbacks.find((f) => f.year)?.year ?? getCurrentFiscalYear()
+            );
+            const periodosDelEmpleado = periodosAplicables(
+                mesesEnCiclo(emp.fechaIngreso, anioCiclo)
+            );
+
             // Add Feedbacks (or placeholders)
             const periods = ["Q1", "Q2", "Q3", "FINAL"];
             periods.forEach(p => {
                 const fb = empFeedbacks.find(f => f.periodo === p);
+
+                // Cuántos feedbacks deberían existir. Es el denominador de todo
+                // lo demás: sin él, "12 enviados" no dice si falta mucho o nada.
+                //
+                // Solo cuentan los períodos que le correspondían: quien ingresó
+                // en marzo no podía tener un feedback de Q1 —no estaba— y
+                // contarlo como "sin enviar" acusa al jefe de no haber hecho
+                // algo que no correspondía. A Dikun le marcaba 2 pendientes que
+                // no existían; a Navarro, en cambio, sí le falta el Q2.
+                const leCorresponde = periodosDelEmpleado.includes(p);
+                if (leCorresponde) empNode.stats.esperados++;
+
                 if (fb) {
                     empNode.items[p] = fb;
                     // Update Stats
@@ -217,12 +248,25 @@ export default function RRHHFeedbackClosing() {
                     else if (fb.empleadoAck?.estado === "SYSTEM_CLOSED") empNode.stats.system++;
 
                     if (fb.estado !== "CLOSED") empNode.stats.pending++;
+
+                    // Las tres preguntas que se hace RRHH mirando esta pantalla:
+                    // ¿cuáles faltan mandar?, ¿cuáles mandé y estoy esperando?,
+                    // ¿cuáles ya contestó la persona?
+                    const respondio = ["ACK", "CONTEST"].includes(fb.empleadoAck?.estado);
+                    if (fb.estado === "DRAFT") empNode.stats.sinEnviar++;
+                    else if (respondio || fb.estado === "CLOSED") empNode.stats.respondidos++;
+                    else empNode.stats.enviados++;
                 } else {
+                    // No existe el feedback. Solo es "sin enviar" si le tocaba:
+                    // el Q1 de quien ingresó en marzo no está pendiente, no
+                    // corresponde.
+                    if (leCorresponde) empNode.stats.sinEnviar++;
                     // Placeholder
                     empNode.items[p] = {
                         _id: `virtual-${emp._id}-${p}`,
                         periodo: p,
                         isVirtual: true,
+                        noCorresponde: !leCorresponde,
                         empleadoAck: null
                     };
                 }
@@ -239,6 +283,10 @@ export default function RRHHFeedbackClosing() {
                     manager.stats.system += emp.stats.system;
                     manager.stats.pending += emp.stats.pending;
                     manager.stats.closed += emp.stats.closed;
+                    manager.stats.sinEnviar += emp.stats.sinEnviar;
+                    manager.stats.enviados += emp.stats.enviados;
+                    manager.stats.respondidos += emp.stats.respondidos;
+                    manager.stats.esperados += emp.stats.esperados;
                 });
                 area.stats.total += manager.stats.total;
                 area.stats.ack += manager.stats.ack;
@@ -246,6 +294,10 @@ export default function RRHHFeedbackClosing() {
                 area.stats.system += manager.stats.system;
                 area.stats.pending += manager.stats.pending;
                 area.stats.closed += manager.stats.closed;
+                area.stats.sinEnviar += manager.stats.sinEnviar;
+                area.stats.enviados += manager.stats.enviados;
+                area.stats.respondidos += manager.stats.respondidos;
+                area.stats.esperados += manager.stats.esperados;
             });
         });
 
@@ -415,15 +467,71 @@ export default function RRHHFeedbackClosing() {
 
     // --- RENDER HELPERS ---
     const StatusPill = ({ count, type, icon: Icon, color }) => (
-        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border shadow-sm ${color}`}>
-            <Icon className="w-3.5 h-3.5" />
+        <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${color}`}>
+            <Icon className="w-3 h-3" />
             <span>{count}</span>
-            <span className="hidden sm:inline uppercase ml-1 opacity-80">{type}</span>
+            <span className="hidden sm:inline uppercase ml-0.5 opacity-80">{type}</span>
         </div>
     );
 
+    /**
+     * Estado de avance de un área o de un jefe, de un vistazo.
+     *
+     * Responde las tres preguntas que se hace RRHH mirando esta pantalla:
+     * cuántos faltan mandar, cuántos están mandados esperando respuesta, y
+     * cuántos ya contestó la persona. La barra usa el total esperado como
+     * denominador — sin eso, "12 enviados" no dice si falta mucho o nada.
+     */
+    const BarraAvance = ({ stats, compacta = false }) => {
+        const total = stats.esperados || 1;
+        const p = (n) => `${(n / total) * 100}%`;
+        const falta = stats.sinEnviar;
+        const completo = falta === 0 && stats.enviados === 0;
+
+        return (
+            <div className={`flex items-center gap-2 ${compacta ? "min-w-[190px]" : "min-w-[260px]"}`}>
+                <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden flex" title={
+                    `${stats.respondidos} respondidos / ${stats.enviados} esperando / ${stats.sinEnviar} sin enviar (de ${stats.esperados})`
+                }>
+                    <div className="bg-emerald-500 h-full" style={{ width: p(stats.respondidos) }} />
+                    <div className="bg-blue-400 h-full" style={{ width: p(stats.enviados) }} />
+                    <div className="bg-slate-300 h-full" style={{ width: p(falta) }} />
+                </div>
+                <div className={`flex items-center gap-1.5 tabular-nums ${compacta ? "text-[10px]" : "text-[11px]"} font-bold`}>
+                    {completo ? (
+                        <span className="text-emerald-600 flex items-center gap-1">
+                            <CheckCircle className="w-3 h-3" /> completo
+                        </span>
+                    ) : (
+                        <>
+                            <span className="text-emerald-600" title="Respondidos o cerrados">{stats.respondidos}</span>
+                            <span className="text-slate-300">/</span>
+                            <span className="text-blue-500" title="Enviados, esperando respuesta">{stats.enviados}</span>
+                            <span className="text-slate-300">/</span>
+                            <span className="text-slate-500" title="Sin enviar">{falta}</span>
+                        </>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
     const FeedbackCell = ({ feedback, empId }) => {
-        if (!feedback) return <div className="w-full h-8 bg-slate-50 rounded border border-slate-100"></div>;
+        if (!feedback) return <div className="w-full h-6 bg-slate-50 rounded border border-slate-100"></div>;
+
+        // Período anterior al ingreso de la persona: no es un pendiente, no
+        // existe. Se distingue del hueco vacío para que nadie lo lea como
+        // "falta cargar".
+        if (feedback.noCorresponde) {
+            return (
+                <div
+                    className="w-full h-6 flex items-center justify-center rounded border border-dashed border-slate-200 bg-slate-50/50 text-[8px] font-bold uppercase tracking-wide text-slate-300"
+                    title="Anterior a su ingreso: no corresponde evaluarlo"
+                >
+                    no aplica
+                </div>
+            );
+        }
 
         const isVirtual = feedback.isVirtual;
         const status = isVirtual ? "FUTURE" : feedback.estado; // DRAFT, SENT, PENDING_HR, CLOSED
@@ -453,11 +561,11 @@ export default function RRHHFeedbackClosing() {
         }
 
         return (
-            <div className={`w-full h-9 flex items-center justify-center rounded-lg border text-[10px] font-bold uppercase tracking-wide transition-all relative ${bg} ${text} ${border}`}>
+            <div className={`w-full h-6 flex items-center justify-center rounded border text-[9px] font-bold uppercase tracking-wide transition-all relative ${bg} ${text} ${border}`}>
                 {label}
                 {isOverdue && (
-                    <div className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 shadow-sm" title="Vencido">
-                        <Clock className="w-2.5 h-2.5" />
+                    <div className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5" title="Vencido">
+                        <Clock className="w-2 h-2" />
                     </div>
                 )}
             </div>
@@ -784,8 +892,41 @@ export default function RRHHFeedbackClosing() {
                 </AnimatePresence>
             </motion.div>
 
+            {/* Resultados cargados en períodos anteriores al ingreso.
+                Va antes de la lista porque quien cierra feedbacks es justamente
+                quien puede frenar que eso se convierta en una nota comunicada. */}
+            {previasIngreso.length > 0 && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 flex items-start gap-3 mb-6">
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-rose-600" />
+                    <div className="text-sm text-rose-900 min-w-0">
+                        <p className="font-bold">
+                            {previasIngreso.length === 1
+                                ? "1 colaborador tiene resultados cargados antes de su fecha de ingreso"
+                                : `${previasIngreso.length} colaboradores tienen resultados cargados antes de su fecha de ingreso`}
+                        </p>
+                        <p className="text-xs opacity-80 mt-1">
+                            Se evaluaron períodos en los que la persona todavía no estaba en la empresa, y esos
+                            valores cuentan para su nota. Revisalos antes de cerrar su feedback.
+                        </p>
+                        <ul className="mt-2 space-y-0.5 text-xs">
+                            {previasIngreso.map((p) => (
+                                <li key={p.empleadoId} className="truncate">
+                                    <span className="font-bold">{p.nombre}</span>
+                                    {p.area && <span className="opacity-60"> · {p.area}</span>}
+                                    {" — ingresó el "}
+                                    {p.fechaIngreso ? new Date(p.fechaIngreso).toLocaleDateString("es-AR") : "—"}
+                                    {", "}<span className="font-bold">{p.cantidad}</span>
+                                    {p.cantidad === 1 ? " resultado previo" : " resultados previos"}
+                                    <span className="opacity-60"> ({p.periodos.slice(0, 5).join(", ")}{p.periodos.length > 5 ? "…" : ""})</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
+            )}
+
             {/* DATA LIST */}
-            <div className="space-y-10 px-1">
+            <div className="space-y-6 px-1">
                 {Object.values(groupedData).map(area => (
                     <motion.div
                         key={area.id}
@@ -794,16 +935,17 @@ export default function RRHHFeedbackClosing() {
                         className="space-y-4"
                     >
                         {/* AREA HEADER */}
-                        <div className="flex items-center gap-3 pb-3 border-b border-slate-200/60 relative">
-                            <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
+                        <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200/60 relative">
+                            <div className="p-1.5 bg-indigo-50 rounded-lg text-indigo-600">
                                 <Building2 className="w-5 h-5" />
                             </div>
-                            <h2 className="text-xl font-bold text-slate-800 tracking-tight">{area.id}</h2>
+                            <h2 className="text-lg font-bold text-slate-800 tracking-tight">{area.id}</h2>
                             <div className="flex gap-2 ml-auto items-center">
+                                <BarraAvance stats={area.stats} />
+                                <div className="w-px h-5 bg-slate-200 mx-1" />
                                 <StatusPill count={area.stats.ack} type="Acuerdo" icon={CheckCircle} color="bg-emerald-50 text-emerald-700 border-emerald-200" />
                                 <StatusPill count={area.stats.contest} type="Desacuerdo" icon={AlertCircle} color="bg-rose-50 text-rose-700 border-rose-200" />
                                 <StatusPill count={area.stats.system} type="Sistema" icon={Clock} color="bg-slate-50 text-slate-600 border-slate-200" />
-                                <Badge variant="secondary" className="ml-2 bg-slate-100 text-slate-600 hover:bg-slate-200">{area.stats.total} Total</Badge>
 
                                 {/* BULK ACTIONS MENU */}
                                 <div className="relative ml-4">
@@ -868,12 +1010,12 @@ export default function RRHHFeedbackClosing() {
                         </div>
 
                         {/* MANAGERS */}
-                        <div className="pl-0 md:pl-6 space-y-6">
+                        <div className="pl-0 md:pl-4 space-y-2">
                             {Object.values(area.managers).map(manager => (
-                                <div key={manager.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
+                                <div key={manager.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                                     {/* MANAGER HEADER */}
                                     <div
-                                        className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50/50 transition-colors select-none bg-slate-50/30"
+                                        className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors select-none bg-slate-50/50"
                                         onClick={() => {
                                             const next = new Set(expandedManagers);
                                             if (next.has(manager.id)) next.delete(manager.id);
@@ -881,18 +1023,19 @@ export default function RRHHFeedbackClosing() {
                                             setExpandedManagers(next);
                                         }}
                                     >
-                                        <div className="flex items-center gap-4">
-                                            <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-xs flex-shrink-0">
                                                 {manager.name[0]}
                                             </div>
-                                            <div>
-                                                <div className="font-bold text-slate-800">{manager.name}</div>
-                                                <div className="text-xs text-slate-400 font-medium">Jefe / Evaluador</div>
-                                            </div>
+                                            <div className="font-bold text-slate-800 text-sm truncate">{manager.name}</div>
+                                            <span className="text-[10px] text-slate-400 font-medium flex-shrink-0">
+                                                {Object.keys(manager.employees).length} pers.
+                                            </span>
                                         </div>
-                                        <div className="flex items-center gap-4">
-                                            <div className={`p-2 rounded-full bg-slate-100 text-slate-500 transition-transform duration-300 ${expandedManagers.has(manager.id) ? 'rotate-180' : ''}`}>
-                                                <ChevronDown className="w-4 h-4" />
+                                        <div className="flex items-center gap-3 flex-shrink-0">
+                                            <BarraAvance stats={manager.stats} compacta />
+                                            <div className={`p-1 rounded-full bg-slate-100 text-slate-500 transition-transform duration-300 ${expandedManagers.has(manager.id) ? 'rotate-180' : ''}`}>
+                                                <ChevronDown className="w-3.5 h-3.5" />
                                             </div>
                                         </div>
                                     </div>
@@ -907,8 +1050,8 @@ export default function RRHHFeedbackClosing() {
                                                 className="border-t border-slate-100"
                                             >
                                                 {/* HEADER ROW */}
-                                                <div className="grid grid-cols-12 gap-4 p-3 bg-slate-50/80 text-[10px] font-bold uppercase text-slate-400 tracking-wider border-b border-slate-100">
-                                                    <div className="col-span-4 pl-2">Empleado</div>
+                                                <div className="grid grid-cols-12 gap-2 px-3 py-1.5 bg-slate-50 text-[9px] font-bold uppercase text-slate-400 tracking-wider border-b border-slate-100">
+                                                    <div className="col-span-4 pl-1">Empleado</div>
                                                     <div className="col-span-2 text-center">Q1</div>
                                                     <div className="col-span-2 text-center">Q2</div>
                                                     <div className="col-span-2 text-center">Q3</div>
@@ -920,7 +1063,7 @@ export default function RRHHFeedbackClosing() {
                                                     {Object.values(manager.employees).map(emp => (
                                                         <div key={emp.id} className="group">
                                                             <div
-                                                                className="grid grid-cols-12 gap-4 p-3 items-center hover:bg-slate-50 transition-colors cursor-pointer"
+                                                                className="grid grid-cols-12 gap-2 px-3 py-1 items-center hover:bg-indigo-50/40 transition-colors cursor-pointer"
                                                                 onClick={() => {
                                                                     const next = new Set(expandedRows);
                                                                     if (next.has(emp.id)) next.delete(emp.id);
@@ -929,28 +1072,40 @@ export default function RRHHFeedbackClosing() {
                                                                 }}
                                                             >
                                                                 {/* Employee Info */}
-                                                                <div className="col-span-4 flex items-center gap-3 pl-2">
-                                                                    <div className="w-8 h-8 rounded-full bg-slate-100 overflow-hidden flex-shrink-0 border border-slate-200">
+                                                                <div className="col-span-4 flex items-center gap-2 pl-1 min-w-0">
+                                                                    <div className="w-6 h-6 rounded-full bg-slate-100 overflow-hidden flex-shrink-0 border border-slate-200">
                                                                         {emp.data.fotoUrl ? (
                                                                             <img src={emp.data.fotoUrl} alt="" className="w-full h-full object-cover" />
                                                                         ) : (
-                                                                            <div className="w-full h-full flex items-center justify-center text-xs font-bold text-slate-400">
+                                                                            <div className="w-full h-full flex items-center justify-center text-[9px] font-bold text-slate-400">
                                                                                 {emp.data.nombre?.[0]}{emp.data.apellido?.[0]}
                                                                             </div>
                                                                         )}
                                                                     </div>
-                                                                    <div className="min-w-0">
-                                                                        <div className="font-bold text-slate-700 text-sm truncate group-hover:text-indigo-600 transition-colors">
-                                                                            {emp.data.apellido}, {emp.data.nombre}
-                                                                        </div>
+                                                                    <div className="font-semibold text-slate-700 text-[13px] truncate group-hover:text-indigo-600 transition-colors">
+                                                                        {emp.data.apellido}, {emp.data.nombre}
                                                                     </div>
+                                                                    {/* Semáforo del colaborador: sin enviar / esperando / respondidos */}
+                                                                    {emp.stats.sinEnviar > 0 ? (
+                                                                        <span className="ml-auto flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500" title={`${emp.stats.sinEnviar} sin enviar`}>
+                                                                            {emp.stats.sinEnviar} sin enviar
+                                                                        </span>
+                                                                    ) : emp.stats.enviados > 0 ? (
+                                                                        <span className="ml-auto flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-600" title={`${emp.stats.enviados} esperando respuesta`}>
+                                                                            {emp.stats.enviados} esperando
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="ml-auto flex-shrink-0 text-emerald-500" title="Todos respondidos">
+                                                                            <CheckCircle className="w-3.5 h-3.5" />
+                                                                        </span>
+                                                                    )}
                                                                 </div>
 
                                                                 {/* Quarters */}
-                                                                <div className="col-span-2 px-1"><FeedbackCell feedback={emp.items["Q1"]} empId={emp.id} /></div>
-                                                                <div className="col-span-2 px-1"><FeedbackCell feedback={emp.items["Q2"]} empId={emp.id} /></div>
-                                                                <div className="col-span-2 px-1"><FeedbackCell feedback={emp.items["Q3"]} empId={emp.id} /></div>
-                                                                <div className="col-span-2 px-1"><FeedbackCell feedback={emp.items["FINAL"]} empId={emp.id} /></div>
+                                                                <div className="col-span-2"><FeedbackCell feedback={emp.items["Q1"]} empId={emp.id} /></div>
+                                                                <div className="col-span-2"><FeedbackCell feedback={emp.items["Q2"]} empId={emp.id} /></div>
+                                                                <div className="col-span-2"><FeedbackCell feedback={emp.items["Q3"]} empId={emp.id} /></div>
+                                                                <div className="col-span-2"><FeedbackCell feedback={emp.items["FINAL"]} empId={emp.id} /></div>
                                                             </div>
 
                                                             {/* EXPANDED DETAILS */}

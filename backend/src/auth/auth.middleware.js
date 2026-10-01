@@ -9,6 +9,14 @@ import Sector from "../models/Sector.model.js";
 const arrayUnion = (a = [], b = []) =>
   Array.from(new Set([...(a || []), ...(b || [])]));
 
+// Match cap con soporte de wildcard (ej: "nomina:*" matchea "nomina:editar")
+export const matchCap = (perms, cap) =>
+  Array.isArray(perms) && perms.some(p =>
+    p === '*' ||
+    p === cap ||
+    (typeof p === 'string' && p.endsWith(':*') && cap.startsWith(p.slice(0, -2)))
+  );
+
 /** Helper: construye un nombre legible */
 function buildFullName(userDoc) {
   const apellido = userDoc?.empleado?.apellido || userDoc?.apellido || "";
@@ -190,7 +198,7 @@ export const requireCap = (cap) => (req, res, next) => {
   const u = req.user;
   if (!u) return res.status(401).json({ message: "No autenticado" });
   if (u.isSuper) return next();
-  if (u.permisos?.includes("*") || u.permisos?.includes(cap)) return next();
+  if (matchCap(u.permisos, cap)) return next();
   return res.status(403).json({ message: "No autorizado", needed: cap });
 };
 
@@ -206,7 +214,7 @@ export const requireCapOrSelf = (cap) => (req, res, next) => {
   const u = req.user;
   if (!u) return res.status(401).json({ message: "No autenticado" });
   if (u.isSuper) return next();
-  if (u.permisos?.includes("*") || u.permisos?.includes(cap)) return next();
+  if (matchCap(u.permisos, cap)) return next();
 
   // Check Self
   if (req.params.id && u.empleadoId === req.params.id) return next();
@@ -237,13 +245,42 @@ export const whoami = async (req, res) => {
         if (roleDoc) rolePerms = roleDoc.permissions;
 
         const arrayUnion = (a = [], b = []) => Array.from(new Set([...(a || []), ...(b || [])]));
-        const permisos = arrayUnion(rolePerms, targetUserDoc.permisos || []);
+        let permisos = arrayUnion(rolePerms, targetUserDoc.permisos || []);
+
+        // Referente areas/sectores del target (para isJefeArea/Sector)
+        let referenteAreas = [];
+        let referenteSectors = [];
+        if (targetUserDoc.empleado?._id) {
+          try {
+            const empObjId = new mongoose.Types.ObjectId(String(targetUserDoc.empleado._id));
+            const ares = await Area.find({ referentes: empObjId }, "_id").lean();
+            const secs = await Sector.find({ referentes: empObjId }, "_id").lean();
+            referenteAreas = (ares || []).map(a => String(a._id));
+            referenteSectors = (secs || []).map(s => String(s._id));
+          } catch (err) {
+            console.error("Error fetching referentes en impersonation:", err);
+          }
+        }
+
+        if (referenteAreas.length > 0 || referenteSectors.length > 0) {
+          permisos = arrayUnion(permisos, [
+            "nomina:ver", "nomina:evaluar", "nomina:editar", "nomina:crear",
+            "objetivos:ver", "objetivos:editar",
+            "aptitudes:ver", "aptitudes:editar",
+          ]);
+        }
+
+        let rolEfectivo = rolSlug;
+        if (rolSlug === "visor") {
+          if (referenteAreas.length > 0) rolEfectivo = "jefe_area";
+          else if (referenteSectors.length > 0) rolEfectivo = "jefe_sector";
+        }
 
         return res.json({
           _id: String(targetUserDoc._id),
           email: targetUserDoc.email,
           rol: rolSlug,
-          rolEfectivo: rolSlug,
+          rolEfectivo,
           permisos,
           empleado: targetUserDoc.empleado ? {
             _id: String(targetUserDoc.empleado._id),
@@ -258,8 +295,13 @@ export const whoami = async (req, res) => {
           empleadoId: String(targetUserDoc.empleado?._id || ""),
           fullName: buildFullName(targetUserDoc),
           isSuper: rolSlug === "superadmin",
+          isCalidad: targetUserDoc.isCalidad || false,
           isRRHH: rolSlug === "rrhh",
-          isDirectivo: rolSlug === "directivo"
+          isDirectivo: rolSlug === "directivo",
+          isJefeArea: rolEfectivo === "jefe_area" || referenteAreas.length > 0,
+          isJefeSector: rolEfectivo === "jefe_sector" || referenteSectors.length > 0,
+          referenteAreas,
+          referenteSectors,
         });
       }
     } catch (err) {

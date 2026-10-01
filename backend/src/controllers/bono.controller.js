@@ -55,9 +55,8 @@ export const calculateAll = async (req, res, next) => {
                 filter.area = targetId;
             }
         } else {
-            // If manual calculation, respect strict filter or allow both?
-            // Let's use robust filter here too
-            filter.estadoLaboral = { $in: ["ACTIVO", "VINCULADO"] };
+            // Excluir desvinculados — alineado con el enum real del modelo
+            filter.estadoLaboral = { $ne: "DESVINCULADO" };
         }
 
         const empleadosDocs = await Empleado.find(filter, '_id').lean();
@@ -275,8 +274,8 @@ export const getResults = async (req, res, next) => {
             });
         }
 
-        // 2. Get All Active Employees (Robust Filter)
-        const empleadosDocs = await Empleado.find({ estadoLaboral: { $in: ["ACTIVO", "VINCULADO"] } }, "_id").lean();
+        // 2. Get All Active Employees (excluye desvinculados, alineado al enum real)
+        const empleadosDocs = await Empleado.find({ estadoLaboral: { $ne: "DESVINCULADO" } }, "_id").lean();
         const ids = empleadosDocs.map(e => e._id);
 
         if (ids.length === 0) return res.json([]);
@@ -437,6 +436,14 @@ export const getResults = async (req, res, next) => {
                     total: globalScore
                 },
                 condiciones,
+                // Cuánto del ciclo estuvo, y si eso ajustó sus metas.
+                //
+                // El bono ya prorrateaba por antigüedad; esto expone el MISMO
+                // dato del lado de la evaluación, para que en Resultados se lea
+                // junto: por qué cobra proporcional y por qué sus metas pedían
+                // menos. Sale del dashboard (`computeForEmployees`), que es
+                // quien aplica el ajuste.
+                ciclo: m.ciclo || null,
                 feedbacks: m.feedbacks?.map(f => ({
                     periodo: f.periodo,
                     estado: f.estado,

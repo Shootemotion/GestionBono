@@ -19,28 +19,16 @@ import {
   Megaphone,
   HelpCircle,
   FileCheck2,
-  MessageSquarePlus
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import useCan, { useHasRole } from "@/hooks/useCan";
 
 import { useTour } from "@/hooks/useTour";
 import { API_ORIGIN } from "@/lib/api";
-import AppFeedbackModal from "@/components/AppFeedbackModal";
+import { fiscalQuarterLabel } from "@/lib/fiscalYear";
 
-function quarterLabel(d = new Date()) {
-  const month = d.getMonth();
-  const year = d.getFullYear();
-
-  // Fiscal Year starts in September (Month 8)
-  const fyMonth = (month + 4) % 12;
-  const fiscalQ = Math.floor(fyMonth / 3) + 1;
-
-  const fiscalYear = (month >= 8) ? year : year - 1;
-  const nextYearShort = String(fiscalYear + 1).slice(-2);
-
-  return `Q${fiscalQ}-${fiscalYear}/${nextYearShort}`;
-}
+// Etiqueta de trimestre + año fiscal (`Q1 AF 2026/27`). Ver @/lib/fiscalYear.
+const quarterLabel = fiscalQuarterLabel;
 
 function initialsFromUser(user) {
   const base =
@@ -116,8 +104,6 @@ export default function Home() {
     [user?.empleado?.fotoUrl]
   );
 
-  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
-
   const prettyRol =
     rolePretty[user?.rol] ||
     (user?.isRRHH
@@ -186,7 +172,7 @@ export default function Home() {
         },
         {
           key: "gestion-iso",
-          title: "Gestión ISO 9001",
+          title: "Gestión de Calidad",
           desc: "Administración de procesos y objetivos ISO 9001.",
           icon: FileCheck2,
           to: "/gestion-iso",
@@ -463,21 +449,6 @@ export default function Home() {
 
 
       </div>
-
-      {/* Floating Feedback Button */}
-      <button
-        onClick={() => setIsFeedbackModalOpen(true)}
-        className="fixed bottom-6 left-6 z-50 flex items-center gap-2 bg-indigo-600 text-white px-4 py-3 rounded-full shadow-lg shadow-indigo-600/30 hover:bg-indigo-700 hover:scale-105 hover:shadow-xl transition-all group"
-      >
-        <MessageSquarePlus className="w-5 h-5" />
-        <span className="text-sm font-semibold pr-1">Experiencia del Usuario</span>
-      </button>
-
-      {/* Feedback Modal */}
-      <AppFeedbackModal
-        isOpen={isFeedbackModalOpen}
-        onClose={() => setIsFeedbackModalOpen(false)}
-      />
     </div>
   );
 }

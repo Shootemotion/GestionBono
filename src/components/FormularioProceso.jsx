@@ -5,7 +5,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
+import { getCurrentFiscalYear, fiscalYearLabel, fiscalYearRange } from "@/lib/fiscalYear";
 
 export default function FormularioProceso({ initialData = null, onGuardar, onCancelar, defaultYear }) {
     const currentFiscal = getCurrentFiscalYear();
@@ -99,10 +99,10 @@ export default function FormularioProceso({ initialData = null, onGuardar, onCan
                     required
                 >
                     {[2022, 2023, 2024, 2025, 2026, 2027, 2028, 2029, 2030].map((y) => (
-                        <option key={y} value={y}>{y}–{y + 1}</option>
+                        <option key={y} value={y}>{fiscalYearLabel(y)}</option>
                     ))}
                 </select>
-                <p className="mt-1 text-xs text-muted-foreground">Sep {year} – Ago {Number(year) + 1}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{fiscalYearRange(year)}</p>
             </div>
 
             {/* Preview del fullName */}

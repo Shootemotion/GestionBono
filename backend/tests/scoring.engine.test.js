@@ -1,5 +1,5 @@
 /**
- * Tests del motor de scoring — scoreEngineUnified.js + calculoMetas.js
+ * Tests del motor de scoring — scoringCore.js + calculoMetas.js
  *
  * Cubre los caminos más críticos del sistema de cálculo de desempeño:
  *  1. calculatePeriodCompliance — lógica de cumplimiento por período
@@ -15,7 +15,7 @@ import {
   calculatePeriodCompliance,
   calculateMetaScore,
   calculateObjectiveProgress,
-} from '../src/lib/scoreEngineUnified.js';
+} from '../src/lib/scoringCore.js';
 
 import {
   calcularScorePeriodoMeta,
@@ -325,18 +325,16 @@ describe('calcularResultadoMeta — regla promedio', () => {
     expect(scoreMeta).toBeCloseTo(75, 1);
   });
 
-  test('modo acumulativo: acumula valores y promedia los scores por período', () => {
+  test('modo acumulativo: suma los resultados y compara el total vs objetivo (motor unificado)', () => {
     const cfg = { ...metaCfg, modoAcumulacion: 'acumulativo' };
     const registros = [
       { periodo: 'Q1', valor: 40 },
       { periodo: 'Q2', valor: 40 },
       { periodo: 'Q3', valor: 20 },
     ];
-    // El engine acumula: Q1=40, Q2=80, Q3=100 (total acumulado)
-    // Con regla "promedio" y valorRepresentativo = (40+80+100)/3 = 73.33
-    // score = 73.33/100 * 100 = 73.33
-    // Nota: para score=100 con acumulativo se necesita cierre_unico (último hito = 100)
+    // MOTOR UNIFICADO (semántica acordada): total = 40+40+20 = 100, esperado 100 → 100%.
+    // (Antes el backend promediaba acumulados y daba 73.33; ahora front y back coinciden.)
     const { scoreMeta } = calcularResultadoMeta(cfg, registros);
-    expect(scoreMeta).toBeCloseTo(73.33, 1);
+    expect(scoreMeta).toBeCloseTo(100, 1);
   });
 });

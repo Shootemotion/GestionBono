@@ -1,6 +1,20 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import { execSync } from 'node:child_process';
+
+// Lee info de git en tiempo de build/dev. Si git no está disponible, cae al fallback.
+function safeExec(cmd, fallback) {
+  try {
+    return execSync(cmd, { stdio: ['pipe', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    return fallback;
+  }
+}
+
+// Fecha del último commit como BUILD_DATE (lo único que auto-derivamos).
+// La versión la maneja manualmente APP_VERSION en src/lib/appInfo.js.
+const gitDate = safeExec('git log -1 --format=%cd --date=short', new Date().toISOString().slice(0, 10));
 
 export default defineConfig({
   plugins: [react()],
@@ -8,6 +22,11 @@ export default defineConfig({
     alias: { '@': path.resolve(__dirname, './src') },
   },
   server: {
+    // Puerto fijo del servidor de desarrollo. `strictPort` hace que falle en
+    // vez de buscarse otro puerto solo: si está ocupado conviene enterarse,
+    // no terminar con dos instancias en puertos distintos sin darse cuenta.
+    port: 5180,
+    strictPort: true,
     proxy: {
       "/api": {
         target: "http://localhost:5007", // 👈 puerto backend original
@@ -17,5 +36,8 @@ export default defineConfig({
   },
   esbuild: {
     drop: ['console', 'debugger'],
+  },
+  define: {
+    __APP_BUILD_DATE__: JSON.stringify(gitDate),
   },
 });

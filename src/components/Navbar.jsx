@@ -29,7 +29,9 @@ import {
   Megaphone,
   HardDrive,
   FileCheck2,
-  MessageSquarePlus
+  MessageSquarePlus,
+  Scale,
+  ShieldCheck
 } from 'lucide-react';
 
 
@@ -347,7 +349,7 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                       items={[
                         { to: '/plantillas', label: 'Objetivos', icon: <Target className="w-4 h-4" />, allowed: hasRoleRRHH || hasRoleDirectivo },
                         { to: '/gestion-avisos', label: 'Avisos', icon: <Megaphone className="w-4 h-4" />, allowed: isRealRRHH || hasRoleDirectivo },
-                        { to: '/gestion-iso', label: 'Gestión ISO', icon: <FileCheck2 className="w-4 h-4" />, allowed: isSuperAdmin || user?.isCalidad }
+                        { to: '/gestion-iso', label: 'Gestión de Calidad', icon: <FileCheck2 className="w-4 h-4" />, allowed: isSuperAdmin || user?.isCalidad }
                       ]}
                       isOpen={activeMenu === 'Gestión'}
                       onMouseEnter={() => handleMenuEnter('Gestión')}
@@ -369,17 +371,44 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                       closeMenu={closeMenu}
                     />
 
-                    {/* --- Estructura & Organización --- */}
+                    {/* --- Estructura & Organización ---
+                        Solo lo que de verdad es estructura: quién trabaja acá y
+                        cómo está dividida la empresa. Este menú se había
+                        convertido en el cajón de sastre —tenía adentro Admin.
+                        Web y las tres páginas de verificación— y un referente
+                        que quería revisar pesos no tenía por qué pensar
+                        "estructura" para encontrarlas. */}
                     <DropdownGroup
                       title="Estructura"
                       icon={<Building2 className="w-4 h-4" />}
                       items={[
                         { to: '/gestion-estructura', label: 'Nómina', icon: <Users className="w-4 h-4" />, allowed: canViewEstructura },
-                        { to: '/gestion-departamentos', label: 'Departamentos', icon: <Building2 className="w-4 h-4" />, allowed: canViewEstructuraFinal },
-                        { to: '/sistemas', label: 'Admin. Web', icon: <HardDrive className="w-4 h-4" />, allowed: isSuperAdmin }
+                        { to: '/gestion-departamentos', label: 'Departamentos', icon: <Building2 className="w-4 h-4" />, allowed: canViewEstructuraFinal }
                       ]}
                       isOpen={activeMenu === 'Estructura'}
                       onMouseEnter={() => handleMenuEnter('Estructura')}
+                      onMouseLeave={handleMenuLeave}
+                      closeMenu={closeMenu}
+                    />
+
+                    {/* --- Control de Datos ---
+                        Páginas para responder "¿la información está bien?".
+                        NINGUNA escribe: se mira, no se toca. Las herramientas
+                        que reparan —depuración, restaurar por empleado,
+                        comparar backup, objetivos sin datos— viven en Admin.
+                        Web, y están separadas a propósito: quien va a revisar
+                        un dato no tiene que quedar a dos clics de algo que
+                        borra. */}
+                    <DropdownGroup
+                      title="Control de Datos"
+                      icon={<ShieldCheck className="w-4 h-4" />}
+                      items={[
+                        { to: '/pesos-asignados', label: 'Pesos Asignados', icon: <Scale className="w-4 h-4" />, allowed: isSuperAdmin || hasRoleDirectivo || isRealRRHH || hasReferente },
+                        { to: '/simulador-motor', label: 'Simulador Cierre de Cálculo', icon: <Calculator className="w-4 h-4" />, allowed: isSuperAdmin || hasRoleDirectivo || isRealRRHH || hasReferente },
+                        { to: '/validacion-calculos', label: 'Validación de Cálculos', icon: <FileCheck2 className="w-4 h-4" />, allowed: isSuperAdmin }
+                      ]}
+                      isOpen={activeMenu === 'Control de Datos'}
+                      onMouseEnter={() => handleMenuEnter('Control de Datos')}
                       onMouseLeave={handleMenuLeave}
                       closeMenu={closeMenu}
                     />
@@ -399,6 +428,12 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                       onMouseLeave={handleMenuLeave}
                       closeMenu={closeMenu}
                     />
+
+                    {/* --- Admin. Web ---
+                        Sale de "Estructura", donde no pintaba nada. Acá vive
+                        todo lo que escribe o borra: backups, restauración,
+                        depuración, usuarios, roles. Solo superadmin. */}
+                    {renderNavItem('/sistemas', 'Admin. Web', <HardDrive />, isSuperAdmin)}
                   </>
                 )}
               </div>
@@ -614,7 +649,7 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                     <div className="space-y-1">
                       {(hasRoleRRHH || hasRoleDirectivo) && <MobileLink to="/plantillas" label="Gestión Objetivos" />}
                       {(isRealRRHH || hasRoleDirectivo) && <MobileLink to="/gestion-avisos" label="Gestión Avisos" />}
-                      {(isSuperAdmin || user?.isCalidad) && <MobileLink to="/gestion-iso" label="Gestión ISO" />}
+                      {(isSuperAdmin || user?.isCalidad) && <MobileLink to="/gestion-iso" label="Gestión de Calidad" />}
                     </div>
                   </div>
 
@@ -633,9 +668,33 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                     <div className="space-y-1">
                       {canViewEstructura && <MobileLink to="/gestion-estructura" label="Nómina" />}
                       {canViewEstructuraFinal && <MobileLink to="/gestion-departamentos" label="Departamentos" />}
-                      {isSuperAdmin && <MobileLink to="/sistemas" label="Sistemas" />}
                     </div>
                   </div>
+
+                  {/* Control de Datos
+                      Estas tres páginas no estaban en el menú móvil: un
+                      referente desde el celular no tenía cómo llegar a Pesos
+                      Asignados. */}
+                  {(isSuperAdmin || hasRoleDirectivo || isRealRRHH || hasReferente) && (
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Control de Datos</h3>
+                      <div className="space-y-1">
+                        <MobileLink to="/pesos-asignados" label="Pesos Asignados" />
+                        <MobileLink to="/simulador-motor" label="Simulador Cierre de Cálculo" />
+                        {isSuperAdmin && <MobileLink to="/validacion-calculos" label="Validación de Cálculos" />}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Admin. Web */}
+                  {isSuperAdmin && (
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Administración</h3>
+                      <div className="space-y-1">
+                        <MobileLink to="/sistemas" label="Admin. Web" />
+                      </div>
+                    </div>
+                  )}
 
                   {/* Resultados */}
                   <div>

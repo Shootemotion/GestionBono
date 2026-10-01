@@ -68,3 +68,46 @@ export async function api(path, { method = 'GET', headers = {}, body, ...rest } 
 
   return data;
 }
+
+/**
+ * Descarga un archivo binario de la API (Excel, PDF) y dispara el "Guardar
+ * como" del navegador. `api()` no sirve para esto porque siempre lee la
+ * respuesta como texto y la intenta parsear como JSON, lo que corrompe el
+ * binario.
+ *
+ * Respeta el nombre de archivo que manda el servidor en Content-Disposition.
+ */
+export async function apiDownload(path, { nombrePorDefecto = 'descarga' } = {}) {
+  const token = getToken();
+  const res = await fetch(`${BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  if (!res.ok) {
+    // El backend contesta JSON cuando falla, aunque se haya pedido un archivo.
+    let mensaje = `Error ${res.status}`;
+    try {
+      const data = await res.json();
+      if (data?.message) mensaje = data.message;
+    } catch { /* respuesta no JSON: nos quedamos con el status */ }
+    const e = new Error(mensaje);
+    e.status = res.status;
+    throw e;
+  }
+
+  const disp = res.headers.get('content-disposition') || '';
+  const nombre = (disp.match(/filename="?([^"]+)"?/) || [])[1] || nombrePorDefecto;
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Sin el timeout, Safari cancela la descarga al revocar la URL.
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+
+  return { nombre, size: blob.size };
+}

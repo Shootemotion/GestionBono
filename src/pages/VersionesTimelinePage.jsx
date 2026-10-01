@@ -6,10 +6,10 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { api } from "@/lib/api";
 import { Target, Lightbulb, Clock, History, AlertCircle, ArrowLeft, Building2, Users, UserCircle2, Filter, ChevronDown, ChevronUp, Network } from "lucide-react";
-import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
+import { getCurrentFiscalYear, fiscalYearLabel } from "@/lib/fiscalYear";
 
 export default function VersionesTimelinePage() {
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const nav = useNavigate();
     const initialYear = searchParams.get("year") || getCurrentFiscalYear();
     const [selectedYear, setSelectedYear] = useState(Number(initialYear));
@@ -174,7 +174,7 @@ export default function VersionesTimelinePage() {
                         }}
                     >
                         {[2023, 2024, 2025, 2026, 2027, 2028, 2029].map((y) => (
-                            <option key={y} value={y}>{y}–{y + 1}</option>
+                            <option key={y} value={y}>{fiscalYearLabel(y)}</option>
                         ))}
                     </select>
                 </div>

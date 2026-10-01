@@ -1,5 +1,7 @@
 import Carrera from "../models/Carrera.model.js";
 import Empleado from "../models/Empleado.model.js";
+import fs from "fs";
+import path from "path";
 
 export async function listCarrera(req, res, next) {
   try {
@@ -17,46 +19,34 @@ export async function listCarrera(req, res, next) {
 export async function createCarrera(req, res, next) {
   try {
     const { id } = req.params; // empleadoId
-    const { puesto, area, sector, desde, hasta, motivo } = req.body;
+    const { puesto, area, sector, desde, hasta, motivo, principal } = req.body;
     if (!puesto || !desde) return res.status(400).json({ message: "puesto y desde son requeridos" });
 
+    // Los puestos pueden ser SIMULTÁNEOS: no cerramos automáticamente los otros vigentes.
+    // El cierre (fecha 'hasta') se hace manualmente cuando corresponde.
     const item = await Carrera.create({ empleado: id, puesto, area, sector, desde, hasta, motivo });
 
-    // LOGICA DE SOLAPAMIENTO:
-    // Si el nuevo puesto es "abierto" (sin fecha fin), revisamos otros abiertos para cerrarlos o ajustar este.
-    if (!hasta) {
-      const otrosAbiertos = await Carrera.find({ empleado: id, _id: { $ne: item._id }, hasta: null });
+    // ¿Debe ser el puesto PRINCIPAL?
+    // - Si viene marcado explícitamente, o
+    // - Si es el primer/único registro de carrera del empleado (arranque).
+    const totalCount = await Carrera.countDocuments({ empleado: id });
+    const shouldBePrincipal = !!principal || totalCount === 1;
 
-      for (const other of otrosAbiertos) {
-        // Caso A: El otro es ANTERIOR a este nuevo (Promoción normal)
-        // Cerramos el anterior con la fecha de inicio del nuevo.
-        if (new Date(other.desde) < new Date(item.desde)) {
-          await Carrera.findByIdAndUpdate(other._id, { hasta: item.desde });
-        }
-        // Caso B: El otro es POSTERIOR a este nuevo (Inserción histórica olvidada)
-        // Cerramos ESTE nuevo registro con la fecha de inicio del posterior, para que no quede como "Actual".
-        else {
-          await Carrera.findByIdAndUpdate(item._id, { hasta: other.desde });
-        }
-      }
-    }
+    if (shouldBePrincipal) {
+      // Solo puede haber un principal: desmarcamos los demás y marcamos este.
+      await Carrera.updateMany({ empleado: id, _id: { $ne: item._id } }, { $set: { principal: false } });
+      item.principal = true;
+      await item.save();
 
-    const populated = await Carrera.findById(item._id).populate("area", "nombre").populate("sector", "nombre");
-
-    // Actualizar datos actuales del empleado si este puesto es REALMENTE el "vigente" 
-    // (Asumimos que si estamos agregando algo es lo actual, o verificar por fecha)
-    // Estrategia: Buscar el último por fecha 'desde' y actualizar el empleado con eso.
-    const ultimo = await Carrera.findOne({ empleado: id }).sort({ desde: -1 });
-
-    if (ultimo && String(ultimo._id) === String(item._id)) {
+      // El principal define area/sector/puesto del empleado (no tocamos fechaIngreso).
       await Empleado.findByIdAndUpdate(id, {
-        puesto: ultimo.puesto,
-        area: ultimo.area,
-        sector: ultimo.sector,
-        // No cambiamos fechaIngreso original
+        puesto: item.puesto,
+        area: item.area,
+        sector: item.sector,
       });
     }
 
+    const populated = await Carrera.findById(item._id).populate("area", "nombre").populate("sector", "nombre");
     res.status(201).json(populated);
   } catch (e) { next(e); }
 }
@@ -72,12 +62,97 @@ export async function updateCarrera(req, res, next) {
   } catch (e) { next(e); }
 }
 
+// PATCH /:id/carrera/:itemId/principal
+// Marca un puesto como principal (define area/sector/puesto del empleado) y desmarca los demás.
+export async function setPrincipalCarrera(req, res, next) {
+  try {
+    const { id, itemId } = req.params;
+    const item = await Carrera.findById(itemId);
+    if (!item) return res.status(404).json({ message: "Registro no encontrado" });
+
+    await Carrera.updateMany({ empleado: id, _id: { $ne: itemId } }, { $set: { principal: false } });
+    item.principal = true;
+    await item.save();
+
+    await Empleado.findByIdAndUpdate(id, {
+      puesto: item.puesto,
+      area: item.area,
+      sector: item.sector,
+    });
+
+    const populated = await Carrera.findById(itemId).populate("area", "nombre").populate("sector", "nombre");
+    res.json(populated);
+  } catch (e) { next(e); }
+}
+
 export async function deleteCarrera(req, res, next) {
   try {
     const { itemId } = req.params;
     const del = await Carrera.findByIdAndDelete(itemId);
     if (!del) return res.status(404).json({ message: "Registro no encontrado" });
     res.sendStatus(204);
+  } catch (e) { next(e); }
+}
+
+// POST /:id/carrera/:itemId/perfil  (multipart/form-data, campo "archivo")
+// Adjunta o reemplaza el perfil de puesto firmado de un registro de carrera.
+export async function uploadPerfilPuesto(req, res, next) {
+  try {
+    const { itemId } = req.params;
+    if (!req.file) return res.status(400).json({ message: "No se subió archivo." });
+
+    const item = await Carrera.findById(itemId);
+    if (!item) return res.status(404).json({ message: "Registro no encontrado" });
+
+    // Si ya había un perfil, borramos el archivo físico anterior
+    if (item.perfilPuestoUrl) {
+      const prev = path.resolve(item.perfilPuestoUrl);
+      if (fs.existsSync(prev)) {
+        try { fs.unlinkSync(prev); } catch { /* noop */ }
+      }
+    }
+
+    // Normalizar ruta a "uploads/..."
+    const abs = String(req.file.path).replaceAll("\\", "/");
+    const i = abs.lastIndexOf("/uploads/");
+    const relative = i >= 0 ? abs.substring(i) : `/uploads/${req.file.filename}`;
+
+    item.perfilPuestoUrl = relative.replace(/^\/+/, "");
+    item.perfilPuestoNombre = req.file.originalname || null;
+    item.perfilPuestoSubidoEl = new Date();
+    await item.save();
+
+    const populated = await Carrera.findById(item._id)
+      .populate("area", "nombre")
+      .populate("sector", "nombre");
+    res.json(populated);
+  } catch (e) { next(e); }
+}
+
+// DELETE /:id/carrera/:itemId/perfil
+// Elimina el perfil de puesto firmado adjunto (archivo + referencia).
+export async function deletePerfilPuesto(req, res, next) {
+  try {
+    const { itemId } = req.params;
+    const item = await Carrera.findById(itemId);
+    if (!item) return res.status(404).json({ message: "Registro no encontrado" });
+
+    if (item.perfilPuestoUrl) {
+      const p = path.resolve(item.perfilPuestoUrl);
+      if (fs.existsSync(p)) {
+        try { fs.unlinkSync(p); } catch { /* noop */ }
+      }
+    }
+
+    item.perfilPuestoUrl = null;
+    item.perfilPuestoNombre = null;
+    item.perfilPuestoSubidoEl = null;
+    await item.save();
+
+    const populated = await Carrera.findById(item._id)
+      .populate("area", "nombre")
+      .populate("sector", "nombre");
+    res.json(populated);
   } catch (e) { next(e); }
 }
 

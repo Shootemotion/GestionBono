@@ -9,8 +9,8 @@ import {
   actualizarSueldoEmpleado,
   eliminarSueldoHistorico,
 } from '../controllers/empleados.controller.js';
-import { requireCap, requireCapOrSelf } from '../auth/auth.middleware.js';
-import { listCarrera, createCarrera, updateCarrera, deleteCarrera, getCarreraResumen } from "../controllers/carrera.controller.js";
+import { requireCap, requireCapOrSelf, requireRole } from '../auth/auth.middleware.js';
+import { listCarrera, createCarrera, updateCarrera, deleteCarrera, getCarreraResumen, uploadPerfilPuesto, deletePerfilPuesto, setPrincipalCarrera } from "../controllers/carrera.controller.js";
 import { listCapacitaciones, createCapacitacion, updateCapacitacion, deleteCapacitacion, getCapacitacionesResumen } from "../controllers/capacitacion.controller.js";
 import { listDocumentos, createDocumento, deleteDocumento } from "../controllers/documento.controller.js";
 import { listIncidencias, createIncidencia, deleteIncidencia } from "../controllers/incidencias.controller.js";
@@ -19,6 +19,8 @@ import fs from 'fs';
 import multer from 'multer';
 import mongoose from 'mongoose';
 import Empleado from '../models/Empleado.model.js';
+import { puedeVerEmpleado } from '../utils/alcanceEmpleados.js';
+import { redactSueldoEmpleado } from '../utils/salaryVisibility.js';
 
 const router = Router();
 
@@ -51,6 +53,11 @@ async function preloadEmpleado(req, res, next) {
       })
       .populate("sector", "nombre");
     if (!emp) return res.status(404).json({ message: 'Empleado no encontrado' });
+    // 🔒 Un jefe solo opera sobre su gente. Dirección, RRHH y superadmin pasan
+    // siempre; cualquiera puede acceder a su propio legajo.
+    if (!puedeVerEmpleado(req.user, emp)) {
+      return res.status(403).json({ message: 'Este empleado está fuera de tu alcance' });
+    }
     req.empleado = emp;
     next();
   } catch (err) {
@@ -90,7 +97,7 @@ router.get('/:id',
   requireCapOrSelf('nomina:ver'),
   assertObjectId,
   preloadEmpleado,
-  (req, res) => res.json(req.empleado)
+  (req, res) => res.json(redactSueldoEmpleado(req.empleado, req.user))
 );
 
 // ✏️ Actualizar datos del legajo
@@ -117,17 +124,17 @@ router.post(
   subirFotoEmpleado
 );
 
-// 💰 Actualizar sueldo base con histórico
+// 💰 Actualizar sueldo base con histórico — SOLO Dirección / RRHH (+ superadmin)
 router.post(
   '/:id/sueldo',
-  requireCap('nomina:editar'),
+  requireRole('rrhh', 'directivo'),
   assertObjectId,
   actualizarSueldoEmpleado
 );
 
 router.delete(
   '/:id/sueldo/:subId',
-  requireCap('nomina:editar'),
+  requireRole('rrhh', 'directivo'),
   assertObjectId,
   eliminarSueldoHistorico
 );
@@ -190,6 +197,30 @@ const uploadCert = multer({
 });
 
 /* ========== CARRERA (historial de puestos) ========== */
+// ---- multer para perfil de puesto firmado (destino por empleado) ----
+const storagePerfil = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const emp = req.empleado;
+    const legible = `${slugify(emp.apellido)}-${slugify(emp.nombre)}-${emp._id}`;
+    const dir = path.join(process.cwd(), "uploads", "empleados", legible, "perfiles");
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || ".pdf").toLowerCase();
+    cb(null, `perfil-${Date.now()}${ext}`);
+  }
+});
+const uploadPerfil = multer({
+  storage: storagePerfil,
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
+  fileFilter: (req, file, cb) => {
+    const ok = /\.(pdf|doc|docx|jpg|jpeg|png)$/i.test(file.originalname || "");
+    if (!ok) return cb(new Error("Formato no permitido"));
+    cb(null, true);
+  }
+});
+
 router.get("/:id/carrera",
   requireCapOrSelf("nomina:ver"), assertObjectId, preloadEmpleado, listCarrera);
 
@@ -201,6 +232,16 @@ router.put("/:id/carrera/:itemId",
 
 router.delete("/:id/carrera/:itemId",
   requireCap("nomina:editar"), assertObjectId, deleteCarrera);
+
+router.patch("/:id/carrera/:itemId/principal",
+  requireCap("nomina:editar"), assertObjectId, setPrincipalCarrera);
+
+// Perfil de puesto firmado (adjunto por puesto)
+router.post("/:id/carrera/:itemId/perfil",
+  requireCap("nomina:editar"), assertObjectId, preloadEmpleado, uploadPerfil.single("archivo"), uploadPerfilPuesto);
+
+router.delete("/:id/carrera/:itemId/perfil",
+  requireCap("nomina:editar"), assertObjectId, preloadEmpleado, deletePerfilPuesto);
 
 router.get("/:id/carrera/resumen",
   requireCapOrSelf("nomina:ver"), assertObjectId, preloadEmpleado, getCarreraResumen);
@@ -252,6 +293,9 @@ router.get("/:id/documentos",
 
 router.post("/:id/documentos",
   requireCapOrSelf("nomina:editar"), assertObjectId, preloadEmpleado, uploadDoc.single("archivo"), createDocumento);
+
+router.delete("/:id/documentos/:docId",
+  requireCapOrSelf("nomina:editar"), assertObjectId, deleteDocumento);
 
 /* ========== INCIDENCIAS ========== */
 const storageInc = multer.diskStorage({

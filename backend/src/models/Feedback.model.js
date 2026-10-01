@@ -63,11 +63,28 @@ const FeedbackSchema = new mongoose.Schema(
         // Para auditoría
         creadoPor: { type: mongoose.Schema.Types.ObjectId, ref: "Usuario" },
 
-        // Snapshot de scores al momento del feedback
+        // Snapshot de scores al momento del feedback.
+        // OJO: hoy lo manda el navegador y se guarda tal cual. Es el número
+        // que se le comunica a la persona y el que le gana al cálculo en vivo.
         scores: {
             obj: Number,
             comp: Number,
             global: Number
+        },
+
+        // Lo que calculó el BACKEND para ese mismo feedback.
+        //
+        // Va al lado y no encima, a propósito: mientras se entregan los
+        // resultados del AF2025 nadie puede cambiarle el número por debajo a
+        // quien está comunicando una nota. Sirve para medir cuánto divergen
+        // los dos caminos antes de darle el volante al backend.
+        scoresBackend: {
+            obj: Number,
+            comp: Number,
+            global: Number,
+            calculadoEl: Date,
+            // Diferencia contra `scores.global`, en puntos de nota final.
+            divergencia: Number
         }
     },
     {

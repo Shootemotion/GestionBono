@@ -3,6 +3,8 @@ import { Suspense, lazy, useState, useCallback } from 'react';
 import RequireAuth from '@/components/RequireAuth';
 import Navbar from '@/components/Navbar';
 import BonoBot from "@/components/BonoBot/BonoBot";
+// import ChatWidget from "@/components/Chat/ChatWidget"; // Chat interno oculto temporalmente
+import Footer from "@/components/Footer";
 import { getToken } from '@/lib/api';
 import { Toaster } from "@/components/ui/sonner";
 import { Spinner } from '@/components/ui/spinner';
@@ -20,6 +22,7 @@ const Login = lazy(() => import('@/pages/Login'));
 const Forbidden = lazy(() => import('@/pages/Forbidden'));
 const DashboardDesempeno = lazy(() => import('@/pages/SeguimientoReferente'));
 const MiDesempeno = lazy(() => import('@/pages/MiDesempeno'));
+const MiDesempenoBeta = lazy(() => import('@/pages/MiDesempenoBeta'));
 const Home = lazy(() => import('@/pages/Home'));
 const Nomina = lazy(() => import('@/pages/Nomina'));
 const GestionPlantillas = lazy(() => import('@/pages/GestionPlantillas'));
@@ -37,6 +40,9 @@ const Sistemas = lazy(() => import('@/pages/Sistemas'));
 const GestionISO = lazy(() => import('@/pages/GestionISO'));
 const AnalisisISO = lazy(() => import('@/pages/AnalisisISO'));
 const GestionMejoras = lazy(() => import('@/pages/GestionMejoras'));
+const ValidacionCalculos = lazy(() => import('@/pages/ValidacionCalculos'));
+const SimuladorMotor = lazy(() => import('@/pages/SimuladorMotor'));
+const PesosAsignados = lazy(() => import('@/pages/PesosAsignados'));
 
 
 function App() {
@@ -88,7 +94,7 @@ function App() {
   }
 
   return (
-    <>
+    <div className="min-h-screen flex flex-col">
       {isImpersonating && (
         <div className="bg-rose-600 text-white px-4 py-2 flex items-center justify-between sticky top-0 z-[100] shadow-lg animate-in slide-in-from-top duration-300">
           <div className="flex items-center gap-3">
@@ -96,7 +102,7 @@ function App() {
               <Clock className="w-4 h-4" />
             </div>
             <div className="text-sm font-bold">
-              MODO ENMASCARADO: <span className="opacity-80 font-normal">Viendo como</span> {user?.nombre || user?.apellido || 'Usuario'}
+              MODO ENMASCARADO: <span className="opacity-80 font-normal">Viendo como</span> {user?.fullName || user?.empleado?.nombre || user?.empleado?.apellido || user?.email || 'Usuario'}
             </div>
           </div>
           <button
@@ -113,7 +119,7 @@ function App() {
 
       {showNavbar && <Navbar />}
 
-      <main className="main-content">
+      <main className="main-content flex-1 pb-12">
         <Suspense fallback={<Spinner />}>
           <Routes>
             {/* Pública */}
@@ -168,6 +174,15 @@ function App() {
               element={
                 <RequireAuth>
                   <MiDesempeno />
+                </RequireAuth>
+              }
+            />
+            {/* Versión BETA en paralelo (no reemplaza la actual) */}
+            <Route
+              path="/mi-desempeno-beta"
+              element={
+                <RequireAuth>
+                  <MiDesempenoBeta />
                 </RequireAuth>
               }
             />
@@ -277,6 +292,31 @@ function App() {
               }
             />
 
+            <Route
+              path="/validacion-calculos"
+              element={
+                <RequireAuth allow={['superadmin']}>
+                  <ValidacionCalculos />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/simulador-motor"
+              element={
+                <RequireAuth allow={['superadmin', 'directivo', 'rrhh']} allowReferente={true}>
+                  <SimuladorMotor />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/pesos-asignados"
+              element={
+                <RequireAuth allow={['superadmin', 'directivo', 'rrhh']} allowReferente={true}>
+                  <PesosAsignados />
+                </RequireAuth>
+              }
+            />
+
             <Route path="/complete-invite" element={<CompleteInvite />} />
 
             <Route
@@ -331,9 +371,11 @@ function App() {
           </Routes>
         </Suspense>
       </main>
+      {showNavbar && <Footer />}
       <BonoBot />
+      {/* {showNavbar && <ChatWidget />} */}{/* Chat interno oculto temporalmente */}
       <Toaster richColors position="top-right" />
-    </>
+    </div>
   );
 }
 
