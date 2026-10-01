@@ -1,7 +1,7 @@
 // src/components/FormularioObjetivoISO.jsx
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
+import { getCurrentFiscalYear, fiscalYearLabel, fiscalYearRange } from "@/lib/fiscalYear";
 import { api } from "@/lib/api";
 
 export default function FormularioObjetivoISO({ initialData = null, onGuardar, onCancelar, defaultYear, procesosDisponibles = [], readOnly = false }) {
@@ -148,10 +148,10 @@ export default function FormularioObjetivoISO({ initialData = null, onGuardar, o
                     disabled={readOnly}
                 >
                     {[2022, 2023, 2024, 2025, 2026, 2027, 2028, 2029, 2030].map((y) => (
-                        <option key={y} value={y}>{y}–{y + 1}</option>
+                        <option key={y} value={y}>{fiscalYearLabel(y)}</option>
                     ))}
                 </select>
-                <p className="mt-1 text-xs text-muted-foreground">Sep {year} – Ago {Number(year) + 1}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{fiscalYearRange(year)}</p>
             </div>
 
             {/* Representante */}

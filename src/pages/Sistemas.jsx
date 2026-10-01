@@ -6,19 +6,24 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Download, HardDrive, RefreshCw, Shield, Users, Server, RotateCcw, AlertTriangle, Check, CheckCircle2, MessageSquarePlus, Activity, Cpu, Database, BarChart3, Clock, Info, Search, ArrowLeft } from "lucide-react";
+import RegistroCambios from "./Sistemas/RegistroCambios";
+import ObjetivosSinDatos from "./Sistemas/ObjetivosSinDatos";
+import CompararBackup from "./Sistemas/CompararBackup";
+import { Download, HardDrive, RefreshCw, Shield, Users, Server, RotateCcw, AlertTriangle, Check, CheckCircle2, MessageSquarePlus, Activity, Cpu, Database, BarChart3, Clock, Info, Search, ArrowLeft, History, Ghost, GitCompare } from "lucide-react";
 import { toast } from "sonner";
 import { API_ORIGIN } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { dashEmpleado } from "@/lib/dashboard";
 import { calculatePeriodScores } from "@/lib/scoreHelpers";
+import SelectorAnioFiscal from "@/components/SelectorAnioFiscal";
+import { getCurrentFiscalYear } from "@/lib/fiscalYear";
 
 const ScoreAuditPanel = () => {
     const { impersonateUser } = useAuth();
     const navigate = useNavigate();
     
-    const [year, setYear] = useState(2025);
+    const [year, setYear] = useState(getCurrentFiscalYear());
     const [searchVal, setSearchVal] = useState("");
     const [allData, setAllData] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -238,15 +243,7 @@ const ScoreAuditPanel = () => {
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-end">
                     <div className="flex-1 space-y-2">
                         <label className="text-sm font-bold text-slate-700">Año Fiscal</label>
-                        <select
-                            className="w-full p-2.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white transition-colors"
-                            value={year}
-                            onChange={e => setYear(Number(e.target.value))}
-                        >
-                            <option value={2024}>2024</option>
-                            <option value={2025}>2025</option>
-                            <option value={2026}>2026</option>
-                        </select>
+                        <SelectorAnioFiscal value={year} onChange={setYear} variant="select" className="w-full p-2.5" />
                     </div>
                     <div className="flex-[2] space-y-2">
                         <label className="text-sm font-bold text-slate-700">Filtrar por Apellido</label>
@@ -472,6 +469,7 @@ const BackupsList = () => {
     const [loading, setLoading] = useState(false);
     const [runningBackup, setRunningBackup] = useState(false);
     const [nextBackupTime, setNextBackupTime] = useState("");
+    const [estadoBackups, setEstadoBackups] = useState(null);
 
     // Restore Dialog State
     const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
@@ -522,10 +520,19 @@ const BackupsList = () => {
     const loadBackups = async () => {
         setLoading(true);
         try {
-            const res = await api('/system/backups');
+            // Se piden las dos cosas: el listado y el estado general.
+            //
+            // El estado importa tanto como la lista: un backup que falta no se
+            // ve en una tabla —no hay fila que mirar— y así pasaron cuatro
+            // días sin copia sin que nadie lo notara.
+            const [res, est] = await Promise.all([
+                api('/system/backups'),
+                api('/system/backups/estado').catch(() => null),
+            ]);
             if (Array.isArray(res)) {
                 setBackups(res);
             }
+            setEstadoBackups(est);
         } catch (err) {
             console.error(err);
             toast.error("Error al cargar backups");
@@ -701,6 +708,39 @@ const BackupsList = () => {
                 </div>
             </div>
 
+            {/* Estado de la red de seguridad. Un backup que falta no se ve en
+                una tabla: no hay fila que mirar. Por eso va arriba y en color. */}
+            {estadoBackups && (
+                <div
+                    className={`mt-8 p-5 rounded-xl text-sm border flex gap-4 items-start shadow-sm ${estadoBackups.ok
+                        ? "bg-emerald-50 text-emerald-900 border-emerald-200"
+                        : "bg-red-50 text-red-900 border-red-200"
+                        }`}
+                >
+                    <div className={`p-2 rounded-lg shrink-0 ${estadoBackups.ok ? "bg-emerald-100 text-emerald-600" : "bg-red-100 text-red-600"}`}>
+                        {estadoBackups.ok ? <CheckCircle2 className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
+                    </div>
+                    <div className="space-y-1">
+                        <p className="font-bold">{estadoBackups.mensaje}</p>
+                        <p className="text-xs opacity-80">
+                            {estadoBackups.validos} copias utilizables de {estadoBackups.total}
+                            {estadoBackups.corruptos > 0 && (
+                                <span className="font-bold">
+                                    {" · "}{estadoBackups.corruptos} ilegible{estadoBackups.corruptos > 1 ? "s" : ""}
+                                </span>
+                            )}
+                            {estadoBackups.ultimoValido && ` · última: ${estadoBackups.ultimoValido} (${estadoBackups.colecciones} colecciones)`}
+                        </p>
+                        {!estadoBackups.ok && (
+                            <p className="text-xs">
+                                Corré una copia manual ahora con el botón de arriba. El backup automático
+                                solo se dispara si el servidor está prendido a las 03:00.
+                            </p>
+                        )}
+                    </div>
+                </div>
+            )}
+
             <div className="flex justify-between items-center mt-8 px-2">
                 <div>
                     <h3 className="text-xl font-bold text-slate-800">Historial de Copias</h3>
@@ -724,19 +764,48 @@ const BackupsList = () => {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                         {backups.map((bk) => (
-                            <tr key={bk.name} className="hover:bg-blue-50/50 transition-colors group">
-                                <td className="px-6 py-4 font-mono text-xs text-slate-600 font-medium">{bk.name}</td>
+                            <tr key={bk.name} className={`transition-colors group ${bk.valido === false ? "bg-red-50/60" : "hover:bg-blue-50/50"}`}>
+                                <td className="px-6 py-4 font-mono text-xs text-slate-600 font-medium">
+                                    {bk.name}
+                                    {/* Un archivo que no abre no es un backup. Antes se
+                                        listaba igual que los sanos y la única pista era
+                                        el tamaño, que nadie compara a ojo. */}
+                                    {bk.valido === false && (
+                                        <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700 align-middle">
+                                            <AlertTriangle className="w-3 h-3" />
+                                            No se puede abrir
+                                        </span>
+                                    )}
+                                    {bk.valido === false && bk.motivo && (
+                                        <p className="mt-1 font-sans text-[11px] text-red-600 normal-case">{bk.motivo}</p>
+                                    )}
+                                </td>
                                 <td className="px-6 py-4 text-slate-500">
                                     {new Date(bk.createdAt).toLocaleString()}
                                 </td>
-                                <td className="px-6 py-4 text-slate-500 font-medium">{formatBytes(bk.size)}</td>
+                                <td className="px-6 py-4 text-slate-500 font-medium">
+                                    {formatBytes(bk.size)}
+                                    {bk.valido && (
+                                        <span className="block text-[11px] text-slate-400">{bk.colecciones} colecciones</span>
+                                    )}
+                                </td>
                                 <td className="px-6 py-4 text-right">
                                     <Button variant="ghost" size="sm" onClick={() => handleDownload(bk.name)} className="text-blue-600 hover:text-blue-700 hover:bg-blue-100">
                                         <Download className="w-4 h-4 mr-2" />
                                         Descargar
                                     </Button>
 
-                                    <Button variant="ghost" size="sm" onClick={() => handleInitiateRestore(bk.name)} className="text-amber-600 hover:text-amber-700 hover:bg-amber-100">
+                                    {/* Restaurar desde un zip roto deja la base a medio
+                                        pisar. El backend también lo rechaza; esto evita
+                                        el viaje de ida y vuelta. */}
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleInitiateRestore(bk.name)}
+                                        disabled={bk.valido === false}
+                                        title={bk.valido === false ? "Este archivo no se puede abrir" : undefined}
+                                        className="text-amber-600 hover:text-amber-700 hover:bg-amber-100 disabled:text-slate-300 disabled:hover:bg-transparent"
+                                    >
                                         <RotateCcw className="w-4 h-4 mr-2" />
                                         Restaurar
                                     </Button>
@@ -1067,22 +1136,41 @@ export default function Sistemas() {
             </div>
 
             <Tabs defaultValue="backups" className="w-full flex flex-col items-center">
-                <TabsList className="flex w-full max-w-4xl h-14 p-1.5 bg-slate-100 rounded-full border border-slate-200 overflow-x-auto custom-scrollbar flex-nowrap shrink-0 justify-start">
-                    <TabsTrigger value="backups" className="flex-1 rounded-full text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max">
+                {/* Las pestañas envuelven en varias líneas en vez de scrollear:
+                    con 8 solapas la barra horizontal escondía la mitad. */}
+                <TabsList className="flex flex-wrap w-full max-w-5xl h-auto gap-1 p-1.5 bg-slate-100 rounded-2xl border border-slate-200 justify-start">
+                    <TabsTrigger value="backups" className="rounded-full px-4 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max">
                         <HardDrive className="w-4 h-4" /> Backups
                     </TabsTrigger>
-                    <TabsTrigger value="health" className="flex-1 rounded-full text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max">
+                    <TabsTrigger value="health" className="rounded-full px-4 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max">
                         <Activity className="w-4 h-4" /> Salud
                     </TabsTrigger>
-                    <TabsTrigger value="users" className="flex-1 rounded-full text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max">
+                    <TabsTrigger value="users" className="rounded-full px-4 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max">
                         <Users className="w-4 h-4" /> Usuarios
                     </TabsTrigger>
-                    <TabsTrigger value="roles" className="flex-1 rounded-full text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max">
+                    <TabsTrigger value="roles" className="rounded-full px-4 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max">
                         <Shield className="w-4 h-4" /> Roles
                     </TabsTrigger>
+                    {isSuper && (
+                        <TabsTrigger value="cambios" className="rounded-full px-4 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max">
+                            <History className="w-4 h-4" /> Registro de Cambios
+                        </TabsTrigger>
+                    )}
 
                     {isSuper && (
-                        <TabsTrigger value="audit" className="flex-1 rounded-full text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max text-amber-600">
+                        <TabsTrigger value="comparar" className="rounded-full px-4 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max">
+                            <GitCompare className="w-4 h-4" /> Comparar Backup
+                        </TabsTrigger>
+                    )}
+
+                    {isSuper && (
+                        <TabsTrigger value="sindatos" className="rounded-full px-4 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max">
+                            <Ghost className="w-4 h-4" /> Objetivos sin Datos
+                        </TabsTrigger>
+                    )}
+
+                    {isSuper && (
+                        <TabsTrigger value="audit" className="rounded-full px-4 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max text-amber-600">
                             <AlertTriangle className="w-4 h-4" /> Auditoría Scores
                         </TabsTrigger>
                     )}
@@ -1111,6 +1199,23 @@ export default function Sistemas() {
                     <TabsContent value="roles">
                         <RolesAdmin />
                     </TabsContent>
+                    {isSuper && (
+                        <TabsContent value="cambios">
+                            <RegistroCambios />
+                        </TabsContent>
+                    )}
+
+                    {isSuper && (
+                        <TabsContent value="comparar">
+                            <CompararBackup />
+                        </TabsContent>
+                    )}
+
+                    {isSuper && (
+                        <TabsContent value="sindatos">
+                            <ObjetivosSinDatos />
+                        </TabsContent>
+                    )}
 
                     {isSuper && (
                         <TabsContent value="audit">

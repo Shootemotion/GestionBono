@@ -13,13 +13,13 @@ import FormularioObjetivoISO from "@/components/FormularioObjetivoISO.jsx";
 import ModalCargaAvanceISO from "@/components/ModalCargaAvanceISO.jsx";
 import FormularioProceso from "@/components/FormularioProceso.jsx";
 import { Button } from "@/components/ui/button";
-import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
+import { getCurrentFiscalYear, fiscalYearLabel } from "@/lib/fiscalYear";
+import SelectorAnioFiscal from "@/components/SelectorAnioFiscal";
 import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Info, UserCheck, Eye, Search, TrendingUp } from "lucide-react";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
-function fiscalLabel(y) {
-    return `${y}–${y + 1}`;
-}
+// Etiqueta canónica del año fiscal (AF 2026/27). Definición en @/lib/fiscalYear.
+const fiscalLabel = fiscalYearLabel;
 
 export default function GestionISO() {
     const { user } = useAuth();
@@ -233,10 +233,8 @@ export default function GestionISO() {
                     </div>
 
                     {/* Selector de año fiscal */}
-                    <div className="flex items-center gap-2 bg-white border rounded-xl px-3 py-1.5 shadow-sm">
-                        <button onClick={() => setYear((y) => y - 1)} className="p-1 hover:bg-slate-100 rounded-full"><ChevronLeft size={16} /></button>
-                        <span className="text-sm font-semibold min-w-[80px] text-center">{fiscalLabel(year)}</span>
-                        <button onClick={() => setYear((y) => y + 1)} className="p-1 hover:bg-slate-100 rounded-full"><ChevronRight size={16} /></button>
+                    <div className="flex items-center bg-white border rounded-xl px-3 py-1.5 shadow-sm">
+                        <SelectorAnioFiscal value={year} onChange={setYear} variant="stepper" size="sm" />
                     </div>
 
                     <Button 

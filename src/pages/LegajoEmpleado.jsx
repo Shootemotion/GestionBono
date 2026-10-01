@@ -139,6 +139,9 @@ export default function LegajoEmpleado() {
   const [loading, setLoading] = useState(true);
 
   const isRRHH = !!(user?.isSuper || user?.isRRHH || user?.role === "ADMIN" || user?.role === "RRHH" || user?.role === "DIRECTIVO" || user?.caps?.includes?.("nomina:editar"));
+  // 🔒 Sueldos: SOLO Dirección y RRHH (+ superadmin, cuenta técnica). NO los jefes.
+  // Debe coincidir con puedeVerSueldo() del backend, que es la garantía real.
+  const canSeeSalary = !!(user?.isSuper || user?.isRRHH || user?.isDirectivo || user?.role === "RRHH" || user?.role === "DIRECTIVO");
   const isOwnProfile = user?.empleadoId === id || user?.empleado?._id === id;
   const canEditBasic = isRRHH || isOwnProfile;
 
@@ -1106,7 +1109,7 @@ export default function LegajoEmpleado() {
             {/* Datos laborales */}
             {tab === "Datos laborales" && (
               <>
-                {isRRHH && (
+                {canSeeSalary && (
                   <div className="rounded-xl bg-card ring-1 ring-border/60 p-4 mb-4">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-sm font-semibold flex items-center gap-2">

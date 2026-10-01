@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
+import { getCurrentFiscalYear, fiscalYearLabel, fiscalYearRange } from "@/lib/fiscalYear";
 import {
     ChevronLeft,
     TrendingUp,
@@ -214,7 +214,7 @@ export default function AnalisisISO() {
                         </h1>
                         <div className="flex items-center gap-4 mt-1 text-xs text-slate-500">
                             <span className="flex items-center gap-1">
-                                <Calendar size={13} className="text-blue-500" /> Período Fiscal: {year}-{year+1}
+                                <Calendar size={13} className="text-blue-500" /> Período Fiscal: {fiscalYearLabel(year)} ({fiscalYearRange(year)})
                             </span>
                             {selectedObj?.representante && (
                                 <span className="flex items-center gap-1">

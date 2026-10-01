@@ -25,20 +25,10 @@ import useCan, { useHasRole } from "@/hooks/useCan";
 
 import { useTour } from "@/hooks/useTour";
 import { API_ORIGIN } from "@/lib/api";
+import { fiscalQuarterLabel } from "@/lib/fiscalYear";
 
-function quarterLabel(d = new Date()) {
-  const month = d.getMonth();
-  const year = d.getFullYear();
-
-  // Fiscal Year starts in September (Month 8)
-  const fyMonth = (month + 4) % 12;
-  const fiscalQ = Math.floor(fyMonth / 3) + 1;
-
-  const fiscalYear = (month >= 8) ? year : year - 1;
-  const nextYearShort = String(fiscalYear + 1).slice(-2);
-
-  return `Q${fiscalQ}-${fiscalYear}/${nextYearShort}`;
-}
+// Etiqueta de trimestre + año fiscal (`Q1 AF 2026/27`). Ver @/lib/fiscalYear.
+const quarterLabel = fiscalQuarterLabel;
 
 function initialsFromUser(user) {
   const base =

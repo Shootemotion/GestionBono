@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { getCurrentFiscalYear } from '@/lib/scoreHelpers';
+import { getCurrentFiscalYear } from '@/lib/fiscalYear';
+import SelectorAnioFiscal from '@/components/SelectorAnioFiscal';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { Save, Calculator, Plus, Trash2, Edit2, ChevronsRight, LayoutGrid, User, Layers, ArrowRight, Search, X, RefreshCw } from 'lucide-react';
@@ -365,13 +366,7 @@ export default function ConfiguracionBono() {
                         <p className="text-slate-500 mt-1">Definición de reglas por Área o Empleado.</p>
                     </div>
                     <div className="flex items-center gap-4">
-                        <select
-                            value={year}
-                            onChange={(e) => setYear(Number(e.target.value))}
-                            className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 font-bold text-slate-700 shadow-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
-                        >
-                            {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
-                        </select>
+                        <SelectorAnioFiscal value={year} onChange={setYear} variant="select" />
                         <Button onClick={handleCalculate} disabled={calculating} className="bg-slate-900 text-white hover:bg-slate-800 rounded-xl px-4 py-6 shadow-lg shadow-blue-500/20 active:scale-95 transition-all">
                             <RefreshCw className={`mr-2 ${calculating ? 'animate-spin' : ''}`} size={18} />
                             {calculating ? "Calculando..." : "Recalcular Todo"}
