@@ -4,6 +4,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { getCurrentFiscalYear, fiscalYearLabel } from "@/lib/fiscalYear";
+import SelectorAnioFiscal from "@/components/SelectorAnioFiscal";
 
 /* ================== helpers ================== */
 const asArray = (x) => {
@@ -102,7 +104,10 @@ function FloatingSaveBar({ show, onSave, onDiscard }) {
 /* ================== componente principal ================== */
 
 export default function EditorAsignacion() {
-  const currentYear = new Date().getFullYear();
+  // Año FISCAL, no calendario: de enero a agosto difieren y el editor abría en
+  // el ciclo siguiente (vacío) mientras el resto de las pantallas abría en el
+  // ciclo en curso.
+  const currentYear = getCurrentFiscalYear();
 
   /* Estado base */
   const [year, setYear] = useState(currentYear);
@@ -630,7 +635,7 @@ export default function EditorAsignacion() {
               </h1>
               <p className="text-xs text-slate-500 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                Ciclo {year} • Gestión de pesos, metas y exclusiones
+                Ciclo {fiscalYearLabel(year)} • Gestión de pesos, metas y exclusiones
               </p>
             </div>
           </div>
@@ -638,19 +643,12 @@ export default function EditorAsignacion() {
           <div className="flex items-center gap-4">
             {/* Year Selector */}
             <div className="flex items-center bg-slate-50 rounded-lg p-1 border border-slate-200">
-              <button
-                onClick={() => setYear(year - 1)}
-                className="p-1 hover:bg-white hover:shadow-sm rounded-md transition-all text-slate-400 hover:text-slate-600"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
-              </button>
-              <span className="text-sm font-semibold text-slate-700 w-12 text-center">{year}</span>
-              <button
-                onClick={() => setYear(year + 1)}
-                className="p-1 hover:bg-white hover:shadow-sm rounded-md transition-all text-slate-400 hover:text-slate-600"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
-              </button>
+              <SelectorAnioFiscal
+                value={year}
+                onChange={setYear}
+                variant="stepper"
+                size="sm"
+              />
             </div>
 
             {/* Mode Toggle */}

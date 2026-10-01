@@ -8,7 +8,8 @@ import PlantillaModal from "@/components/PlantillaModal";
 import CloneModal from "@/components/CloneModal";
 import useCan from "@/hooks/useCan";
 import { api } from "@/lib/api";
-import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
+import { getCurrentFiscalYear } from "@/lib/fiscalYear";
+import SelectorAnioFiscal from "@/components/SelectorAnioFiscal";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { XCircle, History, Plus, MoreHorizontal, GitBranch, Calculator, Target, Lightbulb, User, Search } from "lucide-react";
@@ -1100,22 +1101,13 @@ export default function GestionPlantillasPage() {
                 <div className="flex flex-wrap items-center gap-3">
                   {/* Año fiscal */}
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Año</span>
-                    <div className="inline-flex items-center bg-slate-100 rounded-full p-0.5">
-                      {[year - 1, year, year + 1].map((y) => (
-                        <button
-                          key={y}
-                          className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
-                            year === y
-                              ? "bg-white text-slate-900 shadow-sm"
-                              : "text-slate-500 hover:text-slate-800"
-                          }`}
-                          onClick={() => setYear(y)}
-                        >
-                          {y}
-                        </button>
-                      ))}
-                    </div>
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Año fiscal</span>
+                    <SelectorAnioFiscal
+                      value={year}
+                      onChange={setYear}
+                      variant="pills"
+                      showCaption
+                    />
                   </div>
 
                   <div className="hidden sm:block h-6 w-px bg-slate-200" />
@@ -1399,14 +1391,34 @@ export default function GestionPlantillasPage() {
           empleados={empleados}
           onClone={async ({ year: newYear, scopeType: newType, scopeId: newId }) => {
             try {
+              // Se copia campo por campo, no con `{...cloneTpl}`.
+              //
+              // El spread mandaba también `createdAt`, `version`,
+              // `estadoAprobacion` y los `_id` de las metas del original. Los
+              // clones nacían con la fecha de creación del objetivo de origen
+              // —lo que hizo imposible reconstruir el orden de los hechos— y
+              // con metas que compartían identidad con las del original, así
+              // que renombrar una meta en uno desprendía los resultados del
+              // otro. El backend ahora los filtra igual, pero no hay motivo
+              // para mandarlos.
               const body = {
-                ...cloneTpl,
-                _id: undefined,
+                tipo: cloneTpl.tipo,
                 year: newYear,
                 scopeType: newType,
                 scopeId: newId,
                 nombre: cloneTpl.nombre,
+                descripcion: cloneTpl.descripcion,
                 proceso: cloneTpl.proceso,
+                objetivosCalidad: cloneTpl.objetivosCalidad,
+                metodo: cloneTpl.metodo,
+                target: cloneTpl.target,
+                unidad: cloneTpl.unidad,
+                escalas: cloneTpl.escalas,
+                frecuencia: cloneTpl.frecuencia,
+                pesoBase: cloneTpl.pesoBase,
+                activo: cloneTpl.activo,
+                // Metas sin `_id`: son metas nuevas de un objetivo nuevo.
+                metas: (cloneTpl.metas || []).map(({ _id, ...meta }) => meta),
               };
               await api("/templates", { method: "POST", body });
               await reload();
@@ -1414,9 +1426,13 @@ export default function GestionPlantillasPage() {
 
               setCloneOpen(false);
               setCloneTpl(null);
+              toast.success(`Clonado al AF ${newYear}/${String(newYear + 1).slice(-2)}`);
             } catch (e) {
               console.error(e);
-              toast.error("No se pudo clonar");
+              // El backend distingue entre duplicado, año cerrado y datos
+              // inválidos, y explica cada uno. Mostrar ese texto es más útil
+              // que un "no se pudo clonar" que no dice qué arreglar.
+              toast.error(e?.message || "No se pudo clonar");
             }
           }}
         />

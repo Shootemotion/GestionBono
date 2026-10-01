@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { getCurrentFiscalYear } from "@/lib/fiscalYear";
 
 export default function ScopeSelect({
   areas = [],
@@ -92,7 +93,7 @@ export default function ScopeSelect({
             type="number"
             className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none"
             value={anio}
-            onChange={(e)=> onChangeAnio(Number(e.target.value || new Date().getFullYear()))}
+            onChange={(e)=> onChangeAnio(Number(e.target.value || getCurrentFiscalYear()))}
           />
         </div>
       </div>

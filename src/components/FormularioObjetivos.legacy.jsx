@@ -1,3 +1,13 @@
+// ============================================================================
+//  VERSION ANTERIOR del formulario de objetivos, guardada para poder volver
+//  atras si el rediseno no gusta.
+//
+//  Para volver a esta version: en PlantillaModal.jsx poner
+//      const USAR_FORM_REDISENADO = false;
+//
+//  Cuando se decida cual queda, BORRAR este archivo (o el otro) para no
+//  mantener dos copias del mismo formulario.
+// ============================================================================
 // src/components/FormularioObjetivos.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -12,8 +22,6 @@ import {
   DialogFooter
 } from "@/components/ui/dialog";
 import { getCurrentFiscalYear, fiscalYearEnd, fiscalYearLabel, fiscalYearRange } from "@/lib/fiscalYear";
-import { Target, Users, Award, Ruler, Plus, Trash2 } from "lucide-react";
-import { AyudaCampo, BotonAyudaMetas, PanelAyudaMetas } from "@/components/AyudaMeta";
 
 export default function FormularioObjetivos({
   initialData = null,
@@ -63,10 +71,6 @@ export default function FormularioObjetivos({
   const [fechaCierre, setFechaCierre] = useState("");
 
   const [versionDialogOpen, setVersionDialogOpen] = useState(false);
-  // Aviso previo a sobrescribir: qué se rompe si se guarda así.
-  const [impacto, setImpacto] = useState(null);
-  const [consultandoImpacto, setConsultandoImpacto] = useState(false);
-  const [ayudaMetasAbierta, setAyudaMetasAbierta] = useState(false);
   const [motivoVersion, setMotivoVersion] = useState("");
   const [comentarioVersion, setComentarioVersion] = useState("");
 
@@ -155,9 +159,6 @@ export default function FormularioObjetivos({
     setMetas(
       Array.isArray(initialData.metas)
         ? initialData.metas.map((m) => ({
-          // El _id viaja de ida y vuelta para que el backend reconozca la meta
-          // al guardar y no le genere uno nuevo (ver conservarIdsDeMetas).
-          _id: m._id,
           nombre: m.nombre || "",
           unidad: m.unidad || "Porcentual",
           operador: m.operador || ">=",
@@ -283,40 +284,6 @@ export default function FormularioObjetivos({
   };
 
   // Submit
-  /**
-   * Antes de sobrescribir, le pregunta al backend qué se rompe con estos
-   * cambios. Si hay algo grave —resultados que quedarían fuera del calendario,
-   * metas con datos que desaparecen— frena y lo muestra. Si no, guarda directo.
-   *
-   * Nace del caso concreto: cambiar un objetivo de mensual a trimestral dejó 5
-   * resultados cargados colgados de períodos inexistentes, en 20 personas, sin
-   * un solo aviso.
-   */
-  const pedirImpactoYGuardar = async (e) => {
-    e.preventDefault();
-    if (!isEdit || !initialData?._id) return handleSubmit(e, { seguir: false, esVersion: false });
-    setConsultandoImpacto(true);
-    try {
-      const r = await api(`/templates/${initialData._id}/impacto`, {
-        method: "POST",
-        body: {
-          frecuencia,
-          pesoBase: Number(peso || 0),
-          metas: (metas || []).map((m) => ({ _id: m._id, nombre: m.nombre })),
-        },
-      });
-      if (r?.avisos?.length) {
-        setImpacto(r);
-        return; // el diálogo decide
-      }
-    } catch {
-      // Si el chequeo falla no se bloquea el guardado: es una ayuda, no un portero.
-    } finally {
-      setConsultandoImpacto(false);
-    }
-    handleSubmit(e, { seguir: false, esVersion: false });
-  };
-
   const handleSubmit = async (e, opts = { seguir: false, esVersion: false }) => {
     e.preventDefault();
     setFieldErrors({});
@@ -346,10 +313,6 @@ export default function FormularioObjetivos({
         const esBinaria = unidad === "Cumple/No Cumple";
 
         return {
-          // Mandamos el _id de las metas que ya existen. Sin esto el backend
-          // sólo puede emparejarlas por nombre, y renombrar una meta le
-          // huerfanaba todos los resultados ya cargados.
-          ...(m._id ? { _id: m._id } : {}),
           nombre: (m.nombre || "").trim(),
           target: null, // 🔹 dejamos de usar el target de texto
           esperado:
@@ -406,12 +369,6 @@ export default function FormularioObjetivos({
     if (metasClean.length > 0) body.metas = metasClean;
 
     body.objetivosCalidad = objetivosCalidad;
-
-    // El backend rechaza con 409 un cambio de frecuencia que deja resultados
-    // fuera del calendario, salvo que venga confirmado. Este flag es el "ya
-    // vi el impacto y aun así quiero hacerlo" y sólo lo pone el botón del
-    // diálogo de impacto: no se manda por defecto a propósito.
-    if (opts.confirmarImpacto) body.confirmarImpacto = true;
 
     setIsSubmitting(true);
     try {
@@ -499,18 +456,13 @@ export default function FormularioObjetivos({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* IZQUIERDA */}
           <div className="space-y-4">
-            <div className="space-y-1">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                  <Target className="h-4 w-4 text-blue-600" />
-                  Qué se mide
-                </h3>
-                <span className={pill}>{fiscalYearLabel(year)}</span>
-              </div>
-              <p className="text-xs text-muted-foreground">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold">🎯 Qué se mide</h3>
+              <p className="text-xs text-muted-foreground -mt-1 mb-1">
                 El enunciado del objetivo. Acá no va ningún número: los umbrales
                 se definen abajo, en <strong>Cómo se mide</strong>.
               </p>
+              <span className={pill}>Año: {year}</span>
             </div>
 
             <div>
@@ -611,10 +563,7 @@ export default function FormularioObjetivos({
 
           {/* DERECHA - Configuración */}
           <div className="space-y-4">
-            <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <Users className="h-4 w-4 text-slate-500" />
-              A quién y cuándo aplica
-            </h3>
+            <h3 className="text-base font-semibold">⚙️ A quién y cuándo aplica</h3>
             <p className="text-xs text-muted-foreground -mt-1 mb-1">
               Alcance y año fiscal del objetivo.
             </p>
@@ -825,10 +774,7 @@ export default function FormularioObjetivos({
         <div className="space-y-2 border-t pt-4">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <Award className="h-4 w-4 text-emerald-600" />
-                Objetivos de Mejora de Calidad
-              </h3>
+              <h3 className="text-base font-semibold">🏅 Objetivos de Mejora de Calidad</h3>
               <p className="text-xs text-muted-foreground">
                 Asociá esta plantilla a uno o varios objetivos de Gestión de Calidad del año {year}.
               </p>
@@ -964,33 +910,17 @@ export default function FormularioObjetivos({
             </div>
           )}
         </div>
-        {/* Metas — el "cómo se mide" */}
-        <div className="space-y-3 border-t pt-5">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0 space-y-1">
-              <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <Ruler className="h-4 w-4 shrink-0 text-indigo-600" />
-                Cómo se mide
-              </h3>
-              <p className="max-w-2xl text-xs text-muted-foreground">
-                Con qué regla se decide si el objetivo se cumplió. Cada{" "}
-                <strong>meta</strong> es una forma de medirlo: qué unidad, qué
-                valor hay que alcanzar y cómo se combinan los períodos al cerrar
-                el año. Con una sola meta alcanza en la mayoría de los casos; si
-                agregás varias, repartí el peso entre ellas.
-              </p>
-            </div>
-            <BotonAyudaMetas
-              abierto={ayudaMetasAbierta}
-              onToggle={() => setAyudaMetasAbierta((v) => !v)}
-            />
-          </div>
 
-          {/* Fuera de la fila flex: si va adentro, aplasta el título y la
-              segunda columna de la grilla se sale de la vista. */}
-          {ayudaMetasAbierta && (
-            <PanelAyudaMetas onCerrar={() => setAyudaMetasAbierta(false)} />
-          )}
+        {/* Metas */}
+        <div className="space-y-3 border-t pt-4">
+          <h3 className="text-base font-semibold">📌 Cómo se mide</h3>
+          <p className="text-xs text-muted-foreground">
+            Con qué regla se decide si el objetivo se cumplió. Cada
+            <strong> meta</strong> es una forma de medirlo: qué unidad, qué valor
+            hay que alcanzar y cómo se combinan los períodos al cerrar el año.
+            Con una sola meta alcanza en la mayoría de los casos; si agregás
+            varias, repartí el peso entre ellas.
+          </p>
 
           {metas.map((m, i) => {
             const esBinaria = m.unidad === "Cumple/No Cumple";
@@ -1000,14 +930,13 @@ export default function FormularioObjetivos({
             return (
               <div
                 key={i}
-                className="relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md"
+                className="relative rounded-lg border bg-card text-card-foreground shadow-sm transition-all hover:shadow-md"
               >
                 {/* Header / Barra superior */}
-                <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50/80 px-4 py-3">
+                <div className="flex items-start justify-between gap-4 border-b bg-muted/30 p-4">
                   <div className="flex-1 space-y-1">
-                    <label className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                    <label className="text-xs font-medium text-muted-foreground">
                       Nombre de la Meta
-                      <AyudaCampo campo="nombre" />
                     </label>
                     <input
                       className="w-full rounded-md border bg-background px-3 py-2 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -1019,9 +948,8 @@ export default function FormularioObjetivos({
                     />
                   </div>
                   <div className="w-24 space-y-1">
-                    <label className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                    <label className="text-xs font-medium text-muted-foreground">
                       Peso (%)
-                      <AyudaCampo campo="pesoMeta" />
                     </label>
                     <div className="relative">
                       <input
@@ -1047,7 +975,7 @@ export default function FormularioObjetivos({
                     onClick={() => handleRemoveMeta(i)}
                     title="Eliminar meta"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    ✕
                   </Button>
                 </div>
 
@@ -1061,9 +989,8 @@ export default function FormularioObjetivos({
                     </h4>
                     <div className="space-y-3">
                       <div>
-                        <label className="flex items-center gap-1 mb-1 text-xs text-muted-foreground">
+                        <label className="mb-1 block text-xs text-muted-foreground">
                           Unidad de Medida
-                          <AyudaCampo campo="unidad" />
                         </label>
                         <select
                           className="w-full rounded-md border bg-background px-3 py-2 text-sm"
@@ -1080,9 +1007,8 @@ export default function FormularioObjetivos({
                         </select>
                       </div>
                       <div>
-                        <label className="flex items-center gap-1 mb-1 text-xs text-muted-foreground">
+                        <label className="mb-1 block text-xs text-muted-foreground">
                           Modo de Seguimiento
-                          <AyudaCampo campo="modoAcumulacion" />
                         </label>
                         <select
                           className="w-full rounded-md border bg-background px-3 py-2 text-sm"
@@ -1097,8 +1023,8 @@ export default function FormularioObjetivos({
                             );
                           }}
                         >
-                          <option value="periodo">Por período — de mantenimiento</option>
-                          <option value="acumulativo">Acumulativo — se suma en el año</option>
+                          <option value="periodo">Por Período (Independiente)</option>
+                          <option value="acumulativo">Acumulativo (Suma)</option>
                         </select>
                         <p className="mt-1 text-[10px] text-muted-foreground">
                           {esAcumulativa
@@ -1107,9 +1033,8 @@ export default function FormularioObjetivos({
                         </p>
                       </div>
                       <div>
-                        <label className="flex items-center gap-1 mb-1 text-xs text-muted-foreground">
+                        <label className="mb-1 block text-xs text-muted-foreground">
                           Regla de Cierre Anual
-                          <AyudaCampo campo="reglaCierre" />
                         </label>
                         <select
                           className="w-full rounded-md border bg-background px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1143,9 +1068,8 @@ export default function FormularioObjetivos({
                       </div>
                       {m.reglaCierre === "umbral_periodos" && (
                         <div>
-                          <label className="flex items-center gap-1 mb-1 text-xs text-muted-foreground">
+                          <label className="mb-1 block text-xs text-muted-foreground">
                             Umbral (Cant.)
-                            <AyudaCampo campo="umbralPeriodos" />
                           </label>
                           <input
                             type="number"
@@ -1182,9 +1106,8 @@ export default function FormularioObjetivos({
                       <div className="space-y-3">
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="flex items-center gap-1 mb-1 text-xs text-muted-foreground">
+                            <label className="mb-1 block text-xs text-muted-foreground">
                               Operador
-                              <AyudaCampo campo="operador" />
                             </label>
                             <select
                               className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono"
@@ -1201,9 +1124,8 @@ export default function FormularioObjetivos({
                             </select>
                           </div>
                           <div>
-                            <label className="flex items-center gap-1 mb-1 text-xs text-muted-foreground">
+                            <label className="mb-1 block text-xs text-muted-foreground">
                               Valor Esperado
-                              <AyudaCampo campo="esperado" />
                             </label>
                             <input
                               className="w-full rounded-md border bg-background px-3 py-2 text-sm"
@@ -1217,9 +1139,8 @@ export default function FormularioObjetivos({
                           </div>
                         </div>
                         <div>
-                          <label className="flex items-center gap-1 mb-1 text-xs text-muted-foreground">
+                          <label className="mb-1 block text-xs text-muted-foreground">
                             Tolerancia (puntos)
-                            <AyudaCampo campo="tolerancia" />
                           </label>
                           <input
                             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
@@ -1265,9 +1186,8 @@ export default function FormularioObjetivos({
                               }
                             />
                             <div className="space-y-0.5">
-                              <span className="flex items-center gap-1 text-sm font-medium">
+                              <span className="block text-sm font-medium">
                                 Reconoce Esfuerzo
-                                <AyudaCampo campo="reconoceEsfuerzo" />
                               </span>
                               <span className="block text-[10px] text-muted-foreground">
                                 Da puntaje proporcional si no se llega al 100%.
@@ -1293,9 +1213,8 @@ export default function FormularioObjetivos({
                               }
                             />
                             <div className="space-y-0.5">
-                              <span className="flex items-center gap-1 text-sm font-medium">
+                              <span className="block text-sm font-medium">
                                 Permite Over-achievement
-                                <AyudaCampo campo="permiteOver" />
                               </span>
                               <span className="block text-[10px] text-muted-foreground">
                                 Permite superar el 100% (hasta 120%).
@@ -1316,14 +1235,8 @@ export default function FormularioObjetivos({
             );
           })}
 
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={handleAddMeta}
-            className="w-full border border-dashed border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-          >
-            <Plus className="mr-1.5 h-4 w-4" />
-            Agregar otra meta
+          <Button type="button" variant="secondary" onClick={handleAddMeta}>
+            ➕ Agregar meta
           </Button>
         </div>
       </div>
@@ -1358,98 +1271,26 @@ export default function FormularioObjetivos({
           </Button>
         )}
 
-        {/* Jerarquía deliberada: versionar es la acción principal y sobrescribir
-            la secundaria. Antes convivían dos botones de peso visual parecido,
-            uno decía "Crear Versión 2" y el otro "Actualizar V1", y se leían
-            como equivalentes. No lo son: sobrescribir pisa el objetivo. En toda
-            la base hay una sola plantilla versionada — el diseño empujaba al
-            botón destructivo. */}
         {isEdit && (
           <Button
             type="button"
-            variant="outline"
-            className="border-slate-300 text-slate-600 hover:bg-slate-100"
-            onClick={(e) => pedirImpactoYGuardar(e)}
-            disabled={isSubmitting}
-            title="Reemplaza el objetivo actual. Queda registrado en el historial y se puede revertir."
-          >
-            {isSubmitting ? "Guardando…" : "Sobrescribir sin versionar"}
-          </Button>
-        )}
-
-        {isEdit ? (
-          <Button
-            type="button"
+            variant="secondary"
+            className="border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 font-bold shadow-sm"
             onClick={() => setVersionDialogOpen(true)}
             disabled={isSubmitting}
-            className="font-bold"
           >
-            {isSubmitting ? "Guardando…" : `Guardar como versión ${(initialData.version || 1) + 1}`}
-          </Button>
-        ) : (
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Guardando…" : "Crear objetivo"}
+            {isSubmitting ? "Guardando…" : `+ Crear Versión ${(initialData.version || 1) + 1} (Enviar a Aprobar)`}
           </Button>
         )}
+
+        <Button type="submit" disabled={isSubmitting}>
+          {isSubmitting
+            ? "Guardando…"
+            : isEdit
+              ? "Actualizar V" + (initialData.version || 1) + " (Sobrescribir)"
+              : "Crear objetivo"}
+        </Button>
       </div>
-
-      {/* AVISO DE IMPACTO — qué se rompe si se sobrescribe así */}
-      <Dialog open={!!impacto} onOpenChange={(v) => !v && setImpacto(null)}>
-        <DialogContent className="sm:max-w-[620px]">
-          <DialogHeader>
-            <DialogTitle>Antes de sobrescribir</DialogTitle>
-            <DialogDescription>
-              Estos cambios afectan datos que ya están cargados. Revisalo antes de guardar.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-2 max-h-[50vh] overflow-auto">
-            {(impacto?.avisos || []).map((a, i) => {
-              const estilo = a.gravedad === "alta"
-                ? "border-rose-200 bg-rose-50 text-rose-800"
-                : a.gravedad === "buena"
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                  : "border-amber-200 bg-amber-50 text-amber-800";
-              return (
-                <div key={i} className={`rounded-lg border p-3 ${estilo}`}>
-                  <div className="text-sm font-bold">{a.titulo}</div>
-                  {a.detalle && <div className="text-xs mt-1 leading-snug">{a.detalle}</div>}
-                  {a.empleados?.length > 0 && (
-                    <div className="text-xs mt-1.5">
-                      <span className="font-semibold">Personas afectadas ({a.empleados.length}):</span>{" "}
-                      {a.empleados.slice(0, 8).join(", ")}
-                      {a.empleados.length > 8 && ` y ${a.empleados.length - 8} más`}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="text-[11px] text-slate-500 border-t pt-2">
-            Los resultados cargados no se borran nunca. Si quedan fuera del calendario dejan de verse, y
-            vuelven a aparecer si se restaura la frecuencia anterior. Este cambio queda en el historial
-            del objetivo y se puede revertir.
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" type="button" onClick={() => setImpacto(null)} disabled={isSubmitting}>
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              className="bg-rose-600 hover:bg-rose-700 text-white"
-              disabled={isSubmitting}
-              onClick={(e) => {
-                setImpacto(null);
-                handleSubmit(e, { seguir: false, esVersion: false, confirmarImpacto: true });
-              }}
-            >
-              Sobrescribir igual
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* DIÁLOGO DE REVERSION */}
       <Dialog open={versionDialogOpen} onOpenChange={setVersionDialogOpen}>
