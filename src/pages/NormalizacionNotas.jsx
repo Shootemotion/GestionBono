@@ -16,7 +16,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   CheckCircle2, AlertTriangle, Clock, Ban, Loader2, Search,
-  ShieldCheck, Undo2, Scale, Info,
+  ShieldCheck, Undo2, Scale, Info, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import SelectorAnioFiscal from "@/components/SelectorAnioFiscal";
@@ -32,10 +32,80 @@ const ESTILO = {
   sin_evaluar:      { Icono: Info,           chip: "bg-slate-200 text-slate-600",     fila: "" },
 };
 
-function Fila({ item, onConfirmar, onDeshacer, trabajando }) {
+/**
+ * Por qué esta persona tiene diferencia.
+ *
+ * Se pide al expandir y no con el listado: el análisis cruza fechas de
+ * inserción, auditoría y evaluaciones, y hacerlo para las 80 de una
+ * demoraría la pantalla por un dato que se mira de a uno.
+ */
+function PorQue({ empleadoId, periodo, year }) {
+  const [estado, setEstado] = useState({ cargando: true, causas: null, veredicto: null });
+
+  useEffect(() => {
+    let vivo = true;
+    api(`/divergencias?year=${year}&empleadoId=${empleadoId}`)
+      .then((d) => {
+        if (!vivo) return;
+        const caso = (d.items || []).find((i) => i.periodo === periodo);
+        setEstado({
+          cargando: false,
+          causas: caso?.causas || [],
+          veredicto: caso?.veredicto || null,
+        });
+      })
+      .catch(() => vivo && setEstado({ cargando: false, causas: [], veredicto: null }));
+    return () => {
+      vivo = false;
+    };
+  }, [empleadoId, periodo, year]);
+
+  if (estado.cargando) {
+    return (
+      <div className="flex items-center gap-2 text-[11px] text-slate-400 py-2">
+        <Loader2 className="w-3 h-3 animate-spin" /> Buscando qué cambió…
+      </div>
+    );
+  }
+
+  if (!estado.causas?.length) {
+    return (
+      <p className="text-[11px] text-slate-500 py-2">
+        No se encontró ningún cambio registrado que explique la diferencia.
+      </p>
+    );
+  }
+
+  return (
+    <div className="py-2 space-y-2">
+      {estado.veredicto && (
+        <p className="text-[11px] text-slate-700 bg-white border border-slate-200 rounded-lg p-2">
+          {estado.veredicto.texto}
+        </p>
+      )}
+      {estado.causas.map((c, i) => (
+        <div key={i} className="text-[11px] leading-snug">
+          <div className="flex items-start justify-between gap-2">
+            <span className="font-semibold text-slate-700">· {c.titulo}</span>
+            {c.efecto != null && (
+              <span className={`shrink-0 font-mono ${c.efecto > 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                {c.efecto > 0 ? "+" : ""}
+                {fmt(c.efecto)} pts
+              </span>
+            )}
+          </div>
+          <p className="text-slate-500 pl-3">{c.detalle}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Fila({ item, year, onConfirmar, onDeshacer, trabajando }) {
   const e = ESTILO[item.estado] || ESTILO.sin_evaluar;
   const { Icono } = e;
   const hayDif = Math.abs(item.diferencia ?? 0) > 1;
+  const [abierto, setAbierto] = useState(false);
 
   return (
     <tr className={`border-b border-slate-100 hover:bg-slate-50/60 ${e.fila}`}>
@@ -84,12 +154,31 @@ function Fila({ item, onConfirmar, onDeshacer, trabajando }) {
         )}
       </td>
 
-      <td className="px-3 py-2.5 max-w-[260px]">
+      <td className="px-3 py-2.5 max-w-[320px]">
         {item.motivo && <p className="text-[11px] text-slate-600 leading-snug">{item.motivo}</p>}
         {item.confirmadaEl && (
           <p className="text-[11px] text-emerald-600">
             Confirmada el {new Date(item.confirmadaEl).toLocaleDateString("es-AR")}
           </p>
+        )}
+
+        {/* Cuando hay diferencia, se puede ver qué la causó. Es lo que vuelve
+            accionable la columna de al lado: sin esto, el número en rojo
+            genera la duda sin responderla. */}
+        {hayDif && (
+          <>
+            <button
+              type="button"
+              onClick={() => setAbierto((v) => !v)}
+              className="text-[11px] text-indigo-600 hover:underline inline-flex items-center gap-1 mt-0.5"
+            >
+              {abierto ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+              ¿Por qué difieren?
+            </button>
+            {abierto && (
+              <PorQue empleadoId={item.empleadoId} periodo={item.periodo} year={year} />
+            )}
+          </>
         )}
       </td>
 
@@ -324,6 +413,7 @@ export default function NormalizacionNotas() {
                       <Fila
                         key={i.empleadoId}
                         item={i}
+                        year={year}
                         onConfirmar={confirmar}
                         onDeshacer={deshacer}
                         trabajando={trabajando}
