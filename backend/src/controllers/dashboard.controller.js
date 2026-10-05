@@ -380,7 +380,7 @@ export async function computeForEmployees(empleadoIds, anio, auditLog = null) {
         .find(f => f.estado === "CLOSED");
 
       // --- Re-Calculate Global Scores based on new progressions ---
-      const { scoreObj, scoreApt, scoreFinal, bono } = calculateGlobalPerformance(
+      const { scoreObj, scoreApt, scoreFinal, bono, isSnapshot } = calculateGlobalPerformance(
         objetivosArr,
         aptitudesArr,
         latestFeedback
@@ -427,6 +427,17 @@ export async function computeForEmployees(empleadoIds, anio, auditLog = null) {
         scoreApt,
         scoreFinal,
         bono,
+        // De dónde sale `scoreFinal`: true = es la nota que el jefe evaluó y
+        // comunicó; false = es el cálculo en vivo, porque todavía no hay
+        // feedback cerrado.
+        //
+        // Sin este dato las pantallas no pueden saber si el número que
+        // reciben ya está comunicado, y terminan recalculando por su cuenta.
+        // Es lo que hacía la cabecera de la Sala de Evaluación: a Tania
+        // Simunovich le mostraba 80 —el seguimiento del año— mientras su
+        // feedback decía 63,6.
+        notaComunicada: !!isSnapshot,
+        periodoDeLaNota: isSnapshot ? latestFeedback?.periodo ?? null : null,
       };
     })
   );

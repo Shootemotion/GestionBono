@@ -1161,38 +1161,40 @@ export default function EvaluacionFlujo() {
   const resumenEnVivo = useMemo(() => buildResumenEmpleado(dashEmpleadoData, isFinalYearClosure), [dashEmpleadoData, isFinalYearClosure]);
 
   /**
-   * Lo que se muestra arriba: la nota guardada si el feedback ya existe.
+   * La cabecera muestra la nota del AÑO, no la del período que se está
+   * editando. Si esa nota ya se comunicó, es la que va.
    *
-   * Esta pantalla calculaba siempre en vivo, también para un feedback ya
-   * cerrado. A Gilda Muñoz le mostraba 87 —el recálculo de hoy, 86,5
-   * redondeado— mientras su feedback decía 76,7 y eso era lo que ella veía en
-   * Mi Desempeño y lo que iba a cobrar. Tres pantallas, tres números.
+   * Esta pantalla calculaba siempre en vivo. A Tania Simunovich le mostraba
+   * 80 —el seguimiento del año completo— mientras su feedback decía 63,6, que
+   * es lo que ella veía en Mi Desempeño y lo que iba a cobrar. A Gilda Muñoz
+   * le mostraba 87 contra 76,7.
    *
-   * El cálculo en vivo sigue siendo el correcto cuando todavía no hay nota:
-   * es el momento en que el jefe está evaluando y el número se está formando.
-   * Una vez enviado, la nota es la que se comunicó y no se recalcula.
+   * Quién decide cuál es la nota del año es el backend (`notaComunicada` y
+   * `scoreFinal` del dashboard), no esta pantalla. El primer intento acá fue
+   * buscar el feedback por el período de la URL, y nunca lo encontraba: la
+   * URL trae el período de un hito, no "FINAL".
+   *
+   * El cálculo en vivo sigue siendo el correcto mientras no haya nota
+   * cerrada: ahí el jefe está evaluando y el número se está formando.
    */
-  const feedbackDelPeriodo = useMemo(
-    () => (feedbacks || []).find((f) => f.periodo === periodo),
-    [feedbacks, periodo]
-  );
-
   const resumenEmpleado = useMemo(() => {
-    const g = feedbackDelPeriodo?.scores;
-    const tieneNota = g && g.global !== null && g.global !== undefined;
-    if (!tieneNota || !resumenEnVivo) return resumenEnVivo;
+    if (!resumenEnVivo || !dashEmpleadoData?.notaComunicada) return resumenEnVivo;
+
+    const obj = Number(dashEmpleadoData.scoreObj ?? 0);   // aporte, sobre 70
+    const comp = Number(dashEmpleadoData.scoreApt ?? 0);  // aporte, sobre 30
 
     return {
       ...resumenEnVivo,
-      objetivos: { ...resumenEnVivo.objetivos, rawScore: Number(g.obj ?? 0) / 0.7, score: Number(g.obj ?? 0) },
-      aptitudes: { ...resumenEnVivo.aptitudes, rawScore: Number(g.comp ?? 0) / 0.3, score: Number(g.comp ?? 0) },
-      global: Number(g.global),
-      // Para que la pantalla pueda decir de dónde sale el número en vez de
-      // dejar al jefe adivinando por qué cambió desde la última vez que entró.
+      // `rawScore` es el puntaje sobre 100 y `score` el aporte: es lo que ya
+      // muestra la cabecera en grande y en chico respectivamente.
+      objetivos: { ...resumenEnVivo.objetivos, rawScore: obj / 0.7, score: obj },
+      aptitudes: { ...resumenEnVivo.aptitudes, rawScore: comp / 0.3, score: comp },
+      global: Number(dashEmpleadoData.scoreFinal ?? resumenEnVivo.global),
       esNotaComunicada: true,
+      periodoDeLaNota: dashEmpleadoData.periodoDeLaNota ?? null,
       globalEnVivo: resumenEnVivo.global,
     };
-  }, [resumenEnVivo, feedbackDelPeriodo]);
+  }, [resumenEnVivo, dashEmpleadoData]);
   const empleadoNombreCompleto = empleadoInfo ? `${empleadoInfo.apellido} ${empleadoInfo.nombre}` : "Colaborador";
 
   // DEBUG FINAL REPORT
@@ -1354,7 +1356,9 @@ export default function EvaluacionFlujo() {
                     {resumenEmpleado?.global !== undefined ? Math.round(resumenEmpleado.global) : "-"}%
                   </div>
                   <div className="text-[9px] text-slate-400 leading-none text-right mt-1">
-                    {resumenEmpleado?.esNotaComunicada ? "nota comunicada" : "70% obj + 30% comp"}
+                    {resumenEmpleado?.esNotaComunicada
+                      ? `nota comunicada${resumenEmpleado.periodoDeLaNota ? ` · ${resumenEmpleado.periodoDeLaNota}` : ""}`
+                      : "70% obj + 30% comp"}
                   </div>
                 </div>
               </div>
