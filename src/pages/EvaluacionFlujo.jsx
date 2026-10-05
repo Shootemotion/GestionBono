@@ -1158,7 +1158,41 @@ export default function EvaluacionFlujo() {
   };
 
   const isFinalYearClosure = getPeriodMonth(periodo) === 12 || periodo === "FINAL";
-  const resumenEmpleado = useMemo(() => buildResumenEmpleado(dashEmpleadoData, isFinalYearClosure), [dashEmpleadoData, isFinalYearClosure]);
+  const resumenEnVivo = useMemo(() => buildResumenEmpleado(dashEmpleadoData, isFinalYearClosure), [dashEmpleadoData, isFinalYearClosure]);
+
+  /**
+   * Lo que se muestra arriba: la nota guardada si el feedback ya existe.
+   *
+   * Esta pantalla calculaba siempre en vivo, también para un feedback ya
+   * cerrado. A Gilda Muñoz le mostraba 87 —el recálculo de hoy, 86,5
+   * redondeado— mientras su feedback decía 76,7 y eso era lo que ella veía en
+   * Mi Desempeño y lo que iba a cobrar. Tres pantallas, tres números.
+   *
+   * El cálculo en vivo sigue siendo el correcto cuando todavía no hay nota:
+   * es el momento en que el jefe está evaluando y el número se está formando.
+   * Una vez enviado, la nota es la que se comunicó y no se recalcula.
+   */
+  const feedbackDelPeriodo = useMemo(
+    () => (feedbacks || []).find((f) => f.periodo === periodo),
+    [feedbacks, periodo]
+  );
+
+  const resumenEmpleado = useMemo(() => {
+    const g = feedbackDelPeriodo?.scores;
+    const tieneNota = g && g.global !== null && g.global !== undefined;
+    if (!tieneNota || !resumenEnVivo) return resumenEnVivo;
+
+    return {
+      ...resumenEnVivo,
+      objetivos: { ...resumenEnVivo.objetivos, rawScore: Number(g.obj ?? 0) / 0.7, score: Number(g.obj ?? 0) },
+      aptitudes: { ...resumenEnVivo.aptitudes, rawScore: Number(g.comp ?? 0) / 0.3, score: Number(g.comp ?? 0) },
+      global: Number(g.global),
+      // Para que la pantalla pueda decir de dónde sale el número en vez de
+      // dejar al jefe adivinando por qué cambió desde la última vez que entró.
+      esNotaComunicada: true,
+      globalEnVivo: resumenEnVivo.global,
+    };
+  }, [resumenEnVivo, feedbackDelPeriodo]);
   const empleadoNombreCompleto = empleadoInfo ? `${empleadoInfo.apellido} ${empleadoInfo.nombre}` : "Colaborador";
 
   // DEBUG FINAL REPORT
@@ -1320,7 +1354,7 @@ export default function EvaluacionFlujo() {
                     {resumenEmpleado?.global !== undefined ? Math.round(resumenEmpleado.global) : "-"}%
                   </div>
                   <div className="text-[9px] text-slate-400 leading-none text-right mt-1">
-                    70% obj + 30% comp
+                    {resumenEmpleado?.esNotaComunicada ? "nota comunicada" : "70% obj + 30% comp"}
                   </div>
                 </div>
               </div>

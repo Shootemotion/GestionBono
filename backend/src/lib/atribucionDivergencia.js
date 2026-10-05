@@ -258,6 +258,41 @@ function cambiosAuditados(auditoria, cerradoEl) {
 }
 
 /**
+ * El día que se unificó el motor de cálculo.
+ *
+ * Hasta esa fecha el feedback se calculaba con `scoreEngineUnified`, que era
+ * una copia vieja de scoringCore sin el arreglo del operador "==" ni el manejo
+ * de metas binarias. Toda nota cerrada antes se sacó con ese motor, y el de
+ * hoy no la reproduce aunque los datos, los pesos y la configuración estén
+ * intactos. Es el caso de Gilda Muñoz: nada cambió en su información y aun así
+ * su foto dice 56 donde hoy da 65,8.
+ */
+export const MOTOR_UNIFICADO = new Date("2026-10-01T00:00:00Z");
+
+/**
+ * Nada en los datos cambió, pero la nota no coincide: la calculó otro motor.
+ *
+ * Es una causa de último recurso, y por eso se evalúa después de todas las
+ * demás: afirmarla cuando además hubo cambios reales sería taparlos.
+ */
+function motorAnterior(cerradoEl, hayOtrasCausas) {
+  if (!cerradoEl || cerradoEl >= MOTOR_UNIFICADO || hayOtrasCausas) return [];
+  return [
+    {
+      codigo: "MOTOR_ANTERIOR",
+      titulo: "La nota se calculó con el motor viejo",
+      detalle:
+        `Este feedback se cerró el ${cerradoEl.toLocaleDateString("es-AR")}, antes de que se ` +
+        "unificara el cálculo. Hasta entonces el feedback usaba un motor propio que no tenía el " +
+        "arreglo del operador \"=\" ni el manejo de metas Cumple/No Cumple. Los datos, los pesos y " +
+        "la configuración están intactos: lo que cambió es la fórmula.",
+      efecto: null,
+      evidencia: { cerradoEl: cerradoEl.toISOString().slice(0, 10), motorUnificado: "2026-10-01" },
+    },
+  ];
+}
+
+/**
  * La nota guardada es imposible en la escala.
  *
  * Objetivos aportan hasta 70 y competencias hasta 30: 100 es el techo. Hay
@@ -365,6 +400,13 @@ export function explicarDivergencia({
     ...datosNoComputados(hallazgos),
   ];
 
+  // De último recurso: solo si nada más explica la diferencia. Afirmarla
+  // cuando además hubo cambios reales taparía esos cambios.
+  const soloUbicacion = causas.every((c) =>
+    c.codigo === "DIFERENCIA_EN_OBJETIVOS" || c.codigo === "DIFERENCIA_EN_COMPETENCIAS"
+  );
+  causas.push(...motorAnterior(cerradoEl, !soloUbicacion));
+
   /* --- Reproducción: ¿alguna hipótesis da el número guardado? --- */
   //
   // Es la única forma de pasar de "esto cambió" a "esto lo explica". Si
@@ -433,6 +475,15 @@ export function explicarDivergencia({
         "Explicada: la nota guardada es la de seguimiento, no la de cierre. Al cerrar, la regla " +
         "estricta de las metas cambia el número; el feedback se guardó con el valor de seguimiento.",
       reproducidaPor: "conSeguimiento",
+    };
+  } else if (causas.some((c) => c.codigo === "MOTOR_ANTERIOR")) {
+    veredicto = {
+      nivel: "explicada",
+      texto:
+        "Explicada: los datos, los pesos y la configuración están intactos. La nota se calculó " +
+        "con el motor anterior, que daba distinto en metas binarias y en el operador de igualdad. " +
+        "La comunicada es la que vale.",
+      reproducidaPor: "motorAnterior",
     };
   } else if (cerradoEl && auditoriaDesde && cerradoEl < new Date(auditoriaDesde)) {
     // El límite honesto del análisis.

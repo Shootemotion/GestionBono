@@ -358,9 +358,11 @@ describe("cuando no hay registro de lo que pasó", () => {
 
   test("un cierre anterior al registro se marca sin rastro", () => {
     const r = explicarDivergencia({
+      // Con una causa concreta además: sin eso el caso lo explica el cambio de
+      // motor, que es más preciso que "no hay registro".
       feedback: feedback({ closedAt: new Date("2026-03-20T10:00:00Z") }),
       scoresActuales: { obj: 55, comp: 20, global: 75 },
-      dash: dash(),
+      dash: dash([objetivo({ peso: 80 })]),
       auditoriaDesde: AUDITORIA_DESDE,
     });
     expect(r.veredicto.nivel).toBe("sin_rastro");
@@ -405,11 +407,15 @@ describe("cuando no hay registro de lo que pasó", () => {
 describe("cuando de verdad no se sabe, se dice", () => {
   test("sin causas ni reproducción, no inventa una", () => {
     const r = explicarDivergencia({
-      feedback: feedback({ scores: { obj: 40, comp: 20, global: 60 } }),
+      // Cerrado DESPUÉS de unificarse el motor, así que esa explicación
+      // tampoco corre: acá de verdad no se sabe, y hay que decirlo.
+      feedback: feedback({
+        closedAt: new Date("2026-11-10T10:00:00Z"),
+        scores: { obj: 40, comp: 20, global: 60 },
+      }),
       scoresActuales: { obj: 40, comp: 20, global: 75 },
       dash: dash(),
     });
-    // La única causa posible es el lado de la diferencia, que no explica nada.
     expect(r.veredicto.nivel).toBe("sin_explicacion");
     expect(r.veredicto.texto).toMatch(/No se encontró/);
   });
@@ -422,5 +428,43 @@ describe("cuando de verdad no se sabe, se dice", () => {
     });
     expect(r.veredicto.nivel).toBe("parcial");
     expect(r.veredicto.texto).toMatch(/El de mayor peso es/);
+  });
+});
+
+/* ================================================================== */
+// CASO REAL: Gilda Muñoz. Mismos datos, mismos pesos, misma configuración —
+// lo verificamos uno por uno— y aun así su foto dice 56 donde hoy da 65,8.
+// La explicación es que su feedback se cerró el 21/09/2026 y el motor se
+// unificó el 01/10.
+describe("la nota la calculó el motor viejo", () => {
+  test("cerrado antes de unificar el motor y sin otra causa: queda explicado", () => {
+    const r = explicarDivergencia({
+      feedback: feedback({ closedAt: new Date("2026-09-21T10:00:00Z") }),
+      scoresActuales: { obj: 65.8, comp: 20, global: 85.8 },
+      dash: dash(),
+    });
+    expect(r.causas.map((c) => c.codigo)).toContain("MOTOR_ANTERIOR");
+    expect(r.veredicto.nivel).toBe("explicada");
+    expect(r.veredicto.texto).toMatch(/motor anterior/i);
+  });
+
+  // Lo importante de esta causa es que sea el último recurso: si además hubo
+  // cambios reales, atribuirlo al motor los taparía.
+  test("si hay otra causa, el motor NO se usa como explicación", () => {
+    const r = explicarDivergencia({
+      feedback: feedback({ closedAt: new Date("2026-09-21T10:00:00Z") }),
+      scoresActuales: { obj: 65.8, comp: 20, global: 85.8 },
+      dash: dash([objetivo({ peso: 80 })]), // pesos que no suman 100
+    });
+    expect(r.causas.map((c) => c.codigo)).not.toContain("MOTOR_ANTERIOR");
+  });
+
+  test("un cierre posterior a la unificación no se explica por el motor", () => {
+    const r = explicarDivergencia({
+      feedback: feedback({ closedAt: new Date("2026-11-10T10:00:00Z") }),
+      scoresActuales: { obj: 65.8, comp: 20, global: 85.8 },
+      dash: dash(),
+    });
+    expect(r.causas.map((c) => c.codigo)).not.toContain("MOTOR_ANTERIOR");
   });
 });

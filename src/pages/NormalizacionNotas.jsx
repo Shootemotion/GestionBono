@@ -193,14 +193,29 @@ function Fila({ item, year, onConfirmar, onDeshacer, trabajando }) {
             <Undo2 className="w-3 h-3" /> Deshacer
           </button>
         ) : item.confirmable ? (
-          <button
-            type="button"
-            onClick={() => onConfirmar(item)}
-            disabled={trabajando}
-            className="text-xs font-semibold bg-indigo-600 text-white rounded-lg px-3 py-1.5 hover:bg-indigo-700 disabled:opacity-40"
-          >
-            Confirmar
-          </button>
+          // Dos botones y no uno: "Confirmar" a secas no decía QUÉ número
+          // quedaba, y en las filas donde los dos difieren es justamente la
+          // pregunta. Acá cada botón lleva el número que va a fijar.
+          <div className="flex flex-col items-end gap-1">
+            <button
+              type="button"
+              onClick={() => onConfirmar(item, "comunicada")}
+              disabled={trabajando}
+              className="text-xs font-semibold bg-indigo-600 text-white rounded-lg px-3 py-1.5 hover:bg-indigo-700 disabled:opacity-40 whitespace-nowrap"
+            >
+              Dejar la comunicada ({fmt(item.nota?.global)})
+            </button>
+            {hayDif && (
+              <button
+                type="button"
+                onClick={() => onConfirmar(item, "recalculo")}
+                disabled={trabajando}
+                className="text-[11px] text-slate-500 hover:text-rose-600 underline decoration-dotted disabled:opacity-40 whitespace-nowrap"
+              >
+                usar el recálculo ({fmt(item.recalculo?.global)})
+              </button>
+            )}
+          </div>
         ) : (
           <span className="text-[11px] text-slate-300">—</span>
         )}
@@ -232,11 +247,13 @@ export default function NormalizacionNotas() {
     cargar();
   }, [year]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const confirmar = async (item) => {
+  const confirmar = async (item, usar = "comunicada") => {
     setTrabajando(true);
     try {
-      await api(`/notas-oficiales/${item.feedbackId}/confirmar`, { method: "POST" });
-      toast.success(`${item.empleado}: nota ${fmt(item.nota.global)} confirmada`);
+      await api(`/notas-oficiales/${item.feedbackId}/confirmar`, { method: "POST", body: { usar } });
+      const fijada = usar === "recalculo" ? item.recalculo?.global : item.nota?.global;
+      const cual = usar === "recalculo" ? "recálculo" : "nota comunicada";
+      toast.success(`${item.empleado}: queda ${fmt(fijada)} (${cual})`);
       await cargar();
     } catch (err) {
       toast.error(err?.data?.message || err?.message || "No se pudo confirmar");

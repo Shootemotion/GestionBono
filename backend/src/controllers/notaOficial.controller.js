@@ -17,7 +17,7 @@ import Feedback from "../models/Feedback.model.js";
 import Empleado from "../models/Empleado.model.js";
 import Auditoria from "../models/Auditoria.model.js";
 import { computeForEmployees } from "./dashboard.controller.js";
-import { calcularScoresPeriodo } from "../lib/feedbackScores.js";
+import { calcularScoresPeriodo, calcularScoresEnBackend } from "../lib/feedbackScores.js";
 import { resolverNotaOficial, etiquetaEstado, ESTADO } from "../lib/notaOficial.js";
 import { anioFiscalActual } from "../lib/fiscalYear.js";
 
@@ -156,17 +156,33 @@ export async function confirmarNotaOficial(req, res) {
       });
     }
 
+    // Cuál de las dos queda. El default es la comunicada, que es el acuerdo
+    // con RRHH; `usar: "recalculo"` existe para los casos en que la foto se
+    // sacó mal y RRHH decide que el número correcto es el otro. Es una
+    // decisión que se toma de a una y queda registrada como tal.
+    const usarRecalculo = req.body?.usar === "recalculo";
+    let nota = {
+      obj: feedback.scores.obj,
+      comp: feedback.scores.comp,
+      global: feedback.scores.global,
+    };
+
+    if (usarRecalculo) {
+      const calculado = await calcularScoresEnBackend(feedback.empleado, feedback.year, feedback.periodo);
+      if (!calculado) {
+        return res.status(409).json({ message: "No se pudo recalcular la nota de esta persona." });
+      }
+      nota = { obj: calculado.obj, comp: calculado.comp, global: calculado.global };
+    }
+
     feedback.oficial = {
       confirmada: true,
       confirmadaPor: req.user?._id ?? null,
       confirmadaEl: new Date(),
+      origen: usarRecalculo ? "recalculo" : "comunicada",
       // Se congela el valor: si alguien tocara `scores` después, la nota que
       // se pagó no se mueve.
-      nota: {
-        obj: feedback.scores.obj,
-        comp: feedback.scores.comp,
-        global: feedback.scores.global,
-      },
+      nota,
     };
     await feedback.save();
 
@@ -180,10 +196,10 @@ export async function confirmarNotaOficial(req, res) {
       entidad: "nota_oficial",
       documentoId: feedback._id,
       resumen:
-        `Nota oficial ${feedback.year} confirmada en ${feedback.scores.global} ` +
-        `(feedback ${feedback.periodo})`,
+        `Nota oficial ${feedback.year} confirmada en ${nota.global} ` +
+        `(feedback ${feedback.periodo}, origen: ${feedback.oficial.origen})`,
       antes: null,
-      cambios: { nota: feedback.oficial.nota, periodo: feedback.periodo },
+      cambios: { nota: feedback.oficial.nota, periodo: feedback.periodo, origen: feedback.oficial.origen },
       metodo: "POST",
       ruta: req.originalUrl,
       statusCode: 200,
