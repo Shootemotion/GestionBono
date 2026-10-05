@@ -122,7 +122,20 @@ export function computePeriodResults(data, periodo, anioFiscal) {
     });
   });
 
-  const scoreObjRaw = totalObjWeight > 0 ? totalObjScore / totalObjWeight : 0;
+  // Se divide por 100 fijo, no por la suma de pesos de la persona.
+  //
+  // Era la última de las tres normalizaciones que no coincidían: `scoreHelpers`
+  // —que es lo que efectivamente se guarda al cerrar un feedback— y el backend
+  // ya dividían por 100, y sólo esta función lo hacía por el total. Con los
+  // pesos en 100, que es el estado correcto, las dos reglas dan igual; cuando
+  // no, daban distinto y nadie sabía por qué.
+  //
+  // Son 4 personas en el AF2025, todas con los pesos mal cargados. La peor es
+  // Leonela Herrera, con 190% de pesos: 68,4 por un lado y 45,2 por el otro.
+  //
+  // Dividir por 100 es además lo prudente: con pesos incompletos, dividir por
+  // el total le sube la nota a quien tiene menos objetivos de los que debería.
+  const scoreObjRaw = totalObjScore / 100;
   const scoreObj = scoreObjRaw * 0.7;
 
   const aptitudes = [];
@@ -178,7 +191,9 @@ export function computePeriodResults(data, periodo, anioFiscal) {
       pesoEnJuego,
       score: scoreObjetivo,
       // Aporte al puntaje de objetivos (0..70), con la misma ponderación que usa scoreObj
-      aporte: totalObjWeight > 0 ? (scoreObjetivo * peso) / totalObjWeight * 0.7 : 0,
+      // Mismo reparto que `scoreObj` (÷100), si no los aportes de la lista no
+      // suman el total de arriba y el desglose deja de explicar la nota.
+      aporte: (scoreObjetivo * peso) / 100 * 0.7,
       tieneDatos,
     });
   });
