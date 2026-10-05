@@ -105,6 +105,7 @@ function Fila({ item, year, onConfirmar, onDeshacer, trabajando }) {
   const e = ESTILO[item.estado] || ESTILO.sin_evaluar;
   const { Icono } = e;
   const hayDif = Math.abs(item.diferencia ?? 0) > 1;
+  const difJefe = Math.abs(item.difVistaJefe ?? 0) > 1;
   const [abierto, setAbierto] = useState(false);
 
   return (
@@ -129,6 +130,28 @@ function Fila({ item, year, onConfirmar, onDeshacer, trabajando }) {
             <div className="text-[10px] text-slate-400 mt-0.5">
               {item.periodo} · obj {fmt(item.nota.obj)} · comp {fmt(item.nota.comp)}
             </div>
+          </>
+        ) : (
+          <span className="text-slate-300">—</span>
+        )}
+      </td>
+
+      {/* Lo que el jefe tenía en pantalla al enviar el feedback.
+          Va pegado a la nota y antes del recálculo porque es el número que
+          probablemente se conversó en la reunión: si difiere de la foto, es la
+          diferencia que hay que resolver, no una curiosidad técnica. */}
+      <td className="px-3 py-2.5 text-center">
+        {item.vistaJefe ? (
+          <>
+            <div className={`text-sm font-mono ${difJefe ? "text-amber-700 font-bold" : "text-slate-400"}`}>
+              {fmt(item.vistaJefe.global)}
+            </div>
+            {difJefe && (
+              <div className="text-[10px] text-amber-600">
+                {item.difVistaJefe > 0 ? "+" : ""}
+                {fmt(item.difVistaJefe)}
+              </div>
+            )}
           </>
         ) : (
           <span className="text-slate-300">—</span>
@@ -205,6 +228,16 @@ function Fila({ item, year, onConfirmar, onDeshacer, trabajando }) {
             >
               Dejar la comunicada ({fmt(item.nota?.global)})
             </button>
+            {difJefe && (
+              <button
+                type="button"
+                onClick={() => onConfirmar(item, "vista_jefe")}
+                disabled={trabajando}
+                className="text-[11px] text-amber-700 hover:text-amber-800 underline decoration-dotted disabled:opacity-40 whitespace-nowrap"
+              >
+                dejar la que vio el jefe ({fmt(item.vistaJefe?.global)})
+              </button>
+            )}
             {hayDif && (
               <button
                 type="button"
@@ -251,8 +284,14 @@ export default function NormalizacionNotas() {
     setTrabajando(true);
     try {
       await api(`/notas-oficiales/${item.feedbackId}/confirmar`, { method: "POST", body: { usar } });
-      const fijada = usar === "recalculo" ? item.recalculo?.global : item.nota?.global;
-      const cual = usar === "recalculo" ? "recálculo" : "nota comunicada";
+      const fijada =
+        usar === "recalculo" ? item.recalculo?.global
+        : usar === "vista_jefe" ? item.vistaJefe?.global
+        : item.nota?.global;
+      const cual =
+        usar === "recalculo" ? "recálculo"
+        : usar === "vista_jefe" ? "la que vio el jefe"
+        : "nota comunicada";
       toast.success(`${item.empleado}: queda ${fmt(fijada)} (${cual})`);
       await cargar();
     } catch (err) {
@@ -354,7 +393,22 @@ export default function NormalizacionNotas() {
               ))}
             </div>
 
-            {sinObservaciones > 0 && (
+            {/* Lo que de verdad hay que resolver de a uno: la foto guardada no es
+            el número que el jefe tenía delante cuando mandó el feedback. */}
+        {datos.conVistaJefeDistinta > 0 && (
+          <div className="flex items-start gap-2 text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3 mb-4">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+            <span>
+              En <strong>{datos.conVistaJefeDistinta}</strong> caso(s) la nota guardada{" "}
+              <strong>no es la que el jefe tenía en pantalla</strong> al enviar el feedback. La
+              tarjeta mostraba el avance de seguimiento y lo que se guardó usó la regla de cierre.
+              Si lo que se conversó en la reunión fue el número de la pantalla, es ése el que
+              corresponde dejar.
+            </span>
+          </div>
+        )}
+
+        {sinObservaciones > 0 && (
               <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-indigo-200 rounded-xl p-3 mb-4">
                 <div className="flex items-start gap-2 text-xs text-slate-600">
                   <CheckCircle2 className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
@@ -408,6 +462,12 @@ export default function NormalizacionNotas() {
                         la que se comunicó
                       </div>
                     </th>
+                    <th className="text-center px-3 py-2 font-bold text-amber-600">
+                      Veía el jefe
+                      <div className="font-normal normal-case text-[9px] text-slate-400">
+                        al enviarlo
+                      </div>
+                    </th>
                     <th className="text-center px-3 py-2 font-bold">
                       Recálculo hoy
                       <div className="font-normal normal-case text-[9px] text-slate-400">
@@ -421,7 +481,7 @@ export default function NormalizacionNotas() {
                 <tbody>
                   {items.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="text-center text-sm text-slate-400 py-10">
+                      <td colSpan={7} className="text-center text-sm text-slate-400 py-10">
                         Ninguna persona con ese filtro.
                       </td>
                     </tr>

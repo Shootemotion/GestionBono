@@ -17,7 +17,7 @@ import Feedback from "../models/Feedback.model.js";
 import Empleado from "../models/Empleado.model.js";
 import Auditoria from "../models/Auditoria.model.js";
 import { computeForEmployees } from "./dashboard.controller.js";
-import { calcularScoresPeriodo, calcularScoresEnBackend } from "../lib/feedbackScores.js";
+import { calcularScoresPeriodo, calcularScoresEnBackend, calcularVistaDelJefe } from "../lib/feedbackScores.js";
 import { resolverNotaOficial, etiquetaEstado, ESTADO } from "../lib/notaOficial.js";
 import { anioFiscalActual } from "../lib/fiscalYear.js";
 
@@ -60,13 +60,23 @@ export async function estadoNotasOficiales(req, res) {
       // para nada más: la nota es la del feedback, no esta.
       let recalculo = null;
       const dash = dashPorEmpleado.get(empId);
+      let vistaJefe = null;
       if (dash && r.periodo) {
         const s = calcularScoresPeriodo(dash, r.periodo);
         recalculo = s ? { obj: s.obj, comp: s.comp, global: s.global } : null;
+        // El número que el jefe tenía en pantalla al enviar el feedback. No
+        // es ni la foto ni el recálculo: la tarjeta evaluaba con la regla de
+        // seguimiento mientras se guardaba la de cierre.
+        vistaJefe = calcularVistaDelJefe(dash, r.periodo);
       }
 
       const diferencia =
         r.nota && recalculo ? +(Number(recalculo.global) - Number(r.nota.global)).toFixed(1) : null;
+
+      // Diferencia contra lo que el jefe vio: es la que importa para decidir
+      // si la foto refleja lo que se comunicó en la reunión.
+      const difVistaJefe =
+        r.nota && vistaJefe ? +(Number(vistaJefe.global) - Number(r.nota.global)).toFixed(1) : null;
 
       return {
         empleadoId: empId,
@@ -83,6 +93,8 @@ export async function estadoNotasOficiales(req, res) {
         cerradoEl: r.feedback?.closedAt ?? null,
         recalculo,
         diferencia,
+        vistaJefe,
+        difVistaJefe,
       };
     });
 
@@ -112,6 +124,8 @@ export async function estadoNotasOficiales(req, res) {
       resumen,
       confirmables: items.filter((i) => i.confirmable).length,
       conDiferencia: items.filter((i) => Math.abs(i.diferencia ?? 0) > 1).length,
+      // En cuántos la foto NO coincide con lo que el jefe tenía en pantalla.
+      conVistaJefeDistinta: items.filter((i) => Math.abs(i.difVistaJefe ?? 0) > 1).length,
       items,
     });
   } catch (err) {
@@ -156,21 +170,41 @@ export async function confirmarNotaOficial(req, res) {
       });
     }
 
-    // Cuál de las dos queda. El default es la comunicada, que es el acuerdo
-    // con RRHH; `usar: "recalculo"` existe para los casos en que la foto se
-    // sacó mal y RRHH decide que el número correcto es el otro. Es una
-    // decisión que se toma de a una y queda registrada como tal.
-    const usarRecalculo = req.body?.usar === "recalculo";
+    // Cuál de los tres números queda:
+    //
+    //   comunicada  la foto guardada en el feedback. Es el default y el
+    //               acuerdo con RRHH.
+    //   vista_jefe  lo que el jefe tenía en pantalla al enviarlo. En 19 de los
+    //               68 cierres del AF2025 no es el mismo número que la foto,
+    //               porque la tarjeta evaluaba con la regla de seguimiento
+    //               mientras se guardaba la de cierre. Si lo que se conversó
+    //               en la reunión fue ese número, es el que corresponde.
+    //   recalculo   lo que da el motor hoy.
+    //
+    // Se elige de a una y queda registrado cuál fue, porque apartarse de la
+    // foto es una decisión de RRHH sobre una persona concreta.
+    const usar = ["recalculo", "vista_jefe"].includes(req.body?.usar)
+      ? req.body.usar
+      : "comunicada";
+
     let nota = {
       obj: feedback.scores.obj,
       comp: feedback.scores.comp,
       global: feedback.scores.global,
     };
 
-    if (usarRecalculo) {
-      const calculado = await calcularScoresEnBackend(feedback.empleado, feedback.year, feedback.periodo);
+    if (usar !== "comunicada") {
+      const [dash] = await computeForEmployees([feedback.empleado], feedback.year);
+      if (!dash) {
+        return res.status(409).json({ message: "No hay datos para recalcular la nota de esta persona." });
+      }
+      const calculado =
+        usar === "vista_jefe"
+          ? calcularVistaDelJefe(dash, feedback.periodo)
+          : calcularScoresPeriodo(dash, feedback.periodo);
+
       if (!calculado) {
-        return res.status(409).json({ message: "No se pudo recalcular la nota de esta persona." });
+        return res.status(409).json({ message: "No se pudo calcular esa variante de la nota." });
       }
       nota = { obj: calculado.obj, comp: calculado.comp, global: calculado.global };
     }
@@ -179,7 +213,7 @@ export async function confirmarNotaOficial(req, res) {
       confirmada: true,
       confirmadaPor: req.user?._id ?? null,
       confirmadaEl: new Date(),
-      origen: usarRecalculo ? "recalculo" : "comunicada",
+      origen: usar,
       // Se congela el valor: si alguien tocara `scores` después, la nota que
       // se pagó no se mueve.
       nota,

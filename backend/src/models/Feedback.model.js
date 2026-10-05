@@ -91,10 +91,11 @@ const FeedbackSchema = new mongoose.Schema(
             confirmada: { type: Boolean, default: false, index: true },
             confirmadaPor: { type: mongoose.Schema.Types.ObjectId, ref: "Usuario" },
             confirmadaEl: { type: Date },
-            // Cuál de las dos se eligió. Casi siempre "comunicada"; "recalculo"
-            // queda registrado aparte porque es apartarse del acuerdo con RRHH
-            // para un caso puntual, y eso tiene que poder auditarse.
-            origen: { type: String, enum: ["comunicada", "recalculo"], default: "comunicada" },
+            // Cuál de los tres números se eligió: la foto guardada, lo que el
+            // jefe tenía en pantalla al enviar, o el recálculo de hoy. Casi
+            // siempre "comunicada"; los otros dos quedan registrados aparte
+            // porque son apartarse del acuerdo con RRHH para un caso puntual.
+            origen: { type: String, enum: ["comunicada", "vista_jefe", "recalculo"], default: "comunicada" },
             nota: {
                 obj: Number,
                 comp: Number,

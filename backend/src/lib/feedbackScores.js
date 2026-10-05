@@ -132,3 +132,56 @@ export function motivosFueraDeRango(scores) {
 
 /** Diferencia, en puntos de nota final, a partir de la cual vale la pena avisar. */
 export const TOLERANCIA_DIVERGENCIA = 1;
+
+/* ------------------------------------------------------------------ *
+ * Lo que el jefe tenía en pantalla al enviar el feedback
+ * ------------------------------------------------------------------ */
+
+/**
+ * Reproduce el número que mostraba la tarjeta de feedback en la Sala de
+ * Evaluación — el que el jefe miraba cuando apretó "enviar".
+ *
+ * POR QUÉ NO ES EL MISMO QUE SE GUARDÓ
+ * La tarjeta llama `calculateObjectiveProgress(obj, hitos)` sin el tercer
+ * argumento, así que evalúa con la regla de SEGUIMIENTO. Lo que se guarda
+ * (`calcularScoresPeriodo`, y en el front `calculatePeriodScores`) sí pasa
+ * `isFinalYearClosure`. En el feedback FINAL las dos reglas difieren, y por
+ * eso 19 de los 68 cierres del AF2025 tienen una foto que no coincide con lo
+ * que el jefe vio: a Tania Simunovich la pantalla le mostraba 79,9 y se
+ * guardó 63,6.
+ *
+ * Esta función existe para poder PONER ESE NÚMERO AL LADO del guardado, no
+ * para reemplazarlo. Cuál de los dos es la nota lo decide RRHH caso por caso.
+ *
+ * LÍMITE: se calcula con los datos de hoy. La diferencia que detecta es
+ * estructural —la regla con la que se evalúa, no los datos—, pero si además
+ * cambiaron los resultados desde el cierre, este número tampoco es
+ * exactamente el que se vio ese día.
+ */
+export function calcularVistaDelJefe(data, periodo) {
+  if (!data || !periodo) return null;
+
+  const limite = getPeriodMonth(periodo);
+  const objetivos = data.objetivos?.items || data.objetivos || [];
+
+  let totalObj = 0;
+  for (const obj of objetivos) {
+    const delPeriodo = (obj.hitos || []).filter((h) => getPeriodMonth(h.periodo) <= limite);
+    // La tarjeta descarta los hitos sin cargar antes de puntuar.
+    const conDatos = delPeriodo.filter((h) => h.actual !== null && h.actual !== undefined);
+    if (!conDatos.length) continue;
+
+    // Sin `isFinalYearClosure`: así lo hace la pantalla.
+    const progreso = calculateObjectiveProgress(obj, conDatos);
+    totalObj += (progreso * Number(obj.peso || 0)) / 100;
+  }
+
+  const scoreObj = totalObj * 0.7;
+  const scoreComp = calculateCompetencyProgress(data.aptitudes, getPeriodMonth, limite) * 0.3;
+
+  return {
+    obj: +scoreObj.toFixed(1),
+    comp: +scoreComp.toFixed(1),
+    global: +(scoreObj + scoreComp).toFixed(1),
+  };
+}
