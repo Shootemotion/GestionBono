@@ -6,12 +6,11 @@
 //
 // DECISIÓN IMPORTANTE — de dónde sale cada número:
 //
-//   · Las NOTAS (obj / comp / global por período) se leen del snapshot que
-//     quedó guardado en el feedback. Es el registro de lo que efectivamente se
-//     le comunicó a la persona. NO se recalculan: el sistema tiene hoy tres
-//     motores que no coinciden en cómo normalizar los pesos, así que
-//     recalcular acá sería inventar un cuarto número que no coincide con nada
-//     de lo que la gente ya vio.
+//   · Las NOTAS (obj / comp / global por período) se leen del feedback: la
+//     confirmada si la hay, y si no el snapshot guardado. Es el registro de lo
+//     que efectivamente se le comunicó a la persona, y lo acordado con RRHH
+//     como LA nota del año. NO se recalculan: recalcular acá daría un número
+//     distinto del que la gente ya vio y del que paga el bono.
 //
 //   · El DETALLE de objetivos y competencias son los valores efectivamente
 //     cargados por período (resultado, cumple) más la configuración de la meta
@@ -100,13 +99,23 @@ async function mapaDeEvaluadores(feedbacks) {
 /** Feedback de un período, aplanado y con las etiquetas ya resueltas. */
 function filaFeedback(fb) {
   if (!fb) return null;
+
+  // La nota confirmada le gana a `scores`.
+  //
+  // Son el mismo número salvo que alguien edite el feedback después de
+  // confirmarlo: `scores` se mueve y `oficial.nota` no. En un reporte que se
+  // imprime y se archiva, el que vale es el que se fijó.
+  const confirmada = fb.oficial?.confirmada ? fb.oficial.nota : null;
+  const nota = confirmada ?? fb.scores;
+
   return {
     periodo: fb.periodo,
     estado: fb.estado,
     estadoLabel: ESTADO_LABEL[fb.estado] || fb.estado,
-    obj: num(fb.scores?.obj),
-    comp: num(fb.scores?.comp),
-    global: num(fb.scores?.global),
+    oficialConfirmada: !!confirmada,
+    obj: num(nota?.obj),
+    comp: num(nota?.comp),
+    global: num(nota?.global),
     enviado: fb.submittedToEmployeeAt || null,
     cerrado: fb.closedAt || null,
     ack: fb.empleadoAck?.estado || null,

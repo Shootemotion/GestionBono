@@ -393,7 +393,8 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
 
                     {/* --- Control de Datos ---
                         Páginas para responder "¿la información está bien?".
-                        NINGUNA escribe: se mira, no se toca. Las herramientas
+                        Casi ninguna escribe —Normalización de Notas es la
+                        excepción, y por eso no la ve un referente. Las herramientas
                         que reparan —depuración, restaurar por empleado,
                         comparar backup, objetivos sin datos— viven en Admin.
                         Web, y están separadas a propósito: quien va a revisar
@@ -405,7 +406,10 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                       items={[
                         { to: '/pesos-asignados', label: 'Pesos Asignados', icon: <Scale className="w-4 h-4" />, allowed: isSuperAdmin || hasRoleDirectivo || isRealRRHH || hasReferente },
                         { to: '/simulador-motor', label: 'Simulador Cierre de Cálculo', icon: <Calculator className="w-4 h-4" />, allowed: isSuperAdmin || hasRoleDirectivo || isRealRRHH || hasReferente },
-                        { to: '/validacion-calculos', label: 'Validación de Cálculos', icon: <FileCheck2 className="w-4 h-4" />, allowed: isSuperAdmin }
+                        { to: '/validacion-calculos', label: 'Validación de Cálculos', icon: <FileCheck2 className="w-4 h-4" />, allowed: isSuperAdmin },
+                        // La única de este grupo que escribe: fija la nota del
+                        // año. Por eso no la ve un referente.
+                        { to: '/normalizacion-notas', label: 'Normalización de Notas', icon: <Scale className="w-4 h-4" />, allowed: isSuperAdmin || hasRoleDirectivo || isRealRRHH }
                       ]}
                       isOpen={activeMenu === 'Control de Datos'}
                       onMouseEnter={() => handleMenuEnter('Control de Datos')}

@@ -72,6 +72,32 @@ const FeedbackSchema = new mongoose.Schema(
             global: Number
         },
 
+        // LA NOTA OFICIAL DEL AÑO.
+        //
+        // Acordado con RRHH: la nota que vale es la que el jefe evaluó, vio en
+        // su pantalla y le comunicó a la persona, y que la persona vio en la
+        // suya. Esta marca la fija como tal.
+        //
+        // Por qué un campo y no seguir deduciéndola: hasta ahora cada pantalla
+        // resolvía por su cuenta cuál era "la nota" —el backend tomaba el
+        // último feedback cerrado, Mi Desempeño recalculaba en vivo para el
+        // AF2025 y RRHH veía otro recálculo al cerrar—, y las tres daban
+        // números distintos para la misma persona. Una regla que se deduce en
+        // cuatro lugares se deduce distinto en cuatro lugares.
+        //
+        // `nota` guarda el valor al momento de confirmar. Si alguien tocara
+        // `scores` después, la oficial no se mueve: es el número que se pagó.
+        oficial: {
+            confirmada: { type: Boolean, default: false, index: true },
+            confirmadaPor: { type: mongoose.Schema.Types.ObjectId, ref: "Usuario" },
+            confirmadaEl: { type: Date },
+            nota: {
+                obj: Number,
+                comp: Number,
+                global: Number,
+            },
+        },
+
         // Lo que calculó el BACKEND para ese mismo feedback.
         //
         // Va al lado y no encima, a propósito: mientras se entregan los

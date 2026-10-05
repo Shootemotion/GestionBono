@@ -79,10 +79,23 @@ export function calculateGlobalPerformance(objetivos = [], aptitudes = [], lates
     let bono = (objetivos.length > 0 || aptitudes.length > 0) ? `${scoreFinal}%` : null;
     let isSnapshot = false;
 
-    // 4. Apply Snapshot Override if exists
-    // The "snapshot" is the score frozen when feedback was closed.
-    // Logic: If a closed feedback exists and has valid global score, it TRUMPS the live calculation.
-    if (latestFeedback && latestFeedback.scores?.global != null) {
+    // 4. La nota del feedback le gana al cálculo en vivo.
+    //
+    // Acordado con RRHH: la nota que vale es la que el jefe evaluó, vio en su
+    // pantalla y le comunicó a la persona. No se recalcula.
+    //
+    // Si está confirmada se usa `oficial.nota`, que quedó congelada el día que
+    // alguien la fijó. Esa es la diferencia que importa: `scores` todavía se
+    // puede tocar editando el feedback, `oficial.nota` no. Es el número que se
+    // pagó.
+    if (latestFeedback?.oficial?.confirmada && latestFeedback.oficial.nota?.global != null) {
+        const n = latestFeedback.oficial.nota;
+        scoreObj = n.obj ?? scoreObj;
+        scoreApt = n.comp ?? scoreApt;
+        scoreFinal = n.global;
+        bono = `${scoreFinal}%`;
+        isSnapshot = true;
+    } else if (latestFeedback && latestFeedback.scores?.global != null) {
         scoreObj = latestFeedback.scores.obj ?? scoreObj;
         scoreApt = latestFeedback.scores.comp ?? scoreApt;
         scoreFinal = latestFeedback.scores.global;

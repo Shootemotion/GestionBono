@@ -119,18 +119,21 @@ export function useDesempenoData() {
       // un número y el feedback otro: a Guido Barretto la pantalla le mostraba
       // 88,9 mientras su feedback decía 76,1.
       //
-      // RIGE DESDE EL AF2026, igual que las correcciones del motor.
-      // En el AF2025 el cálculo en vivo de un trimestre usa todos los datos
-      // cargados después, mientras que la nota guardada es la foto del día que
-      // se cerró. Aplicarlo hacia atrás le cambiaba el número en pantalla a 204
-      // de 274 feedbacks —182 para abajo, algunos 32 puntos— en un año que se
-      // está entregando. La nota oficial de esos ya está en el feedback; la
-      // pantalla no se toca.
+      // RIGE PARA TODOS LOS AÑOS.
+      //
+      // Estuvo acotado al AF2026 un tiempo, para no cambiarle el número en
+      // pantalla a nadie en medio de la entrega de resultados. Esa cautela
+      // salió peor: el backend ya usaba la nota guardada siempre —el bono se
+      // calcula con ella— así que durante el AF2025 la persona veía acá el
+      // recálculo y habría cobrado sobre otro número. Eran 11 casos en el
+      // feedback FINAL, dos de ellos con más de 20 puntos de diferencia.
+      //
+      // Acordado con RRHH: la nota es la que el jefe evaluó, vio en su
+      // pantalla y comunicó, y que la persona vio en la suya. Una sola, en
+      // todas las pantallas y todos los años.
       //
       // El desglose por objetivo se sigue calculando en vivo: es el detalle que
       // explica la nota, no la nota.
-      if (Number(selectedYear) < AF_REGLAS_CORREGIDAS) return vivo;
-
       const guardada = selectedFeedback?.scores;
       const tieneNota = guardada && guardada.global !== null && guardada.global !== undefined;
       if (!tieneNota) return vivo;
