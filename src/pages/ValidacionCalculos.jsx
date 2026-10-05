@@ -11,6 +11,7 @@ import { getCurrentFiscalYear } from "@/lib/scoreHelpers";
 import { computePeriodResults } from "@/utils/periodResults";
 import { calculateMetaScore, calculateObjectiveProgress } from "@/utils/calculos";
 import SelectorAnioFiscal from "@/components/SelectorAnioFiscal";
+import PanelDivergencias from "@/components/validacion/PanelDivergencias";
 
 const PERIODS = ["Q1", "Q2", "Q3", "FINAL"];
 const fmt = (n) => (n === null || n === undefined || isNaN(n) ? "—" : Number(n).toFixed(1));
@@ -385,6 +386,7 @@ export default function ValidacionCalculos() {
   const [empleados, setEmpleados] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
   const [busqueda, setBusqueda] = useState("");
+  const [verDivergencias, setVerDivergencias] = useState(true);
   const [expandido, setExpandido] = useState(null); // empleadoId
   const [dashCache, setDashCache] = useState({}); // { `${id}_${year}`: dash }
   const [loadingDash, setLoadingDash] = useState(false);
@@ -525,6 +527,31 @@ export default function ValidacionCalculos() {
           <div className="flex items-center bg-white rounded-2xl px-3 py-2 border border-slate-200 shadow-sm">
             <SelectorAnioFiscal value={year} onChange={setYear} variant="stepper" size="md" showCaption />
           </div>
+        </div>
+
+        {/* POR QUÉ DIFIEREN LAS NOTAS
+            Va primero porque es la pregunta con la que se entra a esta
+            pantalla. El resto —el detalle meta por meta— es para después de
+            saber dónde mirar. */}
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={() => setVerDivergencias((v) => !v)}
+            className="w-full flex items-center gap-2 text-left mb-3 group"
+          >
+            {verDivergencias ? (
+              <ChevronDown className="w-4 h-4 text-slate-400" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-slate-400" />
+            )}
+            <span className="text-sm font-bold text-slate-700 group-hover:text-indigo-600">
+              Por qué difieren las notas comunicadas y las del motor
+            </span>
+            <span className="text-xs text-slate-400">
+              — qué cambió entre el cierre y hoy, con la evidencia
+            </span>
+          </button>
+          {verDivergencias && <PanelDivergencias year={year} />}
         </div>
 
         {/* Buscador */}
