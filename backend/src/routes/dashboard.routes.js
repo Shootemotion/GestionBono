@@ -11,6 +11,10 @@ router.get('/debug/empleado/:empleadoId', authenticateJWT, debugEmpleadoPlantill
 router.get('/area/:areaId', authenticateJWT, requireCap('nomina:ver'), dashByArea);
 router.get('/sector/:sectorId', authenticateJWT, requireCap('nomina:ver'), dashBySector);
 router.get('/empleado/:empleadoId', authenticateJWT, requireCap('nomina:ver'), dashByEmpleado);
-router.get("/sector/:sectorId/:year", dashBySector);
-router.get("/area/:areaId/:year", dashByArea);
+// Las mismas dos, con el año en la URL. Estaban sin `requireCap`: el JWT lo
+// exige server.js para todo, pero la capacidad no la pedía nadie, así que
+// cualquier usuario con sesión —un colaborador sin permisos de nómina— podía
+// pedir el dashboard completo de un área agregándole el año a la ruta.
+router.get("/sector/:sectorId/:year", authenticateJWT, requireCap('nomina:ver'), dashBySector);
+router.get("/area/:areaId/:year", authenticateJWT, requireCap('nomina:ver'), dashByArea);
 export default router;

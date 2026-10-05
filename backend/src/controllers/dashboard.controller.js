@@ -542,6 +542,34 @@ export const dashBySector = async (req, res) => {
       return res.status(400).json({ message: "sectorId inválido" });
     }
 
+    // 🔒 Verificación de alcance.
+    //
+    // Faltaba. `dashByArea` sí comprobaba que el usuario fuera referente del
+    // área, pero acá no había nada: `requireCap('nomina:ver')` solo dice que
+    // la persona puede ver NÓMINA, no CUÁL. Cualquier jefe de sector podía
+    // pedir el dashboard de cualquier otro sector, con las notas de toda esa
+    // gente, cambiando el id en la URL.
+    //
+    // Vale el sector propio o el área que lo contiene: `referenteSectors`
+    // trae solo los sectores donde la persona figura como referente directa,
+    // y los 7 jefes de área de la empresa no figuran en ninguno. Sin la
+    // segunda condición, cerrar el agujero los dejaba sin ver a su propia
+    // gente.
+    if (user.rol === "superadmin" || user.isSuper || user.isRRHH || user.rol === "directivo" || user.isDirectivo) {
+      // Dirección, RRHH y superadmin ven todo: misma excepción que en dashByArea.
+    } else {
+      const esReferenteDelSector = user.referenteSectors?.map(String).includes(String(sectorId));
+      let esReferenteDelArea = false;
+      if (!esReferenteDelSector && user.referenteAreas?.length) {
+        const sectorDoc = await Sector.findById(sectorId, "areaId area").lean();
+        const areaDelSector = String(sectorDoc?.areaId ?? sectorDoc?.area ?? "");
+        esReferenteDelArea = user.referenteAreas.map(String).includes(areaDelSector);
+      }
+      if (!esReferenteDelSector && !esReferenteDelArea) {
+        return res.status(403).json({ message: "No autorizado para este sector" });
+      }
+    }
+
     // 🔹 Exclusión de referentes — lógica basada en membresía del sector:
     // IGUAL que en dashByArea.
     // EXTERNO (Alejandra viendo este sector) → solo se excluye a sí misma, ve a los líderes (Mauro)
