@@ -67,7 +67,17 @@ export const AF_TECHO_UNIFICADO = 2026;
  * @returns {Object} { objetivos, aptitudes, scores, maxScores, expectedScores,
  *   desglose, escala, usaTechoUnificado, sparklineData }
  */
-export function computePeriodResults(data, periodo, anioFiscal) {
+/**
+ * @param {Object} [opts]
+ * @param {Boolean} [opts.forzarSeguimiento]  evaluar con la regla de
+ *   seguimiento aunque el período sea el de cierre.
+ *
+ *   Hace falta cuando la nota oficial se fijó con el número que el jefe tenía
+ *   en pantalla, que se calculaba así. Sin esto el desglose no suma la nota:
+ *   a Tania Simunovich la pantalla decía 79,9 arriba y los objetivos sumaban
+ *   76,4, con una meta en 0% que en realidad había aportado 3,5.
+ */
+export function computePeriodResults(data, periodo, anioFiscal, opts = {}) {
   if (!data || !periodo) {
     return { objetivos: [], aptitudes: [], scores: { obj: 0, comp: 0, global: 0 } };
   }
@@ -76,7 +86,7 @@ export function computePeriodResults(data, periodo, anioFiscal) {
 
   const feedbackLimit = getPeriodMonth(p);
   /** El último feedback del año ya no es seguimiento: es el cierre. */
-  const esCierre = feedbackLimit === 12 || p === "FINAL";
+  const esCierre = opts.forzarSeguimiento ? false : feedbackLimit === 12 || p === "FINAL";
 
   let totalObjScore = 0;
   let totalObjWeight = 0;

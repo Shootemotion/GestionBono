@@ -108,9 +108,22 @@ export function useDesempenoData() {
 
   const periodResults = useMemo(
     () => {
+      // El desglose se calcula con la MISMA regla que la nota que se muestra
+      // arriba, o la página se contradice sola: el número grande dice una cosa
+      // y los objetivos de abajo suman otra.
+      //
+      // Sólo difiere cuando RRHH fijó como oficial el número que el jefe tenía
+      // en pantalla, que salía de evaluar con la regla de seguimiento. En
+      // Tania Simunovich eran 3,5 puntos y una meta que figuraba en 0% cuando
+      // en esa nota había aportado 3,5.
+      const oficial = selectedFeedback?.oficial;
+      const forzarSeguimiento = oficial?.confirmada && oficial.origen === "vista_jefe";
+
       // El año decide si aplica el techo unificado: los ciclos ya cerrados se
       // calculan exactamente como antes (ver AF_TECHO_UNIFICADO).
-      const vivo = computePeriodResults(data, selectedFeedback?.periodo, selectedYear);
+      const vivo = computePeriodResults(data, selectedFeedback?.periodo, selectedYear, {
+        forzarSeguimiento,
+      });
       if (!vivo) return vivo;
 
       // Si el feedback YA tiene su nota guardada, esa es la nota.
