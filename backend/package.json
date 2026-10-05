@@ -5,9 +5,12 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --watchAll",
+    "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
     "dev": "nodemon --ignore backups/ --ignore *.log server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "test:watch": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --watchAll",
+    "test:cov": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --coverage",
+    "validar": "node scripts/validar.js"
   },
   "keywords": [],
   "author": "",

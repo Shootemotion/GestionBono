@@ -1,6 +1,7 @@
 // src/routes/evaluacion.routes.js
 import { Router } from "express";
 import { authenticateJWT, requireCap } from "../auth/auth.middleware.js";
+import { revisionEvaluaciones } from "../controllers/revisionEvaluaciones.controller.js";
 import {
   // EXISTENTES
   getEvaluacionesEmpleado,
@@ -65,6 +66,15 @@ router.get(
 
 // Vista previa: qué se borraría de esta persona. No toca nada.
 //
+// Revisión de los resultados cargados: períodos fuera del calendario, metas
+// huérfanas, cargas previas al ingreso, duplicados. Lectura pura.
+router.get(
+  "/revision",
+  authenticateJWT,
+  requireCap("rrhh:evaluaciones:ver"),
+  revisionEvaluaciones
+);
+
 // Va como GET y no como DELETE sin confirmar, porque el auditor registra toda
 // escritura: con el método DELETE, cada vez que alguien abría la vista previa
 // quedaba una línea "ELIMINAR" en la auditoría por un borrado que no ocurrió.

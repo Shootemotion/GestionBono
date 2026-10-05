@@ -14,6 +14,8 @@ import {
 import { getCurrentFiscalYear, fiscalYearEnd, fiscalYearLabel, fiscalYearRange } from "@/lib/fiscalYear";
 import { Target, Users, Award, Ruler, Plus, Trash2 } from "lucide-react";
 import { AyudaCampo, BotonAyudaMetas, PanelAyudaMetas } from "@/components/AyudaMeta";
+import { construirPayloadObjetivo } from "@/lib/payloadObjetivo";
+import AvisosValidacion from "@/components/objetivos/AvisosValidacion";
 
 export default function FormularioObjetivos({
   initialData = null,
@@ -268,6 +270,30 @@ export default function FormularioObjetivos({
     return { status, message: msg, raw: err, data };
   };
 
+  /**
+   * Todo lo que el formulario tiene en pantalla, en un objeto.
+   *
+   * Lo consumen los dos caminos que mandan el objetivo al backend —el panel
+   * de avisos y el guardado— para que los dos hablen del mismo documento.
+   */
+  const valoresDelFormulario = useMemo(
+    () => ({
+      year, scopeType, scopeId, nombre, descripcion, proceso,
+      frecuencia, modoAcumulacion, peso, estado, metas,
+      objetivosCalidad, usarFechaCierreCustom, fechaCierre,
+    }),
+    [year, scopeType, scopeId, nombre, descripcion, proceso, frecuencia,
+     modoAcumulacion, peso, estado, metas, objetivosCalidad,
+     usarFechaCierreCustom, fechaCierre]
+  );
+
+  // Se valida recién cuando hay algo que validar: con el formulario en blanco
+  // los avisos serían todos "falta completar", que ya los dicen los campos.
+  const payloadParaValidar = useMemo(
+    () => (nombre?.trim() && frecuencia ? construirPayloadObjetivo(valoresDelFormulario) : null),
+    [valoresDelFormulario, nombre, frecuencia]
+  );
+
   const validateClient = () => {
     const errs = {};
     if (!scopeId) {
@@ -326,86 +352,10 @@ export default function FormularioObjetivos({
       return;
     }
 
-    // limpiar metas y castear números
-    const metasClean = (metas || [])
-      .map((m) => {
-        const esperadoNum =
-          m.esperado === "" || m.esperado == null
-            ? null
-            : Number(m.esperado);
-        const pesoMetaNum =
-          m.pesoMeta === "" || m.pesoMeta == null
-            ? null
-            : Number(m.pesoMeta);
-        const toleranciaNum =
-          m.tolerancia === "" || m.tolerancia == null
-            ? 0
-            : Number(m.tolerancia);
-
-        const unidad = m.unidad || "Porcentual";
-        const esBinaria = unidad === "Cumple/No Cumple";
-
-        return {
-          // Mandamos el _id de las metas que ya existen. Sin esto el backend
-          // sólo puede emparejarlas por nombre, y renombrar una meta le
-          // huerfanaba todos los resultados ya cargados.
-          ...(m._id ? { _id: m._id } : {}),
-          nombre: (m.nombre || "").trim(),
-          target: null, // 🔹 dejamos de usar el target de texto
-          esperado:
-            esperadoNum !== null && !Number.isNaN(esperadoNum)
-              ? esperadoNum
-              : null,
-          unidad,
-          operador: esBinaria ? ">=" : m.operador || ">=",
-          modoAcumulacion: m.modoAcumulacion || "periodo",
-          acumulativa:
-            m.modoAcumulacion === "acumulativo" ||
-            !!m.acumulativa,
-          pesoMeta:
-            pesoMetaNum !== null && !Number.isNaN(pesoMetaNum)
-              ? pesoMetaNum
-              : null,
-          reconoceEsfuerzo: esBinaria
-            ? false
-            : m.reconoceEsfuerzo !== false,
-          permiteOver:
-            esBinaria ? false : m.permiteOver === true,
-          tolerancia:
-            !Number.isNaN(toleranciaNum) && toleranciaNum >= 0
-              ? toleranciaNum
-              : 0,
-
-          reglaCierre: m.reglaCierre || "promedio",
-          umbralPeriodos: Number(m.umbralPeriodos || 0),
-        };
-      })
-      .filter((m) => m.nombre || m.esperado !== null);
-
-    const body = {
-      tipo: "objetivo",
-      year: Number(year),
-      scopeType,
-      scopeId,
-      nombre,
-      descripcion,
-      proceso,
-
-      frecuencia,
-      modoAcumulacion,
-      acumulativo: modoAcumulacion === "acumulativo",
-      pesoBase: Number(peso || 0),
-      activo: estado === "Activo",
-    };
-
-    if (usarFechaCierreCustom && fechaCierre) {
-      body.fechaCierre = new Date(fechaCierre);
-      body.fechaCierreCustom = true;
-    }
-
-    if (metasClean.length > 0) body.metas = metasClean;
-
-    body.objetivosCalidad = objetivosCalidad;
+    // El cuerpo se arma en un solo lugar, compartido con la validación en
+    // vivo: si validáramos una cosa y guardáramos otra, el panel de avisos
+    // estaría hablando de un objetivo distinto del que se manda.
+    const body = construirPayloadObjetivo(valoresDelFormulario);
 
     // El backend rechaza con 409 un cambio de frecuencia que deja resultados
     // fuera del calendario, salvo que venga confirmado. Este flag es el "ya
@@ -1329,7 +1279,17 @@ export default function FormularioObjetivos({
       </div>
 
       {/* Botones (Sticky Footer) */}
-      <div className="flex-none p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-2 z-10 items-center">
+      {/* AVISOS DE CONFIGURACIÓN
+          Va pegado a los botones y no dentro del formulario a propósito: es lo
+          último que se lee antes de guardar, y así no depende de dónde quedó
+          el scroll. Las reglas son del backend; acá solo se muestran. */}
+      {payloadParaValidar && (
+        <div className="flex-none px-6 pt-3 border-t border-slate-100 bg-slate-50">
+          <AvisosValidacion payload={payloadParaValidar} id={initialData?._id || null} />
+        </div>
+      )}
+
+      <div className={`flex-none p-6 bg-slate-50 flex justify-end gap-2 z-10 items-center ${payloadParaValidar ? "pt-4" : "border-t border-slate-100"}`}>
         {isEdit && initialData?.activo && initialData?.estadoAprobacion !== "pendiente" && (
           <div className="flex-1 mr-4">
             <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded border border-amber-200 flex items-center gap-2">

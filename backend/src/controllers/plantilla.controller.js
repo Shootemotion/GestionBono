@@ -7,7 +7,60 @@ import {
   bloqueoPorAnioCerrado,
   buscarDuplicada,
 } from "../lib/plantillaGuards.js";
+import {
+  validarCoherenciaObjetivo,
+  validarLote,
+  resumirErrores,
+} from "../lib/validacionObjetivos.js";
+import { anioFiscalActual } from "../lib/fiscalYear.js";
 import { huerfanosPorCambio } from "./historialPlantilla.controller.js";
+
+/**
+ * Quinto filtro: ¿el motor va a devolver el número que se quiso pedir?
+ *
+ * Los cuatro anteriores —lista blanca, validación formal, año cerrado,
+ * duplicados— miran si el documento es legal. Este mira si tiene sentido:
+ * un umbral de 9 períodos en un objetivo trimestral pasa los cuatro y
+ * devuelve 0 todo el año.
+ *
+ * Corta solo con ERRORES. Las advertencias viajan en la respuesta del
+ * guardado para que la pantalla las muestre después de guardar: frenar por
+ * una advertencia convierte el aviso en un obstáculo y se termina
+ * desactivando.
+ *
+ * Devuelve la respuesta ya enviada (para que el caller haga `return`), o
+ * null si se puede seguir.
+ */
+function cortarPorCoherencia(body, res) {
+  // Solo aplica a objetivos: las aptitudes no pasan por el motor de metas.
+  if (body?.tipo && body.tipo !== "objetivo") return null;
+
+  const { errores, advertencias } = validarCoherenciaObjetivo(body);
+  if (!errores.length) return null;
+
+  return res.status(400).json({
+    message: resumirErrores(errores, body?.year),
+    motivo: "configuracion_incoherente",
+    errores,
+    advertencias,
+  });
+}
+
+/**
+ * Adjunta las advertencias al objetivo guardado.
+ *
+ * Van en la respuesta del POST/PUT y no en un pedido aparte para que la
+ * pantalla no tenga que acordarse de preguntar: si el guardado salió bien
+ * pero la configuración tiene algo raro, el aviso llega con el mismo
+ * response.
+ */
+function conAdvertencias(doc) {
+  if (!doc) return doc;
+  const plano = typeof doc.toObject === "function" ? doc.toObject() : doc;
+  if (plano.tipo && plano.tipo !== "objetivo") return plano;
+  const { advertencias } = validarCoherenciaObjetivo(plano);
+  return advertencias.length ? { ...plano, _advertencias: advertencias } : plano;
+}
 
 /**
  * Conserva el `_id` de las metas que ya existían al guardar una plantilla.
@@ -74,6 +127,9 @@ export async function createPlantilla(req, res) {
       return res.status(403).json({ message: bloqueo, motivo: "anio_cerrado", year: body.year });
     }
 
+    const incoherente = cortarPorCoherencia(body, res);
+    if (incoherente) return incoherente;
+
     // Duplicados: mismo tipo, año, alcance y nombre. Atrapa tanto el clon
     // repetido a mano como el doble clic que manda dos POST seguidos.
     const duplicada = await buscarDuplicada(Plantilla, body);
@@ -100,7 +156,7 @@ export async function createPlantilla(req, res) {
       );
     }
 
-    res.status(201).json(nueva);
+    res.status(201).json(conAdvertencias(nueva));
   } catch (err) {
     console.error("createPlantilla error:", err);
     res.status(500).json({ message: "Error creando plantilla" });
@@ -162,6 +218,17 @@ export async function updatePlantilla(req, res) {
       }
     }
 
+    // La coherencia se evalúa sobre cómo queda el objetivo, no sobre el body:
+    // una edición parcial que solo manda el nombre no trae metas, y validar el
+    // body suelto diría "no tiene metas" en un objetivo que sí las tiene.
+    const resultante = {
+      ...actual.toObject(),
+      ...body,
+      metas: conservarIdsDeMetas(actual.metas, body.metas),
+    };
+    const incoherente = cortarPorCoherencia(resultante, res);
+    if (incoherente) return incoherente;
+
     const updated = await Plantilla.findByIdAndUpdate(
       id,
       {
@@ -172,7 +239,7 @@ export async function updatePlantilla(req, res) {
       { new: true }
     );
 
-    res.json(updated);
+    res.json(conAdvertencias(updated));
   } catch (err) {
     console.error("updatePlantilla error:", err);
     res.status(500).json({ message: "Error actualizando plantilla" });
@@ -354,11 +421,17 @@ export async function versionarPlantilla(req, res) {
       activo: false // No es la vigente todavía
     };
 
+    // Una versión nueva arranca de cero en cuanto a coherencia: hereda la
+    // configuración del padre más los cambios del formulario, y esa mezcla
+    // puede quedar incoherente aunque ninguna de las dos partes lo fuera.
+    const incoherente = cortarPorCoherencia(nuevaPlantillaData, res);
+    if (incoherente) return incoherente;
+
     const nuevaPlantilla = await Plantilla.create(nuevaPlantillaData);
 
     res.status(201).json({
       message: "Nueva versión creada (pendiente de aprobación)",
-      plantilla: nuevaPlantilla
+      plantilla: conAdvertencias(nuevaPlantilla)
     });
 
   } catch (err) {
@@ -436,5 +509,75 @@ export async function aprobarVersionPlantilla(req, res) {
   } catch (err) {
     console.error("aprobarVersionPlantilla error:", err);
     res.status(500).json({ message: "Error al aprobar la versión de la plantilla" });
+  }
+}
+
+/**
+ * POST /api/templates/validar
+ *
+ * Valida un objetivo sin guardarlo. Es lo que consume el formulario para
+ * mostrar los problemas mientras se carga.
+ *
+ * Existe para que haya UN solo juego de reglas. La alternativa —que el
+ * formulario traiga su propia copia— es exactamente lo que venía pasando con
+ * el cálculo: tres implementaciones que se iban separando de a poco, y nadie
+ * se enteraba hasta que dos pantallas mostraban números distintos. Acá la
+ * pantalla no sabe nada: pregunta y muestra lo que le responden.
+ */
+export async function validarObjetivoSinGuardar(req, res) {
+  try {
+    const body = sanitizarPlantilla(req.body || {}, { conservarMetaIds: true });
+
+    // Si viene el id de un objetivo existente, se valida cómo QUEDARÍA: una
+    // edición parcial no trae todos los campos y hay que juzgarla completa.
+    let candidato = body;
+    if (req.body?._id) {
+      const actual = await Plantilla.findById(req.body._id).lean();
+      if (actual) candidato = { ...actual, ...body, metas: body.metas ?? actual.metas };
+    }
+
+    const formales = validarPlantilla(candidato, { esCreacion: !req.body?._id });
+    const { errores, advertencias, periodos, estricto } = validarCoherenciaObjetivo(candidato);
+
+    res.json({
+      valido: formales.length === 0 && errores.length === 0,
+      formales,
+      errores,
+      advertencias,
+      periodos,
+      estricto,
+    });
+  } catch (err) {
+    console.error("validarObjetivoSinGuardar error:", err);
+    res.status(500).json({ message: "Error validando el objetivo" });
+  }
+}
+
+/**
+ * GET /api/templates/revision?year=2026
+ *
+ * Pasa el validador por todos los objetivos de un año. Es la vista de
+ * conjunto: cuántos objetivos tienen problemas, de qué tipo, y cuáles.
+ *
+ * Se usa antes de arrancar un año fiscal, que es el momento en que corregir
+ * todavía es barato: una vez que se empezaron a cargar resultados, cambiarle
+ * la configuración a un objetivo arrastra todo lo cargado.
+ */
+export async function revisionObjetivos(req, res) {
+  try {
+    const year = Number(req.query.year) || anioFiscalActual();
+    const soloActivos = req.query.soloActivos === "true";
+
+    const filtro = { year, tipo: "objetivo" };
+    if (soloActivos) filtro.activo = true;
+
+    const plantillas = await Plantilla.find(filtro)
+      .select("nombre year frecuencia scopeType scopeId activo metas pesoBase fechaCierre fechaCierreCustom")
+      .lean();
+
+    res.json({ year, ...validarLote(plantillas) });
+  } catch (err) {
+    console.error("revisionObjetivos error:", err);
+    res.status(500).json({ message: "Error revisando los objetivos" });
   }
 }

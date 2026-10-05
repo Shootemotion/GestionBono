@@ -9,7 +9,9 @@ import {
   listPlantillasEliminadas,
   getPlantillaById,
   versionarPlantilla,
-  aprobarVersionPlantilla
+  aprobarVersionPlantilla,
+  validarObjetivoSinGuardar,
+  revisionObjetivos
 } from "../controllers/plantilla.controller.js";
 import { requireCap } from "../auth/auth.middleware.js";
 import { listarFantasmas, detalleFantasma } from "../controllers/fantasmas.controller.js";
@@ -25,11 +27,17 @@ router.get("/", listPlantillas);
 // Antes de "/:id" para que "eliminadas" no se interprete como un id.
 router.get("/eliminadas", requireCap("objetivos:eliminar"), listPlantillasEliminadas);
 // Deteccion de objetivos sin ningun dato cargado (limpieza de clonaciones).
+// Revisión de coherencia: las mismas reglas que bloquean el guardado, pasadas
+// por todos los objetivos del año. Lectura pura, no toca nada.
+router.get("/revision", revisionObjetivos);
 router.get("/sin-datos", requireCap("objetivos:eliminar"), listarFantasmas);
 router.get("/sin-datos/:id", requireCap("objetivos:eliminar"), detalleFantasma);
 router.get("/:id", getPlantillaById);
 
 /* --- Escritura --- */
+// Validar sin guardar: lo consume el formulario para avisar mientras se carga.
+// No escribe, así que no pide capacidad de escritura.
+router.post("/validar", validarObjetivoSinGuardar);
 router.post("/", createPlantilla);
 router.put("/:id", updatePlantilla);
 
