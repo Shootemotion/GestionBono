@@ -167,3 +167,46 @@ export function etiquetaEstado(estado) {
     [ESTADO.SIN_EVALUAR]: "Sin evaluar",
   }[estado] || estado;
 }
+
+/**
+ * La nota de UN feedback: la confirmada si la hay, si no la foto guardada.
+ *
+ * Es la función que tiene que llamar todo lo que muestre la nota de un
+ * período —Mi Desempeño, el legajo, el bono, los reportes, las pantallas de
+ * control—, en vez de leer `fb.scores` a mano.
+ *
+ * POR QUÉ
+ * Cuando RRHH confirma una nota distinta de la foto —porque el jefe tenía
+ * otro número en pantalla al enviarla— el valor elegido queda en
+ * `oficial.nota` y `scores` conserva el original. Quien lea `scores` directo
+ * muestra el número viejo: a Tania Simunovich se le confirmó 79,9 y su
+ * pantalla seguía diciendo 63,6.
+ *
+ * `scores` no se pisa a propósito. Es el registro de lo que el navegador
+ * calculó ese día, y perderlo haría imposible volver a revisar el caso.
+ *
+ * @returns {{obj, comp, global, confirmada, origen}|null}
+ */
+export function notaDelFeedback(fb) {
+  if (!fb) return null;
+
+  if (fb.oficial?.confirmada && fb.oficial.nota?.global !== null && fb.oficial.nota?.global !== undefined) {
+    return {
+      obj: fb.oficial.nota.obj,
+      comp: fb.oficial.nota.comp,
+      global: fb.oficial.nota.global,
+      confirmada: true,
+      origen: fb.oficial.origen || "comunicada",
+    };
+  }
+
+  if (!esNota(fb.scores?.global)) return null;
+
+  return {
+    obj: fb.scores.obj,
+    comp: fb.scores.comp,
+    global: fb.scores.global,
+    confirmada: false,
+    origen: null,
+  };
+}

@@ -12,6 +12,7 @@ import {
   resolverNotaOficial,
   notaParaMostrar,
   etiquetaEstado,
+  notaDelFeedback,
   ESTADO,
 } from "../src/lib/notaOficial.js";
 
@@ -187,5 +188,55 @@ describe("etiquetas", () => {
     for (const e of Object.values(ESTADO)) {
       expect(etiquetaEstado(e)).not.toBe(e);
     }
+  });
+});
+
+/* ================================================================== */
+// La nota de UN feedback. Existe porque media docena de pantallas leían
+// `fb.scores` a mano, y cuando RRHH confirma otro número ese campo conserva
+// el viejo: a Tania Simunovich se le confirmó 79,9 y su pantalla seguía
+// diciendo 63,6.
+describe("la nota de un feedback", () => {
+  const sinConfirmar = fb("FINAL", 63.6);
+  const confirmado = fb("FINAL", 63.6, {
+    oficial: {
+      confirmada: true,
+      origen: "vista_jefe",
+      nota: { obj: 58.3, comp: 21.6, global: 79.9 },
+    },
+  });
+
+  test("sin confirmar, devuelve la foto guardada", () => {
+    const r = notaDelFeedback(sinConfirmar);
+    expect(r.global).toBe(63.6);
+    expect(r.confirmada).toBe(false);
+  });
+
+  test("confirmado, devuelve la confirmada y NO la foto", () => {
+    const r = notaDelFeedback(confirmado);
+    expect(r.global).toBe(79.9);
+    expect(r.confirmada).toBe(true);
+    expect(r.origen).toBe("vista_jefe");
+  });
+
+  // `scores` se conserva a propósito: es el registro de lo que el navegador
+  // calculó ese día, y perderlo haría imposible revisar el caso después.
+  test("la foto original sigue intacta en el documento", () => {
+    expect(confirmado.scores.global).toBe(63.6);
+  });
+
+  test("sin nota de ningún tipo, devuelve null y no 0", () => {
+    expect(notaDelFeedback(fb("FINAL", 63.6, { scores: {} }))).toBeNull();
+    expect(notaDelFeedback(null)).toBeNull();
+  });
+
+  test("una confirmación sin nota adentro cae a la foto", () => {
+    const raro = fb("FINAL", 63.6, { oficial: { confirmada: true } });
+    expect(notaDelFeedback(raro).global).toBe(63.6);
+  });
+
+  test("un feedback no cerrado igual devuelve su nota si la tiene", () => {
+    // Acá no se filtra por estado: eso lo decide quien llama.
+    expect(notaDelFeedback(fb("Q1", 50, { estado: "SENT" })).global).toBe(50);
   });
 });

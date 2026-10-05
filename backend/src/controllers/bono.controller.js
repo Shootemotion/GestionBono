@@ -5,6 +5,7 @@ import Feedback from "../models/Feedback.model.js";
 import Incidencia from "../models/Incidencia.model.js";
 import { mixGlobal, bonoLineal, bonoTramos, montoBono } from "../lib/bono.js";
 import { computeForEmployees } from "./dashboard.controller.js";
+import { notaDelFeedback } from "../lib/notaOficial.js";
 
 // --- CONFIG ---
 
@@ -444,14 +445,21 @@ export const getResults = async (req, res, next) => {
                 // menos. Sale del dashboard (`computeForEmployees`), que es
                 // quien aplica el ajuste.
                 ciclo: m.ciclo || null,
-                feedbacks: m.feedbacks?.map(f => ({
-                    periodo: f.periodo,
-                    estado: f.estado,
-                    score: f.scores?.global,
-                    scoreObj: f.scores?.obj,
-                    scoreComp: f.scores?.comp,
-                    updatedAt: f.updatedAt
-                })) || [],
+                // La nota confirmada por RRHH si la hay; si no, la foto. Leer
+                // `scores` a mano mostraba el número viejo en los casos donde
+                // se confirmó otro.
+                feedbacks: m.feedbacks?.map(f => {
+                    const n = notaDelFeedback(f);
+                    return {
+                        periodo: f.periodo,
+                        estado: f.estado,
+                        score: n?.global,
+                        scoreObj: n?.obj,
+                        scoreComp: n?.comp,
+                        notaConfirmada: !!n?.confirmada,
+                        updatedAt: f.updatedAt
+                    };
+                }) || [],
                 feedbackComentario,
                 bonoBase,
                 bonoFinal,

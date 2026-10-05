@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Home, Copy, Check, Trophy, FileText, Calendar, HelpCircle, Eye, EyeOff, Save, AlertTriangle } from "lucide-react";
 import { api, API_ORIGIN } from "@/lib/api";
+import { notaDelFeedback } from "@/lib/notaFeedback";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { useTour } from "@/hooks/useTour";
@@ -345,7 +346,8 @@ export default function LegajoEmpleado() {
           })
           .map(f => ({
             name: f.periodo === "FINAL" ? "Fin" : f.periodo,
-            global: f.scores?.global ?? 0
+            // La confirmada por RRHH si la hay; si no, la foto guardada.
+            global: notaDelFeedback(f)?.global ?? 0
           }));
 
         setSelectedReportData({ ...data, evolutionData: evData });

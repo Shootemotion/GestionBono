@@ -6,6 +6,7 @@ import { dashEmpleado } from '@/lib/dashboard';
 import { getCurrentFiscalYear } from '@/lib/scoreHelpers';
 // import { fotoSrc } from '@/utils/fotoSrc';
 import { computePeriodResults, getPeriodMonth } from '@/utils/periodResults';
+import { notaDelFeedback } from '@/lib/notaFeedback';
 import { AF_REGLAS_CORREGIDAS } from '@/utils/calculos';
 
 // Selección especial de la lista de detalle: en vez de un objetivo puntual,
@@ -134,9 +135,12 @@ export function useDesempenoData() {
       //
       // El desglose por objetivo se sigue calculando en vivo: es el detalle que
       // explica la nota, no la nota.
-      const guardada = selectedFeedback?.scores;
-      const tieneNota = guardada && guardada.global !== null && guardada.global !== undefined;
-      if (!tieneNota) return vivo;
+      // `notaDelFeedback` devuelve la confirmada por RRHH si la hay, y si no
+      // la foto guardada. Leer `scores` a mano acá mostraba el número viejo
+      // cuando se confirmaba otro: a Tania Simunovich se le confirmó 79,9 y
+      // esta pantalla le seguía diciendo 63,6.
+      const guardada = notaDelFeedback(selectedFeedback);
+      if (!guardada) return vivo;
 
       return {
         ...vivo,
@@ -147,6 +151,7 @@ export function useDesempenoData() {
         },
         // Para que la pantalla pueda decir de dónde sale el número.
         notaDelFeedback: true,
+        notaConfirmada: guardada.confirmada,
         scoresEnVivo: vivo.scores,
       };
     },

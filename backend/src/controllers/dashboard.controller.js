@@ -16,6 +16,7 @@ const isValidObjectId = (v) => mongoose.Types.ObjectId.isValid(String(v));
 import Feedback from '../models/Feedback.model.js';
 import Incidencia from '../models/Incidencia.model.js';
 import { tiempoEfectivo, prorratearMeta, aplicaProrrateo, esPeriodoAnteriorAlIngreso } from '../lib/tiempoEfectivo.js';
+import { notaDelFeedback } from '../lib/notaOficial.js';
 
 // --- In-Memory Cache for Heavy Dashboard Queries ---
 const dashboardCache = new Map();
@@ -823,7 +824,7 @@ export const dashByEmpleado = async (req, res, next) => {
       .find(f => f.estado === "CLOSED");
 
     // --- Re-Calculate Global Scores based on new progressions ---
-    const { scoreObj, scoreApt, scoreFinal, bono } = calculateGlobalPerformance(
+    const { scoreObj, scoreApt, scoreFinal, bono, isSnapshot } = calculateGlobalPerformance(
       objetivosArr,
       aptitudesArr,
       latestFeedback
@@ -862,7 +863,11 @@ export const dashByEmpleado = async (req, res, next) => {
       // Mostrar feedback solo si está CERRADO
       feedbacks: feedbacksArr.filter(f => f.estado === "CLOSED"),
       scoreObj, scoreApt, scoreFinal, bono,
-
+      // Los mismos dos campos que devuelve `computeForEmployees`. Esta es la
+      // ruta que consume la Sala de Evaluación, así que sin ellos la cabecera
+      // del jefe no sabe que la nota ya está comunicada y vuelve a calcular.
+      notaComunicada: !!isSnapshot,
+      periodoDeLaNota: isSnapshot ? latestFeedback?.periodo ?? null : null,
     });
   } catch (err) {
     console.error("dashByEmpleado error:", err);
@@ -933,8 +938,9 @@ export const getExecutiveData = async (req, res, next) => {
         .filter(f => f.periodo !== 'FINAL' && f.estado !== 'DRAFT')
         .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))[0]; // Latest prelim
 
-      const scoreClosing = closingF?.scores?.global ?? null;
-      const scorePrelim = prelimF?.scores?.global ?? null;
+      // La confirmada por RRHH si la hay; si no, la foto guardada.
+      const scoreClosing = notaDelFeedback(closingF)?.global ?? null;
+      const scorePrelim = notaDelFeedback(prelimF)?.global ?? null;
 
       // Flags
       const hasDisagreement = closingF?.empleadoAck?.estado === "CONTEST" || prelimF?.empleadoAck?.estado === "CONTEST";
