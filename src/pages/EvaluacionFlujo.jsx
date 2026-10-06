@@ -20,6 +20,7 @@ import { useAuth } from "@/context/AuthContext";
 import useCan from "@/hooks/useCan";
 import { api, API_ORIGIN } from "@/lib/api";
 import { evaluarCumple, calcularResultadoGlobal } from "@/lib/evaluarCumple";
+import AvisoCierre from "@/components/AvisoCierre";
 import { dashEmpleado } from "@/lib/dashboard";
 import {
   UserCircle2,
@@ -1374,6 +1375,15 @@ export default function EvaluacionFlujo() {
                       ? `nota comunicada${resumenEmpleado.periodoDeLaNota ? ` · ${resumenEmpleado.periodoDeLaNota}` : ""}`
                       : "70% obj + 30% comp"}
                   </div>
+                  {/* Qué le pasa a esta nota al cerrar, en una línea: acá el
+                      espacio es poco y el detalle completo está en Mi
+                      Desempeño. Solo mientras no esté comunicada — una vez
+                      cerrada el número ya es el que quedó. */}
+                  {!resumenEmpleado?.esNotaComunicada && (
+                    <div className="text-right mt-1">
+                      <AvisoCierre riesgo={dashEmpleadoData?.riesgoDeCierre} compacto />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

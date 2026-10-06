@@ -17,6 +17,7 @@ import Feedback from '../models/Feedback.model.js';
 import Incidencia from '../models/Incidencia.model.js';
 import { tiempoEfectivo, prorratearMeta, aplicaProrrateo, esPeriodoAnteriorAlIngreso } from '../lib/tiempoEfectivo.js';
 import { notaDelFeedback } from '../lib/notaOficial.js';
+import { riesgoDeCierre } from '../lib/riesgoDeCierre.ts';
 
 // --- In-Memory Cache for Heavy Dashboard Queries ---
 const dashboardCache = new Map();
@@ -437,6 +438,8 @@ export async function computeForEmployees(empleadoIds, anio, auditLog = null) {
         // Es lo que hacía la cabecera de la Sala de Evaluación: a Tania
         // Simunovich le mostraba 80 —el seguimiento del año— mientras su
         // feedback decía 63,6.
+        riesgoDeCierre: riesgoDeCierre(objetivosArr),
+
         notaComunicada: !!isSnapshot,
         periodoDeLaNota: isSnapshot ? latestFeedback?.periodo ?? null : null,
       };
@@ -866,6 +869,8 @@ export const dashByEmpleado = async (req, res, next) => {
       // Los mismos dos campos que devuelve `computeForEmployees`. Esta es la
       // ruta que consume la Sala de Evaluación, así que sin ellos la cabecera
       // del jefe no sabe que la nota ya está comunicada y vuelve a calcular.
+      riesgoDeCierre: riesgoDeCierre(objetivosArr),
+
       notaComunicada: !!isSnapshot,
       periodoDeLaNota: isSnapshot ? latestFeedback?.periodo ?? null : null,
     });

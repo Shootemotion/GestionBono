@@ -89,6 +89,7 @@ import {
 import { FeedbackStatusPanel } from "./MiDesempeno/components/FeedbackStatusPanel";
 import { DetailView } from "./MiDesempeno/components/DetailView";
 import { ResumenCalculo } from "./MiDesempeno/components/ResumenCalculo";
+import AvisoCierre from "@/components/AvisoCierre";
 import { useDesempenoData, ID_RESUMEN } from "./MiDesempeno/hooks/useDesempenoData";
 import SelectorAnioFiscal from "@/components/SelectorAnioFiscal";
 import { fiscalYearLabel } from "@/lib/fiscalYear";
