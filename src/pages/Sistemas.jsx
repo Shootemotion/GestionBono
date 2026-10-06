@@ -1136,51 +1136,60 @@ export default function Sistemas() {
             </div>
 
             <Tabs defaultValue="backups" className="w-full flex flex-col items-center">
-                {/* Las pestañas envuelven en varias líneas en vez de scrollear:
-                    con 8 solapas la barra horizontal escondía la mitad. */}
-                <TabsList className="flex flex-wrap w-full max-w-5xl h-auto gap-1 p-1.5 bg-slate-100 rounded-2xl border border-slate-200 justify-start">
-                    <TabsTrigger value="backups" className="rounded-full px-4 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max">
+                {/* Una sola línea.
+                    Antes envolvían y "Mejoras" caía sola al medio de la segunda
+                    fila, porque tenía flex-1 y se estiraba. Ahora ninguna se
+                    encoge (shrink-0) y la barra scrollea en horizontal si la
+                    pantalla es angosta, en vez de partirse en dos. */}
+                <TabsList className="flex flex-nowrap w-full max-w-7xl h-auto gap-1 p-1.5 bg-slate-100 rounded-2xl border border-slate-200 justify-start overflow-x-auto [scrollbar-width:thin]">
+                    <TabsTrigger value="backups" className="shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2">
                         <HardDrive className="w-4 h-4" /> Backups
                     </TabsTrigger>
-                    <TabsTrigger value="health" className="rounded-full px-4 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max">
+                    <TabsTrigger value="health" className="shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2">
                         <Activity className="w-4 h-4" /> Salud
                     </TabsTrigger>
-                    <TabsTrigger value="users" className="rounded-full px-4 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max">
+                    <TabsTrigger value="users" className="shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2">
                         <Users className="w-4 h-4" /> Usuarios
                     </TabsTrigger>
-                    <TabsTrigger value="roles" className="rounded-full px-4 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max">
+                    <TabsTrigger value="roles" className="shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2">
                         <Shield className="w-4 h-4" /> Roles
                     </TabsTrigger>
                     {isSuper && (
-                        <TabsTrigger value="cambios" className="rounded-full px-4 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max">
+                        <TabsTrigger value="cambios" className="shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2">
                             <History className="w-4 h-4" /> Registro de Cambios
                         </TabsTrigger>
                     )}
 
                     {isSuper && (
-                        <TabsTrigger value="comparar" className="rounded-full px-4 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max">
+                        <TabsTrigger value="comparar" className="shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2">
                             <GitCompare className="w-4 h-4" /> Comparar Backup
                         </TabsTrigger>
                     )}
 
                     {isSuper && (
-                        <TabsTrigger value="sindatos" className="rounded-full px-4 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max">
+                        <TabsTrigger value="sindatos" className="shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2">
                             <Ghost className="w-4 h-4" /> Objetivos sin Datos
                         </TabsTrigger>
                     )}
 
                     {isSuper && (
-                        <TabsTrigger value="audit" className="rounded-full px-4 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 min-w-max text-amber-600">
+                        <TabsTrigger value="audit" className="shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 text-amber-600">
                             <AlertTriangle className="w-4 h-4" /> Auditoría Scores
                         </TabsTrigger>
                     )}
 
-                    <button
-                        onClick={() => nav('/gestion-mejoras')}
-                        className="flex-1 inline-flex items-center justify-center whitespace-nowrap rounded-full text-sm font-bold transition-all gap-2 px-3 py-1.5 text-slate-500 hover:text-blue-700 hover:bg-slate-50 min-w-max"
-                    >
-                        <MessageSquarePlus className="w-4 h-4" /> Mejoras
-                    </button>
+                    {/* No es una pestaña: navega a otra página. Va al final,
+                        separada por una línea, para que se lea como lo que es
+                        y no como una solapa más que no se puede seleccionar. */}
+                    <div className="ml-auto flex items-center gap-1 pl-1 shrink-0">
+                        <span className="w-px h-5 bg-slate-300" aria-hidden="true" />
+                        <button
+                            onClick={() => nav('/gestion-mejoras')}
+                            className="shrink-0 inline-flex items-center whitespace-nowrap rounded-full text-sm font-bold transition-all gap-2 px-3 py-2 text-slate-500 hover:text-blue-700 hover:bg-white"
+                        >
+                            <MessageSquarePlus className="w-4 h-4" /> Mejoras
+                        </button>
+                    </div>
                 </TabsList>
 
                 <div className="w-full mt-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
