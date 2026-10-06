@@ -42,6 +42,7 @@ const AnalisisISO = lazy(() => import('@/pages/AnalisisISO'));
 const GestionMejoras = lazy(() => import('@/pages/GestionMejoras'));
 const ValidacionCalculos = lazy(() => import('@/pages/ValidacionCalculos'));
 const NormalizacionNotas = lazy(() => import('@/pages/NormalizacionNotas'));
+const EstadoContratos = lazy(() => import('@/pages/EstadoContratos'));
 const SimuladorMotor = lazy(() => import('@/pages/SimuladorMotor'));
 const PesosAsignados = lazy(() => import('@/pages/PesosAsignados'));
 
@@ -293,9 +294,20 @@ function App() {
               }
             />
 
-            {/* Fija la nota oficial del año. Escribe, a diferencia del resto de
-                Control de Datos, así que la confirma RRHH o dirección: es el
-                número que define un bono, no lo fija un jefe de área. */}
+            {/* Solo lectura: qué reglas cumple el sistema y cuáles no.
+                Lo ve quien ya puede ver evaluaciones. */}
+            <Route
+              path="/contratos"
+              element={
+                <RequireAuth allow={['superadmin', 'rrhh', 'directivo']}>
+                  <EstadoContratos />
+                </RequireAuth>
+              }
+            />
+
+            {/* Fija la nota oficial del año: el número que define un bono y
+                que, una vez confirmado, le gana al cálculo en todas las
+                pantallas. Cerrado al superadmin. */}
             <Route
               path="/normalizacion-notas"
               element={

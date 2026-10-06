@@ -22,6 +22,7 @@ import Feedback from "../src/models/Feedback.model.js";
 import { computeForEmployees } from "../src/controllers/dashboard.controller.js";
 import { CONTRATOS, CAPA, SEVERIDAD } from "../src/contratos/catalogo.js";
 import { generarMarkdown } from "../src/contratos/documento.js";
+import { verificarContratos } from "../src/contratos/verificador.js";
 import { anioFiscalActual, etiquetaAnioFiscal } from "../src/lib/fiscalYear.js";
 
 const arg = (nombre, porDefecto) => {
@@ -58,54 +59,6 @@ function listarCatalogo() {
   console.log(`${CONTRATOS.length} contratos.\n`);
 }
 
-/** Todo lo que los contratos necesitan, traído una sola vez. */
-async function armarContexto(year) {
-  const empleados = await Empleado.find({ estadoLaboral: { $ne: "DESVINCULADO" } })
-    .select("nombre apellido fechaIngreso estadoLaboral")
-    .lean();
-
-  const ids = empleados.map((e) => e._id);
-  const [plantillas, evaluaciones, feedbacks, dash] = await Promise.all([
-    Plantilla.find({ year }).lean(),
-    Evaluacion.find({}).select("empleado plantillaId periodo metasResultados updatedAt").lean(),
-    Feedback.find({ year }).lean(),
-    computeForEmployees(ids, year),
-  ]);
-
-  // Todo se acota a las personas activas: los contratos describen lo que el
-  // sistema promete hoy, y el ciclo de un desvinculado ya no se corrige.
-  const activos = new Set(ids.map(String));
-  const feedbacksActivos = feedbacks.filter((f) => activos.has(String(f.empleado)));
-
-  const feedbacksPorEmpleado = new Map();
-  for (const f of feedbacksActivos) {
-    const k = String(f.empleado);
-    if (!feedbacksPorEmpleado.has(k)) feedbacksPorEmpleado.set(k, []);
-    feedbacksPorEmpleado.get(k).push(f);
-  }
-
-  return {
-    year,
-    db: mongoose.connection.db,
-    empleados,
-    plantillas,
-    plantillaPorId: new Map(plantillas.map((p) => [String(p._id), p])),
-    // Solo las evaluaciones de los objetivos de este año.
-    evaluaciones: evaluaciones.filter(
-      (e) => activos.has(String(e.empleado)) && plantillas.some((p) => String(p._id) === String(e.plantillaId))
-    ),
-    feedbacks: feedbacksActivos,
-    feedbacksPorEmpleado,
-    dash,
-    nombrePorEmpleado: new Map(
-      empleados.map((e) => [String(e._id), `${e.apellido ?? ""}, ${e.nombre ?? ""}`.trim()])
-    ),
-    ingresoPorEmpleado: new Map(
-      empleados.filter((e) => e.fechaIngreso).map((e) => [String(e._id), e.fechaIngreso])
-    ),
-  };
-}
-
 async function main() {
   if (tiene("listar")) {
     listarCatalogo();
@@ -124,55 +77,49 @@ async function main() {
   const MAX = detalle ? Infinity : 4;
 
   await mongoose.connect(process.env.MONGO_URI);
-  const ctx = await armarContexto(year);
 
-  console.log(`\n${"═".repeat(74)}`);
+  // La consola y la pantalla corren exactamente lo mismo.
+  const r = await verificarContratos(year);
+
+  console.log(`
+${"═".repeat(74)}`);
   console.log(`  CONTRATOS — ${etiquetaAnioFiscal(year)}`);
-  console.log(`  ${ctx.empleados.length} personas · ${ctx.plantillas.length} objetivos · ${ctx.evaluaciones.length} resultados · ${ctx.feedbacks.length} feedbacks`);
-  console.log(`${"═".repeat(74)}\n`);
+  console.log(`  ${r.universo.personas} personas · ${r.universo.objetivos} objetivos · ${r.universo.resultados} resultados · ${r.universo.feedbacks} feedbacks`);
+  console.log(`${"═".repeat(74)}
+`);
 
-  let criticosRotos = 0, rotos = 0, cumplidos = 0;
-
-  for (const c of CONTRATOS) {
-    let violaciones = [];
-    let error = null;
-    try {
-      violaciones = (await c.verificar(ctx)) || [];
-    } catch (e) {
-      error = e.message;
-    }
-
-    const esCritico = c.severidad === SEVERIDAD.CRITICO;
-
-    if (error) {
+  for (const c of r.contratos) {
+    if (c.estado === "no_verificable") {
       console.log(`${AMARILLO}?${FIN} ${NEGRITA}${c.id}${FIN}  ${c.titulo}`);
-      console.log(`    ${AMARILLO}no se pudo verificar: ${error}${FIN}\n`);
+      console.log(`    ${AMARILLO}no se pudo verificar: ${c.error}${FIN}
+`);
       continue;
     }
 
-    if (!violaciones.length) {
-      cumplidos++;
+    if (c.estado === "cumplido") {
       console.log(`${VERDE}✓${FIN} ${NEGRITA}${c.id}${FIN}  ${c.titulo}`);
       if (c.verificadoPor) console.log(`    ${GRIS}${c.verificadoPor}${FIN}`);
       console.log("");
       continue;
     }
 
-    rotos++;
-    if (esCritico) criticosRotos++;
+    const esCritico = c.severidad === SEVERIDAD.CRITICO;
     const color = esCritico ? ROJO : AMARILLO;
-
-    console.log(`${color}✗${FIN} ${NEGRITA}${c.id}${FIN}  ${c.titulo}   ${color}${violaciones.length} caso(s)${FIN}`);
+    console.log(`${color}✗${FIN} ${NEGRITA}${c.id}${FIN}  ${c.titulo}   ${color}${c.cantidad} caso(s)${FIN}`);
     console.log(`    ${GRIS}${c.promesa}${FIN}`);
     console.log(`    ${ICONO_CAPA[c.capa]} ${GRIS}${ETIQUETA_CAPA[c.capa]}${FIN}`);
-    for (const v of violaciones.slice(0, MAX)) {
+    for (const v of c.violaciones.slice(0, MAX)) {
       console.log(`      · ${v.que}${v.detalle ? ` — ${GRIS}${v.detalle}${FIN}` : ""}`);
     }
-    if (violaciones.length > MAX) {
-      console.log(`      ${GRIS}… y ${violaciones.length - MAX} más (--detalle para verlos)${FIN}`);
+    if (c.cantidad > MAX) {
+      console.log(`      ${GRIS}… y ${c.cantidad - MAX} más (--detalle para verlos)${FIN}`);
     }
     console.log("");
   }
+
+  const cumplidos = r.cumplidos;
+  const rotos = r.incumplidos;
+  const criticosRotos = r.criticosRotos;
 
   console.log(`${"─".repeat(74)}`);
   console.log(`  ${VERDE}${cumplidos} cumplidos${FIN}   ${rotos ? `${ROJO}${rotos} con violaciones${FIN}` : "0 con violaciones"}   de ${CONTRATOS.length}`);
