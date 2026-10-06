@@ -32,7 +32,9 @@
       "node"
     ],
     "maxNodeModuleJsDepth": 0,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true
   },
   "include": [
     "src/lib/**/*.js",
