@@ -1,0 +1,45 @@
+{
+  "//": [
+    "Chequeo de tipos SOBRE LOS .js, sin migrar nada.",
+    "",
+    "TypeScript lee los bloques /** */ que ya están escritos y marca los errores",
+    "que de otra forma aparecen en producción: un argumento de más que se ignora,",
+    "un campo que no existe, un undefined que se propaga.",
+    "",
+    "Acotado a src/lib: son los 15 archivos del motor de cálculo y los",
+    "validadores, los más críticos y los mejor documentados. Si resulta útil se",
+    "extiende; si molesta más de lo que ayuda, se borra este archivo y no quedó",
+    "nada a medio camino.",
+    "",
+    "   npm run tipos        una pasada",
+    "   npm run tipos:watch  mientras se trabaja",
+    "",
+    "`strict` queda en false a propósito: con true aparecen cientos de avisos de",
+    "null que son ruido en código que ya funciona. Lo que interesa acá son los",
+    "errores reales de forma."
+  ],
+  "compilerOptions": {
+    "checkJs": true,
+    "allowJs": true,
+    "noEmit": true,
+    "strict": false,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "types": [
+      "node"
+    ],
+    "maxNodeModuleJsDepth": 0
+  },
+  "include": [
+    "src/lib/**/*.js"
+  ],
+  "exclude": [
+    "node_modules",
+    "**/node_modules/**",
+    "**/__tests__/**",
+    "tests/**"
+  ]
+}

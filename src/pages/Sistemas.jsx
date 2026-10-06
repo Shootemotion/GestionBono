@@ -6,10 +6,8 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import RegistroCambios from "./Sistemas/RegistroCambios";
-import ObjetivosSinDatos from "./Sistemas/ObjetivosSinDatos";
-import CompararBackup from "./Sistemas/CompararBackup";
-import { Download, HardDrive, RefreshCw, Shield, Users, Server, RotateCcw, AlertTriangle, Check, CheckCircle2, MessageSquarePlus, Activity, Cpu, Database, BarChart3, Clock, Info, Search, ArrowLeft, History, Ghost, GitCompare } from "lucide-react";
+import Integridad from "./Sistemas/Integridad";
+import { Download, HardDrive, RefreshCw, Shield, Users, Server, RotateCcw, AlertTriangle, Check, CheckCircle2, MessageSquarePlus, Activity, Cpu, Database, BarChart3, Clock, Info, Search, ArrowLeft, History, Ghost, GitCompare , ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { API_ORIGIN } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
@@ -1155,26 +1153,8 @@ export default function Sistemas() {
                         <Shield className="w-4 h-4" /> Roles
                     </TabsTrigger>
                     {isSuper && (
-                        <TabsTrigger value="cambios" className="shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2">
-                            <History className="w-4 h-4" /> Registro de Cambios
-                        </TabsTrigger>
-                    )}
-
-                    {isSuper && (
-                        <TabsTrigger value="comparar" className="shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2">
-                            <GitCompare className="w-4 h-4" /> Comparar Backup
-                        </TabsTrigger>
-                    )}
-
-                    {isSuper && (
-                        <TabsTrigger value="sindatos" className="shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2">
-                            <Ghost className="w-4 h-4" /> Objetivos sin Datos
-                        </TabsTrigger>
-                    )}
-
-                    {isSuper && (
-                        <TabsTrigger value="audit" className="shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2 text-amber-600">
-                            <AlertTriangle className="w-4 h-4" /> Auditoría Scores
+                        <TabsTrigger value="integridad" className="shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm transition-all gap-2">
+                            <ShieldCheck className="w-4 h-4" /> Integridad del Sistema
                         </TabsTrigger>
                     )}
 
@@ -1209,26 +1189,11 @@ export default function Sistemas() {
                         <RolesAdmin />
                     </TabsContent>
                     {isSuper && (
-                        <TabsContent value="cambios">
-                            <RegistroCambios />
-                        </TabsContent>
-                    )}
-
-                    {isSuper && (
-                        <TabsContent value="comparar">
-                            <CompararBackup />
-                        </TabsContent>
-                    )}
-
-                    {isSuper && (
-                        <TabsContent value="sindatos">
-                            <ObjetivosSinDatos />
-                        </TabsContent>
-                    )}
-
-                    {isSuper && (
-                        <TabsContent value="audit">
-                            <ScoreAuditPanel />
+                        <TabsContent value="integridad">
+                            {/* El panel de auditoría vive en este archivo, así que se
+                                pasa como prop en vez de que Integridad lo importe:
+                                moverlo a su propio archivo es otro cambio. */}
+                            <Integridad auditoriaScores={<ScoreAuditPanel />} />
                         </TabsContent>
                     )}
                 </div>

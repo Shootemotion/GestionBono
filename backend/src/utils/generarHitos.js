@@ -39,7 +39,8 @@ export function generarHitos(plantilla) {
   const hitos = [];
   let d = new Date(start);
 
-  const push = (fecha, { tipo, idx }) => {
+  // `idx` solo lo usan Q/S/A; en mensual el período sale del mes.
+  const push = (fecha, { tipo, idx = 0 }) => {
     const yReal = fecha.getFullYear();
     let periodo;
 

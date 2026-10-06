@@ -95,10 +95,14 @@ export function diasLicenciaEnCiclo(incidencias = [], anioFiscal) {
     // Se cuentan días de CALENDARIO, no milisegundos: con las fechas llevadas
     // al mediodía, restar y dividir dejaba medio día suelto que redondeaba de más.
     const aDia = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    const desde = aDia(new Date(Math.max(aMediodiaLocal(i.fecha) ?? inicio, inicio)));
-    const hasta = aDia(new Date(Math.min(aMediodiaLocal(i.fechaHasta) ?? fin, fin)));
+    // `.getTime()` explícito: restar dos Date funciona por coerción, pero deja
+    // el cálculo apoyado en una conversión implícita justo en el lugar donde
+    // medio día de diferencia cambia el resultado.
+    const enMs = (d) => (d instanceof Date ? d.getTime() : Number(d));
+    const desde = aDia(new Date(Math.max(enMs(aMediodiaLocal(i.fecha) ?? inicio), enMs(inicio))));
+    const hasta = aDia(new Date(Math.min(enMs(aMediodiaLocal(i.fechaHasta) ?? fin), enMs(fin))));
     if (hasta < desde) continue;
-    dias += Math.round((hasta - desde) / 864e5) + 1;
+    dias += Math.round((hasta.getTime() - desde.getTime()) / 864e5) + 1;
   }
   return dias;
 }
@@ -107,7 +111,8 @@ export function diasLicenciaEnCiclo(incidencias = [], anioFiscal) {
  * El tiempo con el que se mide a esta persona en este ciclo.
  *
  * @returns {{meses:number, mesesPorIngreso:number, diasLicencia:number,
- *            parcial:boolean, prorratea:boolean, motivo:string|null}}
+ *            incompleto:boolean, parcial:boolean, prorratea:boolean,
+ *            motivo:string|null, periodosAplicables:string[]}}
  */
 export function tiempoEfectivo({ fechaIngreso, incidencias = [], anioFiscal }) {
   const mesesPorIngreso = mesesEnCiclo(fechaIngreso, anioFiscal);
@@ -174,7 +179,11 @@ export function mesFinDePeriodo(periodo) {
   if (s === "Q3") return 9;
   if (s === "FINAL") return 12;
 
-  const suf = s.length > 4 && !isNaN(s.slice(0, 4)) ? s.slice(4) : s;
+  // `Number(...)` explícito: el `isNaN` global acepta strings y los convierte
+  // solo, pero es la función cuyo comportamiento con strings sorprende, y acá
+  // decide si los primeros 4 caracteres son un año o parte del período.
+  const empiezaConAnio = s.length > 4 && !Number.isNaN(Number(s.slice(0, 4)));
+  const suf = empiezaConAnio ? s.slice(4) : s;
   if (suf.startsWith("M")) {
     const m = parseInt(suf.slice(1));
     if (!Number.isFinite(m)) return null;

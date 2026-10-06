@@ -409,8 +409,7 @@ function Navbar({ showDisabledInsteadOfHiding = false }) {
                         { to: '/validacion-calculos', label: 'Validación de Cálculos', icon: <FileCheck2 className="w-4 h-4" />, allowed: isSuperAdmin },
                         // La única de este grupo que escribe: fija la nota del
                         // año. Por eso no la ve un referente.
-                        { to: '/normalizacion-notas', label: 'Normalización de Notas', icon: <Scale className="w-4 h-4" />, allowed: isSuperAdmin },
-                        { to: '/contratos', label: 'Contratos del Sistema', icon: <ShieldCheck className="w-4 h-4" />, allowed: isSuperAdmin || hasRoleDirectivo || isRealRRHH }
+                        { to: '/normalizacion-notas', label: 'Normalización de Notas', icon: <Scale className="w-4 h-4" />, allowed: isSuperAdmin }
                       ]}
                       isOpen={activeMenu === 'Control de Datos'}
                       onMouseEnter={() => handleMenuEnter('Control de Datos')}

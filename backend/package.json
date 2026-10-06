@@ -11,7 +11,9 @@
     "test:watch": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --watchAll",
     "test:cov": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --coverage",
     "validar": "node scripts/validar.js",
-    "contratos": "node scripts/contratos.js"
+    "contratos": "node scripts/contratos.js",
+    "tipos": "tsc -p jsconfig.json",
+    "tipos:watch": "tsc -p jsconfig.json --watch"
   },
   "keywords": [],
   "author": "",
@@ -37,9 +39,11 @@
   "devDependencies": {
     "@babel/preset-env": "^7.28.3",
     "@babel/preset-typescript": "^7.27.1",
+    "@types/node": "^26.6.4",
     "babel-jest": "^30.1.2",
     "cross-env": "^10.0.0",
     "jest": "^30.1.3",
-    "nodemon": "^3.1.10"
+    "nodemon": "^3.1.10",
+    "typescript": "^7.0.2"
   }
 }

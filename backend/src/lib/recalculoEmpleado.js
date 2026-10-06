@@ -44,32 +44,14 @@ export async function recalcularAnualEmpleado({
     .lean();
 
 
-  // 2) Convertimos los objetivosMap en una lista “bonita” con cálculo anual
-  const objetivosList = [];
-
-  for (const [, grupo] of objetivosMap.entries()) {
-
-    // 🔹 Score Calculation Refactor (Unified Engine)
-    // Construct "hitos" array from metasMap for the engine
-    // The engine expects hitos array like [{ periodo: 'Q1', metas: [{ nombre: 'M1', resultado: 10 }] }]
-    // But here we have the transposed data (meta -> registros).
-    // We can adapt `calculateAnnualObjectiveProgress` OR we can adapt our data.
-    // Since `calculateAnnualObjectiveProgress` expects { metasDefinition, hitos }, let's reconstruct hitos?
-    // In recalculoEmpleado, we already iterated evaluations. We could have built `hitos` array directly.
-
-    // Alternative: We can use the lower level `calcularResultadoMeta` if we want, OR we can refactor `recalculoEmpleado` 
-    // to just iterate evals and group them into hitos FIRST.
-
-    // Let's refactor the loop above to group by (Plantilla + Periodo) instead of just Plantilla.
-    // That matches `dashboard.controller.js` structure better and allows using the engine.
-
-    // ... wait, rewriting the whole file is safer to match the engine pattern.
-    // The current file groups by Plantilla then Meta.
-    // The Engine expects Plantilla -> Hitos (Periodos).
-
-    // Let's RE-WRITE the group logic below to be compatible.
-
-  }
+  // 2) Agrupamos las evaluaciones por objetivo, con sus hitos.
+  //
+  // Acá vivía un bucle sobre `objetivosMap`, una variable que no existe: resto
+  // de un refactor a medio hacer, con las notas del autor adentro. La ruta
+  // /evaluaciones/empleados/:id/scoring-anual devolvía 500 —"objetivosMap is
+  // not defined"— desde entonces. Lo encontró el chequeo de tipos.
+  //
+  // El agrupamiento real es el de abajo, que sí estaba escrito y funciona.
 
   // RE-IMPLEMENTATION OF LOGIC TO MATCH ENGINE INPUTS
   // We need to group evals by Plantilla.

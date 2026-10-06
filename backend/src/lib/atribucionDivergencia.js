@@ -368,7 +368,7 @@ function datosNoComputados(hallazgos) {
  * @param {Object} [params.reproduccion]  notas recalculadas bajo cada hipótesis
  * @param {Date}   [params.auditoriaDesde]  fecha del primer registro de auditoría
  *
- * @returns {{divergencia, lado, causas, veredicto}}
+ * @returns {{divergencia, guardado, actual, cerradoEl, causas, veredicto}}
  */
 export function explicarDivergencia({
   feedback,

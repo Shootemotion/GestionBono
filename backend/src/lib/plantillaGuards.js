@@ -75,7 +75,8 @@ const CAMPOS_META = [
  *   _id de las metas del original termina compartiéndolos entre dos objetivos
  *   distintos).
  */
-export function sanitizarPlantilla(body = {}, { conservarMetaIds = false } = {}) {
+export function sanitizarPlantilla(body = {}, opciones = {}) {
+  const { conservarMetaIds = false } = opciones;
   const limpio = {};
   for (const campo of CAMPOS_PLANTILLA) {
     if (body[campo] !== undefined) limpio[campo] = body[campo];
