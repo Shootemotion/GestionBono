@@ -1,6 +1,6 @@
 // backend/src/routes/notaOficial.routes.js
 import { Router } from "express";
-import { authenticateJWT, requireCap } from "../auth/auth.middleware.js";
+import { authenticateJWT, requireRole } from "../auth/auth.middleware.js";
 import {
   estadoNotasOficiales,
   confirmarNotaOficial,
@@ -10,13 +10,20 @@ import {
 
 const router = Router();
 
-// Leer el estado: quien ya puede ver las evaluaciones de todos.
-router.get("/", authenticateJWT, requireCap("rrhh:evaluaciones:ver"), estadoNotasOficiales);
+// Cerrado al superadmin, lectura incluida.
+//
+// Acá se fija el número que paga el bono y que, una vez confirmado, le gana al
+// cálculo en todas las pantallas. No es una pantalla de consulta: es el lugar
+// donde se decide entre tres números distintos para la misma persona.
+//
+// Va en la ruta y no solo en el menú: ocultar el link no impide que alguien
+// escriba la URL, y el `requireCap` anterior lo habilitaba a cualquiera con la
+// capacidad de cierre de RRHH.
+const soloSuperadmin = [authenticateJWT, requireRole("superadmin")];
 
-// Confirmar es fijar el número que define un bono: pide la capacidad de
-// cierre, la misma que cerrar un feedback.
-router.post("/confirmar-sin-observaciones", authenticateJWT, requireCap("rrhh:evaluaciones:cierre"), confirmarSinObservaciones);
-router.post("/:feedbackId/confirmar", authenticateJWT, requireCap("rrhh:evaluaciones:cierre"), confirmarNotaOficial);
-router.delete("/:feedbackId/confirmar", authenticateJWT, requireCap("rrhh:evaluaciones:cierre"), desconfirmarNotaOficial);
+router.get("/", ...soloSuperadmin, estadoNotasOficiales);
+router.post("/confirmar-sin-observaciones", ...soloSuperadmin, confirmarSinObservaciones);
+router.post("/:feedbackId/confirmar", ...soloSuperadmin, confirmarNotaOficial);
+router.delete("/:feedbackId/confirmar", ...soloSuperadmin, desconfirmarNotaOficial);
 
 export default router;

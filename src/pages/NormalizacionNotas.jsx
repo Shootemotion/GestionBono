@@ -264,11 +264,14 @@ export default function NormalizacionNotas() {
   const [trabajando, setTrabajando] = useState(false);
   const [filtro, setFiltro] = useState("");
   const [soloEstado, setSoloEstado] = useState("");
+  // El backend ya los excluye por defecto; esto es para poder mirarlos cuando
+  // hace falta revisar el cierre de alguien que ya se fue.
+  const [incluirDesvinculados, setIncluirDesvinculados] = useState(false);
 
   const cargar = async () => {
     setCargando(true);
     try {
-      setDatos(await api(`/notas-oficiales?year=${year}`));
+      setDatos(await api(`/notas-oficiales?year=${year}${incluirDesvinculados ? "&incluirDesvinculados=true" : ""}`));
     } catch (err) {
       toast.error(`No se pudo cargar: ${err?.message || "error"}`);
     } finally {
@@ -278,7 +281,7 @@ export default function NormalizacionNotas() {
 
   useEffect(() => {
     cargar();
-  }, [year]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [year, incluirDesvinculados]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const confirmar = async (item, usar = "comunicada") => {
     setTrabajando(true);
@@ -447,6 +450,15 @@ export default function NormalizacionNotas() {
                   quitar filtro
                 </button>
               )}
+              <label className="flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="accent-indigo-500 w-3.5 h-3.5"
+                  checked={incluirDesvinculados}
+                  onChange={(e) => setIncluirDesvinculados(e.target.checked)}
+                />
+                incluir desvinculados
+              </label>
               <span className="text-[11px] text-slate-400">{items.length} persona(s)</span>
             </div>
 

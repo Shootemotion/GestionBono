@@ -24,6 +24,7 @@ import { calculateObjectiveProgress, calculateCompetencyProgress } from "../lib/
 import { explicarDivergencia, TOLERANCIA } from "../lib/atribucionDivergencia.js";
 import { validarEvaluacion } from "../lib/validacionEvaluaciones.js";
 import { anioFiscalActual } from "../lib/fiscalYear.js";
+import { filtroDesvinculados, pidioIncluirDesvinculados } from "../utils/alcanceEmpleados.js";
 
 /** Marca de inserción real; el cliente no puede falsificarla. */
 const creadoEl = (doc) => {
@@ -99,7 +100,11 @@ export async function listarDivergencias(req, res) {
       return res.status(400).json({ message: "empleadoId inválido" });
     }
 
-    const filtroEmp = empleadoId ? { _id: empleadoId } : {};
+    // Los desvinculados no salen salvo que se pidan: su ciclo ya terminó y
+    // revisar sus divergencias solo agrega ruido al listado.
+    const filtroEmp = empleadoId
+      ? { _id: empleadoId }
+      : filtroDesvinculados(pidioIncluirDesvinculados(req));
     const empleados = await Empleado.find(filtroEmp).select("nombre apellido fechaIngreso").lean();
     if (!empleados.length) return res.json({ year, items: [], resumen: [] });
 

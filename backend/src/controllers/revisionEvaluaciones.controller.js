@@ -18,6 +18,7 @@ import Plantilla from "../models/Plantilla.model.js";
 import Empleado from "../models/Empleado.model.js";
 import { validarLoteEvaluaciones } from "../lib/validacionEvaluaciones.js";
 import { anioFiscalActual } from "../lib/fiscalYear.js";
+import { filtroDesvinculados, pidioIncluirDesvinculados } from "../utils/alcanceEmpleados.js";
 
 /**
  * GET /api/evaluaciones/revision?year=2026[&empleadoId=...]
@@ -41,7 +42,9 @@ export async function revisionEvaluaciones(req, res) {
       Plantilla.find({ year, tipo: "objetivo" })
         .select("nombre year frecuencia metas fechaInicioFiscal fechaCierre fechaCierreCustom")
         .lean(),
-      Empleado.find(empleadoId ? { _id: empleadoId } : {})
+      // Sin desvinculados salvo que se pidan: lo que haya quedado mal cargado
+      // en el ciclo de alguien que ya no está no se va a corregir.
+      Empleado.find(empleadoId ? { _id: empleadoId } : filtroDesvinculados(pidioIncluirDesvinculados(req)))
         .select("nombre apellido fechaIngreso estadoLaboral")
         .lean(),
     ]);
@@ -54,7 +57,15 @@ export async function revisionEvaluaciones(req, res) {
       empleados.map((e) => [String(e._id), `${e.apellido ?? ""}, ${e.nombre ?? ""}`.trim()])
     );
 
-    const filtro = { plantillaId: { $in: [...porId.keys()] } };
+    // Las evaluaciones se acotan a las personas que entran en el listado.
+    //
+    // Filtrar sólo la consulta de empleados no alcanzaba: esto lista
+    // EVALUACIONES, así que las de un desvinculado seguían saliendo aunque la
+    // persona no estuviera en el listado de arriba.
+    const filtro = {
+      plantillaId: { $in: [...porId.keys()] },
+      empleado: { $in: empleados.map((e) => e._id) },
+    };
     if (empleadoId) filtro.empleado = empleadoId;
 
     const evaluaciones = await Evaluacion.find(filtro)

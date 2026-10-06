@@ -299,7 +299,7 @@ function App() {
             <Route
               path="/normalizacion-notas"
               element={
-                <RequireAuth allow={['superadmin', 'rrhh', 'directivo']}>
+                <RequireAuth allow={['superadmin']}>
                   <NormalizacionNotas />
                 </RequireAuth>
               }

@@ -23,7 +23,7 @@ import Empleado from "../models/Empleado.model.js";
 import Area from "../models/Area.model.js";
 import Usuario from "../models/Usuario.model.js";
 import { computeForEmployees } from "../controllers/dashboard.controller.js";
-import { filtroAlcanceEmpleados } from "../utils/alcanceEmpleados.js";
+import { filtroAlcanceEmpleados, filtroDesvinculados } from "../utils/alcanceEmpleados.js";
 
 export const PERIODOS_FEEDBACK = ["Q1", "Q2", "Q3", "FINAL"];
 
@@ -54,7 +54,7 @@ const num = (v) => (v === null || v === undefined || Number.isNaN(Number(v)) ? n
  * usuario que lo pide (un jefe exporta solo su gente).
  */
 async function resolverEmpleados({ user, alcance, id, incluirDesvinculados }) {
-  const base = incluirDesvinculados ? {} : { estadoLaboral: "VINCULADO" };
+  const base = filtroDesvinculados(incluirDesvinculados);
   const condiciones = [base];
 
   if (alcance === "empleado" && id) condiciones.push({ _id: id });

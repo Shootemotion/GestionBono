@@ -219,12 +219,15 @@ export default function PanelDivergencias({ year }) {
   const [abierto, setAbierto] = useState({});
   const [filtro, setFiltro] = useState("");
   const [soloNivel, setSoloNivel] = useState("");
+  // Los desvinculados quedan afuera salvo que se pidan: su ciclo terminó y
+  // sus divergencias ya no se van a corregir.
+  const [incluirDesvinculados, setIncluirDesvinculados] = useState(false);
 
   useEffect(() => {
     let vivo = true;
     setCargando(true);
     setDatos(null);
-    api(`/divergencias?year=${year}`)
+    api(`/divergencias?year=${year}${incluirDesvinculados ? "&incluirDesvinculados=true" : ""}`)
       .then((d) => vivo && setDatos(d))
       .catch((e) => {
         if (vivo) toast.error(`No se pudo analizar: ${e?.message || "error"}`);
@@ -233,7 +236,7 @@ export default function PanelDivergencias({ year }) {
     return () => {
       vivo = false;
     };
-  }, [year]);
+  }, [year, incluirDesvinculados]);
 
   const items = useMemo(() => {
     if (!datos?.items) return [];
@@ -344,6 +347,15 @@ export default function PanelDivergencias({ year }) {
             </option>
           ))}
         </select>
+        <label className="flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer">
+          <input
+            type="checkbox"
+            className="accent-indigo-500 w-3.5 h-3.5"
+            checked={incluirDesvinculados}
+            onChange={(e) => setIncluirDesvinculados(e.target.checked)}
+          />
+          incluir desvinculados
+        </label>
         <span className="text-[11px] text-slate-400">{items.length} caso(s)</span>
       </div>
 

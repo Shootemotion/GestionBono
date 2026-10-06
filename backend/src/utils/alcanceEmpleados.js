@@ -91,3 +91,37 @@ export function puedeVerEmpleado(user, emp) {
   const sectorId = String(emp.sector?._id ?? emp.sector ?? "");
   return a.areas.includes(areaId) || a.sectores.includes(sectorId);
 }
+
+/* ------------------------------------------------------------------ *
+ * Desvinculados
+ * ------------------------------------------------------------------ */
+
+/**
+ * Filtro de estado laboral para cualquier listado o reporte.
+ *
+ * Por defecto los desvinculados NO salen. Entran solo si quien pide el dato
+ * lo pide explícitamente — normalmente con un `?incluirDesvinculados=true`
+ * detrás de un checkbox.
+ *
+ * POR QUÉ UNA FUNCIÓN Y NO EL OBJETO A MANO
+ * Porque en el código convivían dos criterios que parecen el mismo y no lo
+ * son: `{ estadoLaboral: { $ne: "DESVINCULADO" } }` y
+ * `{ estadoLaboral: "VINCULADO" }`. Hoy dan igual porque las 85 personas
+ * tienen el campo cargado, pero a la primera que entre sin estado el segundo
+ * la esconde de los reportes sin que nadie entienda por qué.
+ *
+ * Se elige el `$ne`: un dato faltante no debería hacer desaparecer a una
+ * persona de su propia evaluación.
+ *
+ * @param {Boolean} incluir  true solo si se pidió explícitamente
+ * @returns {Object} fragmento de query, o {} si entran todos
+ */
+export function filtroDesvinculados(incluir = false) {
+  return incluir ? {} : { estadoLaboral: { $ne: "DESVINCULADO" } };
+}
+
+/** Lee el flag de la query string, con el default seguro (no incluir). */
+export function pidioIncluirDesvinculados(req) {
+  const v = req?.query?.incluirDesvinculados;
+  return v === "true" || v === "1" || v === true;
+}

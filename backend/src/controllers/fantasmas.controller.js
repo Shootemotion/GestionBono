@@ -22,6 +22,7 @@ import mongoose from "mongoose";
 import Plantilla from "../models/Plantilla.model.js";
 import Evaluacion from "../models/Evaluacion.model.js";
 import Empleado from "../models/Empleado.model.js";
+import { filtroDesvinculados } from "../utils/alcanceEmpleados.js";
 import Area from "../models/Area.model.js";
 import Sector from "../models/Sector.model.js";
 import Auditoria from "../models/Auditoria.model.js";
@@ -77,7 +78,7 @@ export async function listarFantasmas(req, res) {
     const [plantillas, evals, empleados, areas, sectores] = await Promise.all([
       Plantilla.find({ year: anio }).lean(),
       Evaluacion.find({}, "empleado plantillaId metasResultados").lean(),
-      Empleado.find({ estadoLaboral: "VINCULADO" }, "nombre apellido area sector").lean(),
+      Empleado.find(filtroDesvinculados(), "nombre apellido area sector").lean(),
       Area.find({}, "nombre").lean(),
       Sector.find({}, "nombre").lean(),
     ]);

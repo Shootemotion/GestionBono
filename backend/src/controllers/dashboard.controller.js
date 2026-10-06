@@ -8,7 +8,7 @@ import Evaluacion from "../models/Evaluacion.model.js";
 import { generarHitos } from "../utils/generarHitos.js";
 import { calculateAnnualObjectiveProgress, calculateGlobalPerformance } from "../lib/scoringEngine.js";
 import { redactSueldoDashboard } from "../utils/salaryVisibility.js";
-import { puedeVerEmpleado, filtroAlcanceEmpleados } from "../utils/alcanceEmpleados.js";
+import { puedeVerEmpleado, filtroAlcanceEmpleados, filtroDesvinculados } from "../utils/alcanceEmpleados.js";
 
 const asObjectId = (v) => new mongoose.Types.ObjectId(String(v));
 const isValidObjectId = (v) => mongoose.Types.ObjectId.isValid(String(v));
@@ -1283,7 +1283,7 @@ export async function pesosAsignados(req, res) {
     }
     const incluirDesvinculados = String(req.query.incluirDesvinculados || "") === "true";
 
-    const base = incluirDesvinculados ? {} : { estadoLaboral: "VINCULADO" };
+    const base = filtroDesvinculados(incluirDesvinculados);
     const alcance = filtroAlcanceEmpleados(req.user);
     const queryEmp = alcance ? { $and: [base, alcance] } : base;
 
