@@ -26,7 +26,7 @@ import Auditoria from "../models/Auditoria.model.js";
 import Plantilla from "../models/Plantilla.model.js";
 import { computeForEmployees } from "./dashboard.controller.js";
 import { calcularScoresPeriodo, getPeriodMonth } from "../lib/feedbackScores.js";
-import { calculateObjectiveProgress } from "../lib/scoringCore.js";
+import { calculateObjectiveProgress } from "../lib/scoringCore.ts";
 import { validarEvaluacion } from "../lib/validacionEvaluaciones.js";
 
 const redondear = (n) => Math.round(Number(n) * 10) / 10;

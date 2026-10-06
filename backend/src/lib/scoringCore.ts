@@ -1,4 +1,12 @@
-// backend/src/lib/scoringCore.js
+// backend/src/lib/scoringCore.ts
+//
+//  Escrito en TypeScript, que Node 24 ejecuta borrando los tipos al vuelo: no
+//  hay compilación ni archivo generado, y el .ts es lo que corre. Los tipos
+//  del dominio viven en tipos.ts.
+//
+//  Los tipos no cambian el comportamiento: este archivo calcula exactamente
+//  lo mismo que la versión anterior, y el test golden lo verifica contra los
+//  casos reales.
 //
 // ============================================================================
 //  MOTOR DE CÁLCULO UNIFICADO — FUENTE ÚNICA DE VERDAD
@@ -15,8 +23,15 @@
 //    · isFinalYearClosure=false (seguimiento) fuerza reconoceEsfuerzo=true.
 // ============================================================================
 
+import type {
+  Meta, Hito, Objetivo, Aptitud, ConfigDeCalculo, EsCierreAnual,
+} from "./tipos.ts";
+
+export type { Meta, Hito, Objetivo, Aptitud, ConfigDeCalculo, EsCierreAnual };
+
 // === HELPERS ===
-const val = (v) => {
+/** Convierte a número lo que venga: strings con coma, booleanos, vacíos. */
+const val = (v: unknown): number => {
   if (v === null || v === undefined || v === "") return 0;
   if (typeof v === "string") {
     const parsed = Number(v.replace(",", "."));
@@ -25,7 +40,7 @@ const val = (v) => {
   return isNaN(Number(v)) ? 0 : Number(v);
 };
 
-const getPeriodCode = (pStr) => {
+const getPeriodCode = (pStr?: string): number => {
   if (!pStr) return 0;
   if (pStr === "Q1") return 3;
   if (pStr === "Q2") return 6;
@@ -41,10 +56,16 @@ const getPeriodCode = (pStr) => {
   return 12;
 };
 
-const esBinaria = (metaDef) => String(metaDef?.unidad || "").toLowerCase().includes("cumple");
+const esBinaria = (metaDef?: Meta): boolean =>
+  String(metaDef?.unidad || "").toLowerCase().includes("cumple");
 
 // ¿El valor cumple el objetivo? (pass/fail puro, sin reconocer esfuerzo)
-const cumpleTarget = (actual, target, operador = ">=", tolerancia = 0) => {
+const cumpleTarget = (
+  actual: unknown,
+  target: unknown,
+  operador: string = ">=",
+  tolerancia: unknown = 0
+): boolean => {
   const act = val(actual), tgt = val(target), tol = val(tolerancia);
   const op = operador || ">=";
   if (op === ">=") return act >= tgt - tol;
@@ -56,7 +77,11 @@ const cumpleTarget = (actual, target, operador = ">=", tolerancia = 0) => {
 };
 
 // === CORE: score de UN período (numérico) ===
-export const calculatePeriodCompliance = (actual, target, config = {}) => {
+export const calculatePeriodCompliance = (
+  actual: unknown,
+  target: unknown,
+  config: ConfigDeCalculo = {}
+): number | null => {
   if (actual === null || actual === undefined) return null;
 
   const tgt = val(target);
@@ -64,7 +89,7 @@ export const calculatePeriodCompliance = (actual, target, config = {}) => {
   const op = config.operador || ">=";
   const passed = cumpleTarget(act, tgt, op, config.tolerancia);
 
-  let rawPct = 0;
+  let rawPct: number = 0;
   if (tgt === 0) {
     rawPct = passed ? 100 : 0;
   } else if (op === ">=" || op === ">") {
@@ -103,7 +128,7 @@ export const calculatePeriodCompliance = (actual, target, config = {}) => {
 export const AF_REGLAS_CORREGIDAS = 2026;
 
 /** Año fiscal al que pertenecen unos hitos, leído de sus períodos ("2025Q1" → 2025). */
-function anioDeHitos(hitos) {
+function anioDeHitos(hitos?: Hito[]): number | null {
   for (const h of hitos || []) {
     const m = /^(\d{4})/.exec(String(h?.periodo || ""));
     if (m) return Number(m[1]);
@@ -111,7 +136,12 @@ function anioDeHitos(hitos) {
   return null; // sin período reconocible: se asume año en curso
 }
 
-function scoreUmbral(cumples, effectiveReconoce, metaDef, reglasCorregidas = true) {
+function scoreUmbral(
+  cumples: boolean[],
+  effectiveReconoce: boolean | undefined,
+  metaDef: Meta,
+  reglasCorregidas: boolean = true
+): number {
   // cumples: array de booleanos (uno por período evaluado)
   const evaluatedCount = cumples.length;
   const passedCount = cumples.filter(Boolean).length;
@@ -148,7 +178,11 @@ function scoreUmbral(cumples, effectiveReconoce, metaDef, reglasCorregidas = tru
 }
 
 // === CORE: score ANUAL de una meta (agrega los períodos según reglaCierre) ===
-export const calculateMetaScore = (metaDef, hitos, isFinalYearClosure = false) => {
+export const calculateMetaScore = (
+  metaDef: Meta,
+  hitos: Hito[],
+  isFinalYearClosure: EsCierreAnual = false
+): number => {
   const metaId = metaDef.metaId || metaDef._id;
 
   // Se respeta SIEMPRE lo que configuró el jefe.
@@ -198,7 +232,7 @@ export const calculateMetaScore = (metaDef, hitos, isFinalYearClosure = false) =
   };
 
   // Extraer resultados crudos de esta meta desde los hitos
-  const results = hitos
+  const results: { periodo?: string; order: number; actual: unknown }[] = hitos
     .map((h) => {
       const mRes = h.metas?.find((m) => String(m.metaId || m._id) === String(metaId));
       return { periodo: h.periodo, order: getPeriodCode(h.periodo), actual: mRes ? mRes.resultado : null };
@@ -252,7 +286,11 @@ export const calculateMetaScore = (metaDef, hitos, isFinalYearClosure = false) =
 };
 
 // === Score de un OBJETIVO (agrega sus metas ponderadas por pesoMeta) ===
-export const calculateObjectiveProgress = (objective, hitosOverride = null, isFinalYearClosure = false) => {
+export const calculateObjectiveProgress = (
+  objective: Objetivo,
+  hitosOverride: Hito[] | null = null,
+  isFinalYearClosure: EsCierreAnual = false
+): number => {
   const hitos = hitosOverride || objective.hitos || [];
   const metasDefs = objective.metas || [];
 
@@ -275,7 +313,7 @@ export const calculateObjectiveProgress = (objective, hitosOverride = null, isFi
   return Math.round(finalScore * 10) / 10;
 };
 
-const calculateLegacyObjectiveProgress = (objective, hitos) => {
+const calculateLegacyObjectiveProgress = (objective: Objetivo, hitos: Hito[]): number => {
   const validHitos = hitos.filter((h) => h.actual !== null && h.actual !== undefined);
   if (validHitos.length === 0) return 0;
   const values = validHitos.map((h) => Number(h.actual));
@@ -286,16 +324,24 @@ const calculateLegacyObjectiveProgress = (objective, hitos) => {
   return Math.min(progress, 100);
 };
 
-export const calculateWeightedScore = (progress, weight) => (progress * weight) / 100;
+export const calculateWeightedScore = (progress: number, weight: number): number =>
+  (progress * weight) / 100;
 
-export const calculateGlobalScore = (objectivesScore, competenciesScore) => {
+export const calculateGlobalScore = (
+  objectivesScore: number,
+  competenciesScore: number
+): number => {
   const objPart = objectivesScore * 0.7;
   const compPart = competenciesScore * 0.3;
   return Math.round(objPart + compPart);
 };
 
 // === Competencias (promedio ponderado) ===
-export const calculateCompetencyProgress = (aptitudes, getMonthFn, monthLimit) => {
+export const calculateCompetencyProgress = (
+  aptitudes: Aptitud[] | { items?: Aptitud[] } | null | undefined,
+  getMonthFn?: (p?: string) => number,
+  monthLimit?: number
+): number => {
   let totalWeightedScore = 0;
   let totalWeight = 0;
   const items = Array.isArray(aptitudes) ? aptitudes : aptitudes?.items || [];

@@ -27,7 +27,7 @@
 // los 10 feedbacks en vuelo, front y back dan idéntico en los 10.
 
 import { computeForEmployees } from "../controllers/dashboard.controller.js";
-import { calculateObjectiveProgress, calculateCompetencyProgress } from "./scoringCore.js";
+import { calculateObjectiveProgress, calculateCompetencyProgress } from "./scoringCore.ts";
 
 /**
  * Mes del año fiscal al que corresponde un período (1 = septiembre).

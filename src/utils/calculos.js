@@ -12,4 +12,4 @@ export {
   calculateGlobalScore,
   calculateCompetencyProgress,
   AF_REGLAS_CORREGIDAS,
-} from "../../backend/src/lib/scoringCore.js";
+} from "../../backend/src/lib/scoringCore.ts";

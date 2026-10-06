@@ -20,7 +20,7 @@ import Plantilla from "../models/Plantilla.model.js";
 import Auditoria from "../models/Auditoria.model.js";
 import { computeForEmployees } from "./dashboard.controller.js";
 import { calcularScoresPeriodo, getPeriodMonth } from "../lib/feedbackScores.js";
-import { calculateObjectiveProgress, calculateCompetencyProgress } from "../lib/scoringCore.js";
+import { calculateObjectiveProgress, calculateCompetencyProgress } from "../lib/scoringCore.ts";
 import { explicarDivergencia, TOLERANCIA } from "../lib/atribucionDivergencia.js";
 import { validarEvaluacion } from "../lib/validacionEvaluaciones.js";
 import { anioFiscalActual } from "../lib/fiscalYear.js";

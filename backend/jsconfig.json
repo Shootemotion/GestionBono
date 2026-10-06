@@ -31,10 +31,12 @@
     "types": [
       "node"
     ],
-    "maxNodeModuleJsDepth": 0
+    "maxNodeModuleJsDepth": 0,
+    "allowImportingTsExtensions": true
   },
   "include": [
-    "src/lib/**/*.js"
+    "src/lib/**/*.js",
+    "src/lib/**/*.ts"
   ],
   "exclude": [
     "node_modules",

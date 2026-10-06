@@ -1,5 +1,5 @@
 // src/lib/calculoMetas.js
-import { calculateMetaScore } from "./scoringCore.js";
+import { calculateMetaScore } from "./scoringCore.ts";
 
 // Normaliza 0..100 y opcionalmente permite over hasta max
 export const clamp = (v, max = 100) =>

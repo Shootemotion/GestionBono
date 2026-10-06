@@ -1,7 +1,7 @@
 // Tests GOLDEN del motor unificado.
 // Congelan la semántica acordada y garantizan que ambas entradas
 // (scoringCore.calculateMetaScore y calculoMetas.calcularResultadoMeta) coinciden.
-import { calculateMetaScore, calculateObjectiveProgress } from "../scoringCore.js";
+import { calculateMetaScore, calculateObjectiveProgress } from "../scoringCore.ts";
 import { calcularResultadoMeta } from "../calculoMetas.js";
 
 const PERIODOS = ["2025Q1", "2025Q2", "2025Q3", "2025Q4"];

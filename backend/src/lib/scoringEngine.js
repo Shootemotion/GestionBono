@@ -1,5 +1,5 @@
 // 🔗 Motor unificado: front y back usan las MISMAS funciones de scoringCore.
-import { calculateMetaScore, calculateObjectiveProgress } from "./scoringCore.js";
+import { calculateMetaScore, calculateObjectiveProgress } from "./scoringCore.ts";
 
 /**
  * Calculates the progress of a set of goals (Metas) for an Objective based on a list of periodical records (Hitos).

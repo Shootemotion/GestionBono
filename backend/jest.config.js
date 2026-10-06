@@ -1,16 +1,18 @@
 export default {
   testEnvironment: "node",
   transform: {
-    "^.+\\.js$": "babel-jest", // usar babel para .js
+    // `.ts` incluido: el motor está escrito en TypeScript y Node lo ejecuta
+    // borrando los tipos. Babel hace lo mismo acá, con preset-typescript.
+    // No valida tipos — eso es `npm run tipos`.
+    "^.+\\.(js|ts)$": "babel-jest",
   },
   moduleNameMapper: {
-    // El alias `@/` del frontend (lo resuelve Vite en el navegador y jsconfig
-    // en el editor, pero jest no sabe nada de ninguno de los dos).
-    //
-    // Hace falta para testear archivos del front desde acá: `evaluarCumple.js`
-    // vive en src/lib y calcula el valor que se guarda en cada hito, así que
-    // merece tests aunque el corredor esté en backend/.
+    // El alias `@/` del frontend. Lo resuelve Vite en el navegador y jsconfig
+    // en el editor, pero jest no sabe nada de ninguno de los dos, y hace
+    // falta para testear archivos del front desde acá.
     "^@/(.*)$": "<rootDir>/../src/$1",
-    "^(\\.{1,2}/.*)\\.js$": "$1", // corrige imports relativos con extensión
+    // Imports relativos que traen la extensión: se les saca para que jest
+    // resuelva el archivo real, sea .js o .ts.
+    "^(\\.{1,2}/.*)\\.(?:js|ts)$": "$1",
   },
 };
