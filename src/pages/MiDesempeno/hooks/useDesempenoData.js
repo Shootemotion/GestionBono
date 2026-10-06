@@ -32,7 +32,6 @@ export function useDesempenoData() {
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [viewPeriod, setViewPeriod] = useState(null);
   const [showFinalReport, setShowFinalReport] = useState(false);
-  const [globalAvisos, setGlobalAvisos] = useState([]);
 
   const [selectedYear, setSelectedYear] = useState(() => getCurrentFiscalYear());
 
@@ -93,9 +92,6 @@ export function useDesempenoData() {
   useEffect(() => {
     fetchDash();
     fetchFeedbacks();
-    api(`/avisos/my`).then(res => {
-      if (Array.isArray(res)) setGlobalAvisos(res);
-    }).catch(err => console.error("Error loading avisos", err));
   }, [fetchDash, fetchFeedbacks, selectedYear]);
 
   useEffect(() => {
@@ -263,7 +259,6 @@ export function useDesempenoData() {
     setViewPeriod,
     showFinalReport,
     setShowFinalReport,
-    globalAvisos,
     selectedYear,
     setSelectedYear,
     periodResults,

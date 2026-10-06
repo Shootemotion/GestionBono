@@ -146,7 +146,7 @@ export default function MiDesempeno() {
     user, empleadoNombre, data, feedbacks, selectedFeedback, setSelectedFeedback,
     loading, localComment, setLocalComment, localAck, setLocalAck,
     localReason, setLocalReason, activeTab, setActiveTab, selectedItemId, setSelectedItemId,
-    viewPeriod, setViewPeriod, showFinalReport, setShowFinalReport, globalAvisos,
+    viewPeriod, setViewPeriod, showFinalReport, setShowFinalReport,
     selectedYear, setSelectedYear, periodResults, getPeriodMonth, handleSaveResponse
   } = useDesempenoData();
 
@@ -165,7 +165,6 @@ export default function MiDesempeno() {
 
   const tourSteps = useMemo(() => [
     { element: '#tour-kpi-summary', popover: { title: 'Resumen de Resultados', description: 'Aquí podés ver rápidamente tu puntaje general, desglosado por Objetivos (70%) y Competencias (30%).' } },
-    { element: '#tour-avisos-section', popover: { title: 'Avisos y Novedades', description: 'Este panel te notificará sobre fechas límite, alertas de acción y comunicaciones importantes de RRHH.' } },
     { element: '#tour-tabs-sections', popover: { title: 'Secciones', description: 'Navegá entre tus Objetivos y Competencias para ver el detalle de cada evaluación.' } },
     { element: '#tour-sidebar-nav', popover: { title: 'Navegación Rápida', description: 'Usá este menú para saltar rápidamente a los resultados, detalles de objetivos o la sección de conformidad.' } },
     { element: '#tour-feedback-status', popover: { title: 'Comentarios del Líder', description: 'Revisá el estado de tu feedback actual y los comentarios dejados por tu evaluador.' } },
@@ -364,7 +363,7 @@ export default function MiDesempeno() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-[200px_1fr_260px] gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-6">
 
             {/* LEFT SIDEBAR: Navigation Only */}
             <div className="hidden lg:block space-y-2 sticky top-24 h-fit">
@@ -1070,111 +1069,6 @@ export default function MiDesempeno() {
 
             </div>
 
-            {/* RIGHT SIDEBAR: Avisos y Novedades */}
-            <div className="hidden lg:block space-y-4 sticky top-24 h-fit">
-              <div id="tour-avisos-section" className="bg-white/80 backdrop-blur-sm p-4 rounded-2xl border border-slate-200/60 shadow-sm">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
-                  Avisos y Novedades
-                </h3>
-
-                <div className="space-y-3">
-                  {/* 1. PERSONAL ALERTS (Deadline) */}
-                  {(() => {
-                    const sentFeedback = feedbacks.find(f => f.estado === "SENT");
-                    if (sentFeedback && sentFeedback.submittedToEmployeeAt) {
-                      const submissionDate = new Date(sentFeedback.submittedToEmployeeAt);
-                      const deadline = new Date(submissionDate);
-                      deadline.setDate(deadline.getDate() + 5);
-
-                      const now = new Date();
-                      const diffTime = deadline - now;
-                      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-                      if (diffDays >= 0) {
-                        return (
-                          <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs shadow-sm">
-                            <div className="flex items-center gap-2 mb-1 text-amber-700 font-bold">
-                              <AlertCircle className="w-4 h-4" />
-                              <span>Acción Requerida</span>
-                            </div>
-                            <p className="text-amber-600 leading-snug">
-                              Tenés hasta el <strong className="text-amber-800">{deadline.toLocaleDateString()}</strong> para responder tu feedback (quedan {diffDays} días).
-                            </p>
-                          </div>
-                        );
-                      }
-                    }
-                    return null;
-                  })()}
-
-                  {/* 2. ACTIVE NOTICES (Dynamic List) */}
-                  {globalAvisos.length > 0 && globalAvisos.map(aviso => (
-                    <Dialog key={aviso._id}>
-                      <DialogTrigger asChild>
-                        <div
-                          className={`p-3 border rounded-xl text-xs shadow-sm cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 group
-                              ${aviso.tipo === 'SISTEMAS'
-                              ? 'bg-amber-50 border-amber-100 hover:border-amber-300'
-                              : aviso.alcance === 'GLOBAL' ? 'bg-indigo-50 border-indigo-100 hover:border-indigo-300' : 'bg-emerald-50 border-emerald-100 hover:border-emerald-300'}`}
-                        >
-                          <div className={`flex items-center gap-2 mb-1 font-bold
-                              ${aviso.tipo === 'SISTEMAS' ? 'text-amber-700' : aviso.alcance === 'GLOBAL' ? 'text-indigo-700' : 'text-emerald-700'}`}>
-                            {aviso.tipo === 'SISTEMAS' ? <Cpu className="w-4 h-4" /> : aviso.alcance === 'GLOBAL' ? <Info className="w-4 h-4" /> : <Megaphone className="w-4 h-4" />}
-                            <span className="line-clamp-1">{aviso.titulo}</span>
-                          </div>
-                          <div className="mt-2 text-[10px] opacity-70 font-medium flex justify-between items-center bg-white/50 px-2 py-1.5 rounded-md">
-                            <span className={`font-bold uppercase tracking-wider
-                                ${aviso.tipo === 'SISTEMAS' ? 'text-amber-600' : 'text-slate-500'}`}>
-                              {aviso.tipo === 'SISTEMAS' ? '⚙ Sistemas' : '📢 RRHH'}
-                            </span>
-                            <span className="text-slate-500 flex items-center gap-1">
-                              Válido hasta: {new Date(aviso.fechaFin).toLocaleDateString()}
-                            </span>
-                          </div>
-                        </div>
-                      </DialogTrigger>
-                      <DialogContent className="sm:max-w-md border-0 shadow-2xl rounded-2xl overflow-hidden p-0">
-                        {/* Header Colorido */}
-                        <div className={`px-6 py-6 flex flex-col items-center text-center
-                            ${aviso.tipo === 'SISTEMAS'
-                            ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white'
-                            : aviso.alcance === 'GLOBAL' ? 'bg-gradient-to-br from-indigo-500 to-blue-600 text-white' : 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white'}`}>
-                          <div className="p-3 bg-white/20 rounded-full mb-3 backdrop-blur-sm">
-                            {aviso.tipo === 'SISTEMAS' ? <Cpu className="w-8 h-8" /> : aviso.alcance === 'GLOBAL' ? <Info className="w-8 h-8" /> : <Megaphone className="w-8 h-8" />}
-                          </div>
-                          <DialogTitle className="text-xl font-bold tracking-tight mb-1">{aviso.titulo}</DialogTitle>
-                          <DialogDescription className="text-blue-50/90 text-xs uppercase tracking-wider font-semibold">
-                            {aviso.tipo === 'SISTEMAS' ? 'Alerta de Sistemas' : `Comunicado ${aviso.alcance}`}
-                            {aviso.targetName && ` • ${aviso.targetName}`}
-                          </DialogDescription>
-                        </div>
-
-                        {/* Body */}
-                        <div className="p-6 bg-white space-y-4">
-                          <div className="text-sm text-slate-600 leading-relaxed whitespace-pre-line max-h-[60vh] overflow-y-auto pr-2">
-                            {aviso.mensaje}
-                          </div>
-                          <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
-                            <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider
-                                ${aviso.tipo === 'SISTEMAS' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
-                              Enviado por: {aviso.tipo === 'SISTEMAS' ? '⚙️ Sistemas' : '📢 RRHH'}
-                            </span>
-                          </div>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-                  ))}
-
-                  {/* EMPTY STATE */}
-                  {globalAvisos.length === 0 && !feedbacks.some(f => f.estado === "SENT") && (
-                    <div className="text-center py-4 text-[10px] text-slate-400 italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                      No hay nuevas notificaciones.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
           </div>
         )}
       </div>
