@@ -1178,7 +1178,21 @@ export default function EvaluacionFlujo() {
    * cerrada: ahí el jefe está evaluando y el número se está formando.
    */
   const resumenEmpleado = useMemo(() => {
-    if (!resumenEnVivo || !dashEmpleadoData?.notaComunicada) return resumenEnVivo;
+    // Solo la nota del CIERRE ANUAL reemplaza al avance del año.
+    //
+    // `notaComunicada` es true con cualquier feedback cerrado, también el de
+    // un trimestre. Tomarla sin mirar el período convertía la nota de Q3 en
+    // "la nota del año": a Bruno Cleri, que no tiene FINAL cerrado, la
+    // cabecera le pasó de 81 —su avance real— a 52,2, que es lo que sacó en
+    // Q3 hace medio año.
+    //
+    // Son las 6 personas sin cierre anual. Para ellas el año sigue abierto, y
+    // lo que el jefe necesita ver mientras evalúa es el avance, no una foto
+    // vieja.
+    const esCierreAnual = dashEmpleadoData?.periodoDeLaNota === "FINAL";
+    if (!resumenEnVivo || !dashEmpleadoData?.notaComunicada || !esCierreAnual) {
+      return resumenEnVivo;
+    }
 
     const obj = Number(dashEmpleadoData.scoreObj ?? 0);   // aporte, sobre 70
     const comp = Number(dashEmpleadoData.scoreApt ?? 0);  // aporte, sobre 30
